@@ -1,5 +1,12 @@
 # Change log
 
+## [0.2.1-preview.1] - 2019-11-28
+### New features
+### Changes
+### Fixes
+* Added missing bindings for Linux and Android
+### Upgrade guide
+
 ## [0.2.0-preview.4] - 2019-11-26
 ### New features
 ### Changes
