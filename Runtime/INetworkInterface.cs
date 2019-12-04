@@ -25,7 +25,7 @@ namespace Unity.Networking.Transport
         /// <returns>Returns a <see cref="DataStreamWriter"/></returns>
         DataStreamWriter GetDataStream();
         /// <summary>
-        /// Check if the the DataStreamWriter uses dynamic allocations to automatically resize the buffers or not.
+        /// Check if the DataStreamWriter uses dynamic allocations to automatically resize the buffers or not.
         /// </summary>
         /// <returns>True if its dynamically resizing the DataStreamWriter</returns>
         bool DynamicDataStreamSize();

@@ -12,9 +12,9 @@ public enum Type
 }
 ```
 
-As mentioned, there are a few subtle differences running the driver as a host or client. Mainly when it comes to consumption of events. 
+As mentioned, there are a few subtle differences running the driver as a host or client. Mainly when it comes to consumption of events.
 
-Both your client and you server loop will want to consume the events that are produced by the `NetworkDriver`. And you do so by either calling `PopEvent` on each `NetworkConnection` similar to how we did before.
+Both your client and your server loop will want to consume the events that are produced by the `NetworkDriver`. And you do so by either calling `PopEvent` on each `NetworkConnection` similar to how we did before.
 
 ```c#
 DataStreamReader strm;
@@ -51,7 +51,7 @@ while ((c = m_Driver.Accept()) != default(NetworkConnection))
 
 Looking at this table we see that there are 2 things that stand out.
 
-- The first thing is that the `Connect` event is only available if the `NetworkDriver` is **NOT** `Listening`  
+- The first thing is that the `Connect` event is only available if the `NetworkDriver` is **NOT** `Listening`
   - In order to receive any `Connect` events on a `NetworkDriver` that is in the `Listening` state we need to call the special function `Accept` just as we did in the *Creating a Server* section in the [Creating a minimal client and server](workflow-client-server.md) workflow page.
 - The second thing to notice is that if you call `Disconnect` on a `NetworkConnection` this will not trigger an event inside your own driver.
 

@@ -1,10 +1,25 @@
 # Change log
 
+## [0.2.2-preview.2] - 2019-12-05
+### New features
+### Changes
+* Added a stress test for parallel sending of data.
+* Upgraded collections to 0.3.0.
+
+### Fixes
+* Fixed a race condition in IPCNetworkInterface.
+* Changed NetworkEventQueue to use UnsafeList to get some type safety.
+* Fixed an out-of-bounds access in the reliable sequenced pipeline.
+* Fixed spelling and broken links in the documentation.
+
+### Upgrade guide
+
 ## [0.2.1-preview.1] - 2019-11-28
 ### New features
 ### Changes
 ### Fixes
 * Added missing bindings for Linux and Android
+
 ### Upgrade guide
 
 ## [0.2.0-preview.4] - 2019-11-26
@@ -21,6 +36,7 @@
 ### Fixes
 * Do not push data events to disconnected connections. Fixes an error about resetting the queue with pending messages
 * Made the endian checks in `DataStream` compatible with latest version of burst.
+
 ### Upgrade guide
 
 ## [0.1.2-preview.1] - 2019-07-17

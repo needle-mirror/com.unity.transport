@@ -11,6 +11,7 @@ namespace Unity.Networking.Transport
     public struct IPCSocket : INetworkInterface
     {
         [NativeDisableContainerSafetyRestriction] private NativeQueue<IPCManager.IPCQueuedMessage> m_IPCQueue;
+        private NativeQueue<IPCManager.IPCQueuedMessage>.ParallelWriter m_IPCQueueParallel;
         [ReadOnly] private NativeArray<NetworkEndPoint> m_LocalEndPoint;
 
         public NetworkEndPoint LocalEndPoint => m_LocalEndPoint[0];
@@ -23,6 +24,7 @@ namespace Unity.Networking.Transport
             m_LocalEndPoint = new NativeArray<NetworkEndPoint>(1, Allocator.Persistent);
             m_LocalEndPoint[0] = IPCManager.Instance.CreateEndPoint();
             m_IPCQueue = new NativeQueue<IPCManager.IPCQueuedMessage>(Allocator.Persistent);
+            m_IPCQueueParallel = m_IPCQueue.AsParallelWriter();
         }
 
         public void Dispose()
@@ -136,7 +138,7 @@ namespace Unity.Networking.Transport
             if (m_LocalEndPoint[0].Family != NetworkFamily.IPC || m_LocalEndPoint[0].nbo_port == 0)
                 throw new InvalidOperationException();
 #endif
-            return IPCManager.SendMessageEx(m_IPCQueue.AsParallelWriter(), m_LocalEndPoint[0], iov, iov_len, ref address);
+            return IPCManager.SendMessageEx(m_IPCQueueParallel, m_LocalEndPoint[0], iov, iov_len, ref address);
         }
     }
 }

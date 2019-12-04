@@ -3,6 +3,7 @@ using NUnit.Framework;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using System.Collections.Generic;
 
 namespace Unity.Networking.Transport.Tests
 {
@@ -264,7 +265,8 @@ namespace Unity.Networking.Transport.Tests
             {
                 connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
                 maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                disconnectTimeoutMS = 90 * 1000
+                disconnectTimeoutMS = 90 * 1000,
+                maxFrameTimeMS = 16
             };
             NativeArray<NetworkConnection> serverToClient;
             using (var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}, timeoutParam))
@@ -303,6 +305,66 @@ namespace Unity.Networking.Transport.Tests
             }
         }
 
+        [Test]
+        public void ParallelSendReceiveStressTest()
+        {
+            var timeoutParam = new NetworkConfigParameter
+            {
+                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
+                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
+                disconnectTimeoutMS = 90 * 1000,
+                maxFrameTimeMS = 16
+            };
+            NativeArray<NetworkConnection> serverToClient;
+            var clientDrivers = new List<LocalNetworkDriver>();
+            var clientPipelines = new List<NetworkPipeline>();
+            var clientToServer = new List<NetworkConnection>();
+            try
+            {
+                for (int i = 0; i < 250; ++i)
+                {
+                    clientDrivers.Add(new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}, timeoutParam));
+                    clientPipelines.Add(clientDrivers[i].CreatePipeline(typeof(ReliableSequencedPipelineStage)));
+                }
+                using (var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 17*clientDrivers.Count}, timeoutParam))
+                using (serverToClient = new NativeArray<NetworkConnection>(clientDrivers.Count, Allocator.Persistent))
+                {
+                    var serverPipeline = serverDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+                    serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+                    serverDriver.Listen();
+                    var strmWriter = new DataStreamWriter(4, Allocator.Temp);
+                    strmWriter.Write(42);
+                    for (var i = 0; i < clientDrivers.Count; ++i)
+                    {
+                        var drv = clientDrivers[i];
+                        var con = drv.Connect(serverDriver.LocalEndPoint());
+                        WaitForConnected(drv, serverDriver, con);
+                        clientToServer.Add(con);
+                        serverToClient[i] = serverDriver.Accept();
+                        Assert.IsTrue(serverToClient[i].IsCreated);
+                    }
+                    for (var i = 0; i < clientDrivers.Count; ++i)
+                    {
+                        clientToServer[i].Send(clientDrivers[i], clientPipelines[i], strmWriter);
+                        clientDrivers[i].ScheduleUpdate().Complete();
+                    }
+
+                    var sendRecvJob = new SendReceiveWithPipelineParallelJob
+                        {driver = serverDriver.ToConcurrent(), connections = serverToClient, pipeline = serverPipeline};
+                    var jobHandle = serverDriver.ScheduleUpdate();
+                    jobHandle = sendRecvJob.Schedule(serverToClient.Length, 1, jobHandle);
+                    serverDriver.ScheduleUpdate(jobHandle).Complete();
+
+                    for (var i = 0; i < clientDrivers.Count; ++i)
+                        AssertDataReceived(serverDriver, serverToClient, clientDrivers[i], clientToServer[i], 43, false);
+                }
+            }
+            finally
+            {
+                foreach (var drv in clientDrivers)
+                    drv.Dispose();
+            }
+        }
         void AssertDataReceived(LocalNetworkDriver serverDriver, NativeArray<NetworkConnection> serverConnections, LocalNetworkDriver clientDriver, NetworkConnection clientToServerConnection, int assertValue, bool serverResend)
         {
             DataStreamReader strmReader;

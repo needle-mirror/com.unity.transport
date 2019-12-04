@@ -168,14 +168,7 @@ namespace Unity.Networking.Transport
             [NativeContainerIsAtomicWriteOnly]
             internal unsafe struct ConcurrentConnectionQueue
             {
-#pragma warning disable 649
-                struct ListData
-                {
-                    public int* value;
-                    public int length;
-                }
-#pragma warning restore 649
-                [NativeDisableUnsafePtrRestriction] private ListData* m_ConnectionEventHeadTail;
+                [NativeDisableUnsafePtrRestriction] private UnsafeList* m_ConnectionEventHeadTail;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 private AtomicSafetyHandle m_Safety;
 #endif
@@ -185,12 +178,12 @@ namespace Unity.Networking.Transport
                     m_Safety = NativeListUnsafeUtility.GetAtomicSafetyHandle(ref queue);
                     AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
-                    m_ConnectionEventHeadTail = (ListData*) NativeListUnsafeUtility.GetInternalListDataPtrUnchecked(ref queue);
+                    m_ConnectionEventHeadTail = (UnsafeList*) NativeListUnsafeUtility.GetInternalListDataPtrUnchecked(ref queue);
                 }
-                
+
                 public int Length
                 {
-                    get { return m_ConnectionEventHeadTail->length; }
+                    get { return m_ConnectionEventHeadTail->Length; }
                 }
 
                 public int Dequeue(int connectionId)
@@ -199,14 +192,14 @@ namespace Unity.Networking.Transport
                     AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
                     int idx = -1;
-                    if (connectionId < 0 || connectionId >= m_ConnectionEventHeadTail->length / 2)
+                    if (connectionId < 0 || connectionId >= m_ConnectionEventHeadTail->Length / 2)
                         return -1;
                     while (idx < 0)
                     {
-                        idx = m_ConnectionEventHeadTail->value[connectionId * 2];
-                        if (idx >= m_ConnectionEventHeadTail->value[connectionId * 2 + 1])
+                        idx = ((int*)m_ConnectionEventHeadTail->Ptr)[connectionId * 2];
+                        if (idx >= ((int*)m_ConnectionEventHeadTail->Ptr)[connectionId * 2 + 1])
                             return -1;
-                        if (Interlocked.CompareExchange(ref m_ConnectionEventHeadTail->value[connectionId * 2], idx + 1,
+                        if (Interlocked.CompareExchange(ref ((int*)m_ConnectionEventHeadTail->Ptr)[connectionId * 2], idx + 1,
                                 idx) != idx)
                             idx = -1;
                     }

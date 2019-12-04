@@ -15,7 +15,7 @@ namespace Unity.Networking.Transport.Tests
             // Receive a Packet Newer still gapped. [0, 1, Lost, 3, 4]
             // Massage the resend flow using the Received Mask. [0, 1, Resend, 3, 4]
             // Receive the missing packet '2' and massage the receive flow
-            
+
             ReliableUtility.Parameters parameters = new ReliableUtility.Parameters
             {
                 WindowSize = 32
@@ -23,24 +23,24 @@ namespace Unity.Networking.Transport.Tests
 
             var processCapacity = ReliableUtility.ProcessCapacityNeeded(parameters);
             var sharedCapacity = ReliableUtility.SharedCapacityNeeded(parameters);
-            
-            
+
+
             // ep1
             var ep1SharedBuffer = new NativeArray<byte>(sharedCapacity, Allocator.Persistent);
             var ep1SendBuffer = new NativeArray<byte>(processCapacity, Allocator.Persistent);
             var ep1RecvBuffer = new NativeArray<byte>(processCapacity, Allocator.Persistent);
-            
+
             // ep2
             var ep2SharedBuffer = new NativeArray<byte>(sharedCapacity, Allocator.Persistent);
             var ep2SendBuffer = new NativeArray<byte>(processCapacity, Allocator.Persistent);
             var ep2RecvBuffer = new NativeArray<byte>(processCapacity, Allocator.Persistent);
-            
+
             // packet
             var packet = new NativeArray<byte>(UnsafeUtility.SizeOf<ReliableUtility.Packet>(), Allocator.Persistent);
             packet[0] = 100;
 
             var header = new DataStreamWriter(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(), Allocator.Persistent);
-            
+
             ReliableSequencedPipelineStage ep1 = new ReliableSequencedPipelineStage();
             ReliableSequencedPipelineStage ep2 = new ReliableSequencedPipelineStage();
 
@@ -56,7 +56,7 @@ namespace Unity.Networking.Transport.Tests
             var ep2recvContext = (ReliableUtility.Context*) ep2RecvBuffer.GetUnsafePtr();
             //var ep2sendContext = (ReliableUtility.Context*) ep2SendBuffer.GetUnsafePtr();
             //var ep2sharedContext = (ReliableUtility.SharedContext*) ep2SharedBuffer.GetUnsafePtr();
-            
+
             // Send a Packet - Receive a Packet
             var currentId = 0;
 
@@ -89,20 +89,20 @@ namespace Unity.Networking.Transport.Tests
                     internalProcessBuffer = ep2RecvBuffer,
                     internalSharedProcessBuffer = ep2SharedBuffer
                 }, data, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                
+
                 if (slice.Length > 0)
                     Assert.True(slice[0] == packet[0]);
-            } 
+            }
             Assert.True(!needsResume);
             Assert.True(ep2recvContext->Delivered == currentId);
-            
+
             // Scenario: Receive a Packet Newer then expected [0, 1, Lost, 3]
-            
+
             // Start by "sending" 1, 2, 3;
             for (int seq = currentId + 1; seq < 4; seq++)
             {
                 packet[0] = (byte) (100 + seq);
-                
+
                 header.Clear();
                 output = ep1.Send(new NetworkPipelineContext
                 {
@@ -110,23 +110,23 @@ namespace Unity.Networking.Transport.Tests
                     internalProcessBuffer = ep1SendBuffer,
                     internalSharedProcessBuffer = ep1SharedBuffer
                 }, inboundSend, ref needsResume, ref needsUpdate);
-                
+
                 Assert.True(!needsResume);
                 Assert.True(output.buffer1[0] == packet[0]);
             }
-            
+
             for (int seq = currentId + 1; seq < 4; seq++)
             {
                 if (seq == 2)
                     continue;
-                
+
                 var info = ReliableUtility.GetPacketInformation(ep1SendBuffer, seq);
                 var offset = ep1sendContext->DataPtrOffset + ((seq % ep1sendContext->Capacity) * ep1sendContext->DataStride);
                 var inspectPacket = ReliableUtility.GetPacket(ep1SendBuffer, seq);
-                
+
                 NativeSlice<byte> data = new NativeSlice<byte>(ep1SendBuffer, offset, info->Size);
                 Assert.True(inspectPacket->Header.SequenceId == info->SequenceId);
-                
+
                 header.Clear();
                 slice = ep2.Receive(new NetworkPipelineContext
                 {
@@ -140,7 +140,7 @@ namespace Unity.Networking.Transport.Tests
                     Assert.True(slice[0] == seq + 100);
                 }
             }
-            
+
             // Receive packet number 2 and resume received packets.
             bool first = true;
             do
@@ -171,8 +171,8 @@ namespace Unity.Networking.Transport.Tests
                     Assert.True(slice[0] == ep2recvContext->Delivered + 100);
                 }
             } while (needsResume);
-            
-            
+
+
             packet.Dispose();
             header.Dispose();
             ep1SharedBuffer.Dispose();
@@ -182,8 +182,8 @@ namespace Unity.Networking.Transport.Tests
             ep2SendBuffer.Dispose();
             ep2RecvBuffer.Dispose();
         }
-        
-        
+
+
         [Test]
         public unsafe void ReliableUtility_Validation()
         {
@@ -193,12 +193,12 @@ namespace Unity.Networking.Transport.Tests
             {
                 WindowSize = capacity
             };
-            
+
             int result = ReliableUtility.ProcessCapacityNeeded(parameters);
             NativeArray<byte> processBuffer = new NativeArray<byte>(result, Allocator.Persistent);
 
             ReliableUtility.InitializeProcessContext(processBuffer, parameters);
-            
+
             Assert.IsTrue(ReliableUtility.TryAquire(processBuffer, 0));
             Assert.IsTrue(ReliableUtility.TryAquire(processBuffer, 1));
             Assert.IsTrue(ReliableUtility.TryAquire(processBuffer, 2));
@@ -207,7 +207,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.IsFalse(ReliableUtility.TryAquire(processBuffer, 5));
 
             ReliableUtility.Release(processBuffer, 0, 5);
-            
+
             Assert.IsTrue(ReliableUtility.TryAquire(processBuffer, 0));
             Assert.IsTrue(ReliableUtility.TryAquire(processBuffer, 1));
             Assert.IsTrue(ReliableUtility.TryAquire(processBuffer, 2));
@@ -217,11 +217,11 @@ namespace Unity.Networking.Transport.Tests
             buffer[0] = (byte)(1);
 
             ReliableUtility.SetPacket(processBuffer, 0, buffer);
-            
-            
+
+
             var slice = ReliableUtility.GetPacket(processBuffer, 0);
             Assert.IsTrue(slice->Buffer[0] == buffer[0]);
-            
+
             for (int i = 0; i < capacity * 5; i++)
             {
                 ReliableUtility.SetPacket(processBuffer, i, buffer);
@@ -229,7 +229,7 @@ namespace Unity.Networking.Transport.Tests
                 Assert.IsTrue(slice->Buffer[0] == buffer[0]);
             }
             ReliableUtility.Release(processBuffer, 0, 5);
-            
+
             processBuffer.Dispose();
             buffer.Dispose();
         }
@@ -1083,16 +1083,23 @@ namespace Unity.Networking.Transport.Tests
         [SetUp]
         public void IPC_Setup()
         {
+            var timeoutParam = new NetworkConfigParameter
+            {
+                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
+                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
+                disconnectTimeoutMS = 90 * 1000,
+                maxFrameTimeMS = 16
+            };
             IPCManager.Instance.Initialize(100);
             m_ServerDriver =
                 new LocalNetworkDriver(new NetworkDataStreamParameter
-                    {size = 0},
+                    {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32});
             m_ServerDriver.Bind(IPCManager.Instance.CreateEndPoint());
             m_ServerDriver.Listen();
             m_ClientDriver =
                 new LocalNetworkDriver(new NetworkDataStreamParameter
-                    {size = 0},
+                    {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32},
                     new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, /*PacketDropInterval = 8,*/ PacketDropPercentage = 10});
         }
@@ -1181,9 +1188,9 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
 
-            // Force processing time to be at least 20 ms,
+            // Force processing time to be at least 16 ms,
             var timer = new Timer();
-            while (timer.ElapsedMilliseconds < 20) { }
+            while (timer.ElapsedMilliseconds < 16) { }
             // Now update client, if it's updated in the while loop it will automatically send ack packets to the server
             // so processing time will actually be recorded as almost 0
             m_ClientDriver.ScheduleUpdate().Complete();
@@ -1202,7 +1209,7 @@ namespace Unity.Networking.Transport.Tests
 
             // Server has now received a packet from the client with ackedSeqId=0 in the header and timing info for that
             Assert.IsTrue(serverPacketTimer->ReceiveTime >= clientPacketTimer->ReceiveTime);
-            Assert.IsTrue(serverPacketTimer->ProcessingTime >= 20);
+            Assert.IsTrue(serverPacketTimer->ProcessingTime >= 16);
         }
 
         [Test]
@@ -1320,14 +1327,14 @@ namespace Unity.Networking.Transport.Tests
 
             SendAndReceiveMessages(clientToServer, serverToClient, clientPipe, serverPipe);
         }
-        
+
         [Test]
         public void NetworkPipeline_ReliableSequenced_SendRecvManyWithPacketDrop()
         {
             var clientPipe = m_ClientDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
             var serverPipe = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
             Assert.AreEqual(clientPipe, serverPipe);
-            
+
             // Connect to server
             var clientToServer = m_ClientDriver.Connect(m_ServerDriver.LocalEndPoint());
             Assert.AreNotEqual(default(NetworkConnection), clientToServer);
@@ -1604,16 +1611,23 @@ namespace Unity.Networking.Transport.Tests
             // Use simulator pipeline here just to count packets, need to reset the drivers for this setup
             m_ServerDriver.Dispose();
             m_ClientDriver.Dispose();
+            var timeoutParam = new NetworkConfigParameter
+            {
+                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
+                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
+                disconnectTimeoutMS = 90 * 1000,
+                maxFrameTimeMS = 16
+            };
             m_ServerDriver =
                 new LocalNetworkDriver(new NetworkDataStreamParameter
-                        {size = 0},
+                        {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32},
                     new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropPercentage = 0});
             m_ServerDriver.Bind(IPCManager.Instance.CreateEndPoint());
             m_ServerDriver.Listen();
             m_ClientDriver =
                 new LocalNetworkDriver(new NetworkDataStreamParameter
-                        {size = 0},
+                        {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32},
                     new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropPercentage = 0});
 
@@ -1676,9 +1690,16 @@ namespace Unity.Networking.Transport.Tests
         {
             // Use simulator drop interval, then first packet will be dropped
             m_ClientDriver.Dispose();
+            var timeoutParam = new NetworkConfigParameter
+            {
+                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
+                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
+                disconnectTimeoutMS = 90 * 1000,
+                maxFrameTimeMS = 16
+            };
             m_ClientDriver =
                 new LocalNetworkDriver(new NetworkDataStreamParameter
-                        {size = 0},
+                        {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32},
                     new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropInterval = 10});
 
