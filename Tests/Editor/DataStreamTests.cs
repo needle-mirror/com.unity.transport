@@ -214,5 +214,41 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(1979, reader.ReadInt(ref ctx));
             }
         }
+
+        [Test]
+        public void ReadWriteString()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+
+            NativeString64 src = new NativeString64("This is a string");
+            dataStream.WriteString(src);
+
+            //Assert.AreEqual(src.LengthInBytes+2, dataStream.Length);
+
+            var reader = new DataStreamReader(dataStream, 0, dataStream.Length);
+            DataStreamReader.Context ctx = default;
+            var dst = reader.ReadString(ref ctx);
+            Assert.AreEqual(src, dst);
+            ctx = default;
+        }
+        [Test]
+        public void ReadWritePackedStringDelta()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+            var compressionModel = new NetworkCompressionModel(Allocator.Temp);
+
+            NativeString64 src = new NativeString64("This is a string");
+            NativeString64 baseline = new NativeString64("This is another string");
+            dataStream.WritePackedStringDelta(src, baseline, compressionModel);
+            dataStream.Flush();
+
+            //Assert.LessOrEqual(dataStream.Length, src.LengthInBytes+2);
+
+            var reader = new DataStreamReader(dataStream, 0, dataStream.Length);
+            DataStreamReader.Context ctx = default;
+            var dst = reader.ReadPackedStringDelta(ref ctx, baseline, compressionModel);
+            Assert.AreEqual(src, dst);
+            ctx = default;
+        }
     }
 }

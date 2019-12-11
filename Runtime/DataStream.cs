@@ -652,6 +652,35 @@ namespace Unity.Networking.Transport
             }
             FlushBits();
         }
+
+        public unsafe void WriteString(NativeString64 str)
+        {
+            int length = (int)*((ushort*)&str) + 2;
+            byte* data = ((byte*)&str);
+            WriteBytes(data, length);
+        }
+
+        public unsafe void WritePackedStringDelta(NativeString64 str, NativeString64 baseline, NetworkCompressionModel model)
+        {
+            ushort length = *((ushort*)&str);
+            byte* data = ((byte*)&str) + 2;
+            ushort baseLength = *((ushort*)&baseline);
+            byte* baseData = ((byte*)&baseline) + 2;
+            WritePackedUIntDelta(length, baseLength, model);
+            if (length <= baseLength)
+            {
+                for (int i = 0; i < length; ++i)
+                    WritePackedUIntDelta(data[i], baseData[i], model);
+            }
+            else
+            {
+                for (int i = 0; i < baseLength; ++i)
+                    WritePackedUIntDelta(data[i], baseData[i], model);
+                for (int i = baseLength; i < length; ++i)
+                    WritePackedUInt(data[i], model);
+            }
+        }
+
         /// <summary>
         /// Moves the write position to the start of the data buffer used.
         /// </summary>
@@ -1013,6 +1042,51 @@ namespace Unity.Networking.Transport
             UIntFloat uf = new UIntFloat();
             uf.intValue = ReadRawBitsInternal(ref ctx, bits);
             return uf.floatValue;
+        }
+
+        public unsafe NativeString64 ReadString(ref Context ctx)
+        {
+            ushort length = ReadUShort(ref ctx);
+            if (length > NativeString64.MaxLength)
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("Invalid string length");
+#else
+                return default;
+#endif
+            NativeString64 str;
+            byte* data = ((byte*)&str) + 2;
+            *(ushort*)&str = length;
+            ReadBytes(ref ctx, data, length);
+            return str;
+        }
+
+        public unsafe NativeString64 ReadPackedStringDelta(ref Context ctx, NativeString64 baseline, NetworkCompressionModel model)
+        {
+            NativeString64 str;
+            byte* data = ((byte*)&str) + 2;
+            ushort baseLength = *((ushort*)&baseline);
+            byte* baseData = ((byte*)&baseline) + 2;
+            uint length = ReadPackedUIntDelta(ref ctx, baseLength, model);
+            if (length > NativeString64.MaxLength)
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("Invalid string length");
+#else
+                return default;
+#endif
+            *(ushort*)&str = (ushort)length;
+            if (length <= baseLength)
+            {
+                for (int i = 0; i < length; ++i)
+                    data[i] = (byte)ReadPackedUIntDelta(ref ctx, baseData[i], model);
+            }
+            else
+            {
+                for (int i = 0; i < baseLength; ++i)
+                    data[i] = (byte)ReadPackedUIntDelta(ref ctx, baseData[i], model);
+                for (int i = baseLength; i < length; ++i)
+                    data[i] = (byte)ReadPackedUInt(ref ctx, model);
+            }
+            return str;
         }
     }
 }

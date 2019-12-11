@@ -1,5 +1,13 @@
 # Change log
 
+## [0.2.3-preview.0] - 2019-12-12
+### New features
+### Changes
+* Added reading and write methods for NativeString64 to DataStream.
+
+### Fixes
+### Upgrade guide
+
 ## [0.2.2-preview.2] - 2019-12-05
 ### New features
 ### Changes
