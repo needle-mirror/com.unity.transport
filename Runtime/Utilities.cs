@@ -14,6 +14,8 @@ namespace Unity.Networking.Transport.Utilities
         private NativeList<int> m_QueueHeadTail;
         private NativeArray<int> m_MaxItems;
 
+        public bool IsCreated => m_Queue.IsCreated;
+
         /// <summary>
         /// New NativeMultiQueue has a single bucket and the specified number
         /// of items for that bucket. Accessing buckets out of range will grow
@@ -138,21 +140,6 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    /// <summary>
-    /// A simple timer used to measure the number of milliseconds since it was created.
-    /// </summary>
-    public class Timer
-    {
-        private System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
-
-        public Timer()
-        {
-            stopwatch.Start();
-        }
-
-        public long ElapsedMilliseconds => stopwatch.ElapsedMilliseconds;
-    }
-
     public struct SequenceHelpers
     {
         // Calculate difference between the sequence IDs taking into account wrapping, so when you go from 65535 to 0 the distance is 1
@@ -165,7 +152,7 @@ namespace Unity.Networking.Transport.Utilities
                 distance = lhs - rhs;
             return distance;
         }
-        
+
         public static bool IsNewer(uint current, uint old)
         {
             // Invert the check so same does not count as newer

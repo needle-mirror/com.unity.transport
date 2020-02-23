@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Unity.Burst;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.LowLevel.Unsafe;
 using Unity.Networking.Transport.Protocols;
 
 namespace Unity.Networking.Transport
@@ -25,7 +26,8 @@ namespace Unity.Networking.Transport
     }
 #endif
 
-    public struct IPv4UDPSocket : INetworkInterface
+    [BurstCompile]
+    public struct UDPNetworkInterface : INetworkInterface
     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         private class SocketList
@@ -45,53 +47,97 @@ namespace Unity.Networking.Transport
         private static SocketList AllSockets = new SocketList();
 #endif
 
-        private long m_SocketHandle;
-        private NetworkEndPoint m_RemoteEndPoint;
+        NativeArray<long> m_UserData;
 
-        public NetworkFamily Family => NetworkFamily.UdpIpv4;
-
-        public unsafe NetworkEndPoint LocalEndPoint
+        public unsafe NetworkInterfaceEndPoint LocalEndPoint
         {
             get
             {
-                var localEndPoint = new NetworkEndPoint {length = sizeof(NetworkEndPoint)};
+                var localEndPoint = new network_address {length = network_address.Length};
                 int errorcode = 0;
-                var result = NativeBindings.network_get_socket_address(m_SocketHandle, ref localEndPoint, ref errorcode);
+                var result = NativeBindings.network_get_socket_address(m_UserData[0], ref localEndPoint, ref errorcode);
                 if (result != 0)
                 {
                     throw new NetworkInterfaceException(errorcode);
                 }
-                return localEndPoint;
+
+                var endpoint = default(NetworkInterfaceEndPoint);
+                endpoint.dataLength = UnsafeUtility.SizeOf<network_address>();
+                UnsafeUtility.MemCpy(endpoint.data, &localEndPoint, endpoint.dataLength);
+                return endpoint;
             }
         }
 
-        public NetworkEndPoint RemoteEndPoint {
-            get { return m_RemoteEndPoint; }
+        private static unsafe NetworkInterfaceEndPoint ParseNetworkAddress(NetworkEndPoint endPoint)
+        {
+            NetworkInterfaceEndPoint ep = default(NetworkInterfaceEndPoint);
+            var addr = (network_address*) ep.data;
+            var sai = (sockaddr_in*) addr->data;
+#if (UNITY_EDITOR_OSX || ((UNITY_STANDALONE_OSX || UNITY_IOS) && !UNITY_EDITOR))
+            sai->sin_family.sa_family = (byte) NetworkFamily.Ipv4;
+            sai->sin_family.sa_len = (byte) sizeof(sockaddr_in);
+#else
+            sai->sin_family.sa_family = (ushort) NetworkFamily.Ipv4;
+#endif
+            sai->sin_port = endPoint.RawPort;
+            var bytes = endPoint.GetRawAddressBytes();
+            sai->sin_addr.s_addr = *(uint*) bytes.GetUnsafeReadOnlyPtr();
+
+            addr->length = sizeof(sockaddr_in);
+            ep.dataLength = sizeof(network_address);
+            return ep;
+        }
+        public unsafe NetworkInterfaceEndPoint CreateInterfaceEndPoint(NetworkEndPoint endPoint)
+        {
+            if (endPoint.Family != NetworkFamily.Ipv4)
+                throw new ArgumentException("Invalid family type");
+
+            return ParseNetworkAddress(endPoint);
         }
 
-        public void Initialize()
+        public unsafe NetworkEndPoint GetGenericEndPoint(NetworkInterfaceEndPoint endpoint)
+        {
+            var address = NetworkEndPoint.AnyIpv4;
+            var addr = (network_address*) endpoint.data;
+            var sai = (sockaddr_in*) addr->data;
+            address.RawPort = sai->sin_port;
+            if (sai->sin_addr.s_addr != 0)
+            {
+                var bytes = new NativeArray<byte>(4, Allocator.Temp);
+                UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref sai->sin_addr.s_addr),  4);
+                address.SetRawAddressBytes(bytes);
+            }
+            return address;
+        }
+
+        public unsafe void Initialize(params INetworkParameter[] param)
         {
             NativeBindings.network_initialize();
-            int ret = CreateAndBindSocket(out m_SocketHandle, NetworkEndPoint.AnyIpv4);
+            var ep = CreateInterfaceEndPoint(NetworkEndPoint.AnyIpv4);
+            long sockHand;
+            int ret = CreateAndBindSocket(out sockHand, *(network_address*)ep.data);
             if (ret != 0)
                 throw new NetworkInterfaceException(ret);
+            m_UserData = new NativeArray<long>(1, Allocator.Persistent);
+            m_UserData[0] = sockHand;
         }
 
         public void Dispose()
         {
             Close();
             NativeBindings.network_terminate();
+            m_UserData.Dispose();
         }
 
         [BurstCompile]
-        struct ReceiveJob<T> : IJob where T : struct, INetworkPacketReceiver
+        struct ReceiveJob : IJob
         {
-            public T receiver;
+            public NetworkPacketReceiver receiver;
             public long socket;
 
             public unsafe void Execute()
             {
-                var address = new NetworkEndPoint {length = sizeof(NetworkEndPoint)};
+                var address = new network_address {length = network_address.Length};
                 var header = new UdpCHeader();
                 var stream = receiver.GetDataStream();
                 receiver.ReceiveCount = 0;
@@ -99,24 +145,28 @@ namespace Unity.Networking.Transport
 
                 while (true)
                 {
+                    int dataStreamSize = receiver.GetDataStreamSize();
                     if (receiver.DynamicDataStreamSize())
                     {
-                        while (stream.Length+NetworkParameterConstants.MTU >= stream.Capacity)
-                            stream.Capacity *= 2;
+                        while (dataStreamSize+NetworkParameterConstants.MTU-UdpCHeader.Length >= stream.Length)
+                            stream.ResizeUninitialized(stream.Length * 2);
                     }
-                    else if (stream.Length >= stream.Capacity)
+                    else if (dataStreamSize >= stream.Length)
                         return;
-                    var sliceOffset = stream.Length;
-                    var result = NativeReceive(ref header, stream.GetUnsafePtr() + sliceOffset,
-                        Math.Min(NetworkParameterConstants.MTU, stream.Capacity - stream.Length), ref address);
+                    var result = NativeReceive(ref header, (byte*)stream.GetUnsafePtr() + dataStreamSize,
+                        Math.Min(NetworkParameterConstants.MTU-UdpCHeader.Length, stream.Length - dataStreamSize), ref address);
                     if (result <= 0)
                         return;
-                    receiver.ReceiveCount += receiver.AppendPacket(address, header, result);
+
+                    var endpoint = default(NetworkInterfaceEndPoint);
+                    endpoint.dataLength = UnsafeUtility.SizeOf<network_address>();
+                    UnsafeUtility.MemCpy(endpoint.data, &address, endpoint.dataLength);
+                    receiver.ReceiveCount += receiver.AppendPacket(endpoint, header, result);
                 }
 
             }
 
-            unsafe int NativeReceive(ref UdpCHeader header, void* data, int length, ref NetworkEndPoint address)
+            unsafe int NativeReceive(ref UdpCHeader header, void* data, int length, ref network_address address)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (length <= 0)
@@ -146,51 +196,82 @@ namespace Unity.Networking.Transport
             }
         }
 
-        public JobHandle ScheduleReceive<T>(T receiver, JobHandle dep) where T : struct, INetworkPacketReceiver
+        public JobHandle ScheduleReceive(NetworkPacketReceiver receiver, JobHandle dep)
         {
-            var job = new ReceiveJob<T> {receiver = receiver, socket = m_SocketHandle};
+            var job = new ReceiveJob {receiver = receiver, socket = m_UserData[0]};
             return job.Schedule(dep);
         }
-
-        public int Bind(NetworkEndPoint endpoint)
+        public JobHandle ScheduleSend(NativeQueue<QueuedSendMessage> sendQueue, JobHandle dep)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (endpoint.Family != NetworkFamily.UdpIpv4)
-                throw new InvalidOperationException();
-#endif
+            return dep;
+        }
 
+        public unsafe int Bind(NetworkInterfaceEndPoint endpoint)
+        {
             long newSocket;
-            int ret = CreateAndBindSocket(out newSocket, endpoint);
+            int ret = CreateAndBindSocket(out newSocket, *(network_address*)endpoint.data);
             if (ret != 0)
                 return ret;
             Close();
 
-            m_RemoteEndPoint = endpoint;
-            m_SocketHandle = newSocket;
+            m_UserData[0] = newSocket;
 
             return 0;
         }
 
         private void Close()
         {
-            if (m_SocketHandle < 0)
+            if (m_UserData[0] < 0)
                 return;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AllSockets.OpenSockets.Remove(m_SocketHandle);
+            AllSockets.OpenSockets.Remove(m_UserData[0]);
 #endif
             int errorcode = 0;
-            NativeBindings.network_close(ref m_SocketHandle, ref errorcode);
-            m_RemoteEndPoint = default(NetworkEndPoint);
-            m_SocketHandle = -1;
+            long sockHand = m_UserData[0];
+            NativeBindings.network_close(ref sockHand, ref errorcode);
+
+            m_UserData[0] = -1;
         }
 
-        public unsafe int SendMessage(network_iovec* iov, int iov_len, ref NetworkEndPoint address)
+        static TransportFunctionPointer<NetworkSendInterface.BeginSendMessageDelegate> BeginSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.BeginSendMessageDelegate>(BeginSendMessage);
+        static TransportFunctionPointer<NetworkSendInterface.EndSendMessageDelegate> EndSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.EndSendMessageDelegate>(EndSendMessage);
+        static TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate> AbortSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate>(AbortSendMessage);
+        public unsafe NetworkSendInterface CreateSendInterface()
         {
-            int errorcode = 0;
-            return NativeBindings.network_sendmsg(m_SocketHandle, iov, iov_len, ref address, ref errorcode);
+            return new NetworkSendInterface
+            {
+                BeginSendMessage = BeginSendMessageFunctionPointer,
+                EndSendMessage = EndSendMessageFunctionPointer,
+                AbortSendMessage = AbortSendMessageFunctionPointer,
+                UserData = (IntPtr)m_UserData.GetUnsafePtr()
+            };
+        }
+        [BurstCompile]
+        public static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData)
+        {
+            handle.id = 0;
+            handle.size = 0;
+            handle.capacity = NetworkParameterConstants.MTU;
+            handle.data = (IntPtr)UnsafeUtility.Malloc(handle.capacity, 8, Allocator.Temp);
+            return 0;
         }
 
-        int CreateAndBindSocket(out long socket, NetworkEndPoint address)
+        [BurstCompile]
+        public static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueue)
+        {
+            network_iovec iov;
+            iov.buf = (void*)handle.data;
+            iov.len = handle.size;
+            int errorcode = 0;
+            var addr = address;
+            return NativeBindings.network_sendmsg(*(long*)userData, &iov, 1, ref *(network_address*)addr.data, ref errorcode);
+        }
+        [BurstCompile]
+        private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
+        {
+        }
+
+        int CreateAndBindSocket(out long socket, network_address address)
         {
             socket = -1;
             int errorcode = 0;

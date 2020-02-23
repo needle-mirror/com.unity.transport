@@ -24,20 +24,16 @@ namespace Unity.Networking.Transport.Tests
 
     public class NetworkConnectionUnitTests
     {
-        private LocalNetworkDriver Driver;
-        private LocalNetworkDriver RemoteDriver;
-        private DataStreamWriter Stream;
+        private NetworkDriver Driver;
+        private NetworkDriver RemoteDriver;
 
         [SetUp]
         public void IPC_Setup()
         {
-            IPCManager.Instance.Initialize(100);
+            Driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            RemoteDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
 
-            Stream = new DataStreamWriter(64, Allocator.Persistent);
-            Driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-            RemoteDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-
-            RemoteDriver.Bind(IPCManager.Instance.CreateEndPoint("remote_host"));
+            RemoteDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             RemoteDriver.Listen();
         }
 
@@ -46,9 +42,6 @@ namespace Unity.Networking.Transport.Tests
         {
             Driver.Dispose();
             RemoteDriver.Dispose();
-            Stream.Dispose();
-
-            IPCManager.Instance.Destroy();
         }
 
         [Test]
@@ -108,8 +101,9 @@ namespace Unity.Networking.Transport.Tests
             Assert.That(connection.PopEvent(Driver, out reader) == NetworkEvent.Type.Connect);
 
             // Send to endpoint
-            Stream.Write(SharedConstants.ping);
-            connection.Send(Driver, Stream);
+            var Stream = Driver.BeginSend(NetworkPipeline.Null, connection);
+            Stream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
+            Driver.EndSend(Stream);
             Driver.ScheduleUpdate().Complete();
 
             RemoteDriver.ScheduleUpdate().Complete();

@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using Unity.Networking.Transport.LowLevel.Unsafe;
 using NUnit.Framework;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 using Unity.Networking.Transport.Protocols;
 using Unity.Networking.Transport.Utilities;
@@ -29,28 +29,28 @@ namespace Unity.Networking.Transport.Tests
 {
     public struct LocalDriverHelper : IDisposable
     {
-        public NetworkEndPoint Address { get; }
-        public LocalNetworkDriver m_LocalDriver;
-        private DataStreamWriter m_LocalDataStream;
+        public NetworkEndPoint EndPoint { get; }
+        public NetworkDriver m_LocalDriver;
+        private NativeArray<byte> m_LocalData;
         public NetworkConnection Connection { get; internal set; }
         public List<NetworkConnection> ClientConnections;
 
         public LocalDriverHelper(NetworkEndPoint endpoint, params INetworkParameter[] networkParams)
         {
             if (networkParams.Length == 0)
-                m_LocalDriver = new LocalNetworkDriver(new NetworkDataStreamParameter
+                m_LocalDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter
                     {size = NetworkParameterConstants.MTU});
             else
-                m_LocalDriver = new LocalNetworkDriver(networkParams);
-            m_LocalDataStream = new DataStreamWriter(NetworkParameterConstants.MTU, Allocator.Persistent);
+                m_LocalDriver = new NetworkDriver(new IPCNetworkInterface(), networkParams);
+            m_LocalData = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Persistent);
 
-            if (endpoint.Family == NetworkFamily.IPC && endpoint.Port != 0)
+            if (endpoint.IsValid)
             {
-                Address = endpoint;
+                EndPoint = endpoint;
             }
             else
             {
-                Address = IPCManager.Instance.CreateEndPoint(Utilities.Random.String(32));
+                EndPoint = NetworkEndPoint.LoopbackIpv4.WithPort(1);
             }
 
             Connection = default(NetworkConnection);
@@ -60,7 +60,7 @@ namespace Unity.Networking.Transport.Tests
         public void Dispose()
         {
             m_LocalDriver.Dispose();
-            m_LocalDataStream.Dispose();
+            m_LocalData.Dispose();
         }
 
         public void Update()
@@ -75,13 +75,13 @@ namespace Unity.Networking.Transport.Tests
 
         public void Host()
         {
-            m_LocalDriver.Bind(Address);
+            m_LocalDriver.Bind(EndPoint);
             m_LocalDriver.Listen();
         }
 
         public void Connect(NetworkEndPoint endpoint)
         {
-            Assert.True(endpoint.Family == NetworkFamily.IPC);
+            Assert.True(endpoint.IsValid);
             Connection = m_LocalDriver.Connect(endpoint);
             m_LocalDriver.ScheduleUpdate().Complete();
         }
@@ -89,23 +89,22 @@ namespace Unity.Networking.Transport.Tests
         public unsafe void Assert_GotConnectionRequest(NetworkEndPoint from, bool accept = false)
         {
             int length;
-            NetworkEndPoint remote;
-            m_LocalDataStream.Clear();
+            NetworkInterfaceEndPoint remote;
+            Assert.True(EndPoint.IsLoopback || EndPoint.IsAny);
+            Assert.True(from.IsLoopback || from.IsAny);
+            var localEndPoint = IPCManager.Instance.CreateEndPoint(EndPoint.Port);
+            var fromEndPoint = IPCManager.Instance.CreateEndPoint(from.Port);
             Assert.True(
-                IPCManager.Instance.PeekNext(Address, m_LocalDataStream.GetUnsafePtr(), out length, out remote) >=
+                IPCManager.Instance.PeekNext(localEndPoint, m_LocalData.GetUnsafePtr(), out length, out remote) >=
                 sizeof(UdpCHeader));
-            m_LocalDataStream.WriteBytesWithUnsafePointer(length);
 
             UdpCHeader header = new UdpCHeader();
-            var reader = new DataStreamReader(m_LocalDataStream, 0, sizeof(UdpCHeader));
-            var readerCtx = default(DataStreamReader.Context);
+            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
             Assert.True(reader.IsCreated);
-            reader.ReadBytes(ref readerCtx, header.Data, sizeof(UdpCHeader));
+            reader.ReadBytes(header.Data, sizeof(UdpCHeader));
             Assert.True(header.Type == (int) UdpCProtocol.ConnectionRequest);
 
-            Assert.True(remote.Family == NetworkFamily.IPC);
-            //Assert.True(remote.ipc_handle == from.ipc_handle);
-            Assert.True(remote.Port == from.Port);
+            Assert.True(remote == fromEndPoint);
 
             if (accept)
             {
@@ -119,38 +118,40 @@ namespace Unity.Networking.Transport.Tests
         public unsafe void Assert_GotDisconnectionRequest(NetworkEndPoint from)
         {
             int length;
-            NetworkEndPoint remote;
-            m_LocalDataStream.Clear();
+            NetworkInterfaceEndPoint remote;
+            Assert.True(EndPoint.IsLoopback || EndPoint.IsAny);
+            Assert.True(from.IsLoopback || from.IsAny);
+            var localEndPoint = IPCManager.Instance.CreateEndPoint(EndPoint.Port);
+            var fromEndPoint = IPCManager.Instance.CreateEndPoint(from.Port);
             Assert.True(
-                IPCManager.Instance.PeekNext(Address, m_LocalDataStream.GetUnsafePtr(), out length, out remote) >=
+                IPCManager.Instance.PeekNext(localEndPoint, m_LocalData.GetUnsafePtr(), out length, out remote) >=
                 sizeof(UdpCHeader));
-            m_LocalDataStream.WriteBytesWithUnsafePointer(length);
 
             UdpCHeader header = new UdpCHeader();
-            var reader = new DataStreamReader(m_LocalDataStream, 0, sizeof(UdpCHeader));
-            var readerCtx = default(DataStreamReader.Context);
+            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
             Assert.True(reader.IsCreated);
-            reader.ReadBytes(ref readerCtx, header.Data, sizeof(UdpCHeader));
+            reader.ReadBytes(header.Data, sizeof(UdpCHeader));
             Assert.True(header.Type == (int) UdpCProtocol.Disconnect);
 
-            Assert.True(remote.Family == NetworkFamily.IPC);
-            //Assert.True(remote.ipc_handle == from.ipc_handle);
-            Assert.True(remote.Port == from.Port);
+            Assert.True(remote == fromEndPoint);
         }
 
         public unsafe void Assert_GotDataRequest(NetworkEndPoint from, byte[] dataToCompare)
         {
-            NetworkEndPoint remote = default(NetworkEndPoint);
-            m_LocalDataStream.Clear();
+            NetworkInterfaceEndPoint remote = default;
             network_iovec[] iovecs = new network_iovec[2];
-            iovecs[0].buf = m_LocalDataStream.GetUnsafePtr();
+            iovecs[0].buf = m_LocalData.GetUnsafePtr();
             iovecs[0].len = sizeof(UdpCHeader);
-            iovecs[1].buf = m_LocalDataStream.GetUnsafePtr() + sizeof(UdpCHeader);
+            iovecs[1].buf = (byte*)m_LocalData.GetUnsafePtr() + sizeof(UdpCHeader);
             iovecs[1].len = NetworkParameterConstants.MTU;
             int dataLen = 0;
+            Assert.True(EndPoint.IsLoopback || EndPoint.IsAny);
+            Assert.True(from.IsLoopback || from.IsAny);
+            var localEndPoint = IPCManager.Instance.CreateEndPoint(EndPoint.Port);
+            var fromEndPoint = IPCManager.Instance.CreateEndPoint(from.Port);
             fixed (network_iovec* iovptr = &iovecs[0])
             {
-                dataLen = IPCManager.Instance.ReceiveMessageEx(Address, iovptr, 2, ref remote);
+                dataLen = IPCManager.Instance.ReceiveMessageEx(localEndPoint, iovptr, 2, ref remote);
             }
 
             if (dataLen <= 0)
@@ -160,25 +161,20 @@ namespace Unity.Networking.Transport.Tests
 
             Assert.True(iovecs[0].len+iovecs[1].len == dataLen);
             Assert.True(iovecs[0].len == sizeof(UdpCHeader));
-            m_LocalDataStream.WriteBytesWithUnsafePointer(iovecs[0].len);
 
             UdpCHeader header = new UdpCHeader();
-            var reader = new DataStreamReader(m_LocalDataStream, 0, sizeof(UdpCHeader));
-            var readerCtx = default(DataStreamReader.Context);
+            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
             Assert.True(reader.IsCreated);
-            reader.ReadBytes(ref readerCtx, header.Data, sizeof(UdpCHeader));
+            reader.ReadBytes(header.Data, sizeof(UdpCHeader));
             Assert.True(header.Type == (int) UdpCProtocol.Data);
 
-            Assert.True(remote.Family == NetworkFamily.IPC);
-            //Assert.True(remote.ipc_handle == from.ipc_handle);
-            Assert.True(remote.Port == from.Port);
+            Assert.True(remote == fromEndPoint);
 
             Assert.True(iovecs[1].len == dataToCompare.Length);
-            m_LocalDataStream.WriteBytesWithUnsafePointer(iovecs[1].len);
 
-            reader = new DataStreamReader(m_LocalDataStream, iovecs[0].len, dataToCompare.Length);
-            readerCtx = default(DataStreamReader.Context);
-            var received = reader.ReadBytesAsArray(ref readerCtx, dataToCompare.Length);
+            reader = new DataStreamReader(m_LocalData.GetSubArray(iovecs[0].len, dataToCompare.Length));
+            var received = new NativeArray<byte>(dataToCompare.Length, Allocator.Temp);
+            reader.ReadBytes(received);
 
             for (int i = 0, n = dataToCompare.Length; i < n; ++i)
                 Assert.True(received[i] == dataToCompare[i]);
@@ -202,43 +198,29 @@ namespace Unity.Networking.Transport.Tests
 
     public class NetworkDriverUnitTests
     {
-        private Timer m_timer;
-        [SetUp]
-        public void IPC_Setup()
-        {
-            m_timer = new Timer();
-            IPCManager.Instance.Initialize(100);
-        }
-
-        [TearDown]
-        public void IPC_TearDown()
-        {
-            IPCManager.Instance.Destroy();
-        }
-
         [Test]
         public void InitializeAndDestroyDriver()
         {
-            var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             driver.Dispose();
         }
 
         [Test]
         public void BindDriverToAEndPoint()
         {
-            var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
 
-            driver.Bind(IPCManager.Instance.CreateEndPoint("host"));
+            driver.Bind(NetworkEndPoint.LoopbackIpv4);
             driver.Dispose();
         }
 
         [Test]
         public void ListenOnDriver()
         {
-            var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
 
             // Make sure we Bind before we Listen.
-            driver.Bind(IPCManager.Instance.CreateEndPoint("host"));
+            driver.Bind(NetworkEndPoint.LoopbackIpv4);
             driver.Listen();
 
             Assert.True(driver.Listening);
@@ -248,10 +230,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void AcceptNewConnectionsOnDriver()
         {
-            var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
 
             // Make sure we Bind before we Listen.
-            driver.Bind(IPCManager.Instance.CreateEndPoint("host"));
+            driver.Bind(NetworkEndPoint.LoopbackIpv4);
             driver.Listen();
 
             Assert.True(driver.Listening);
@@ -271,9 +253,9 @@ namespace Unity.Networking.Transport.Tests
             using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
             {
                 host.Host();
-                var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+                var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
 
-                NetworkConnection connectionId = driver.Connect(host.Address);
+                NetworkConnection connectionId = driver.Connect(host.EndPoint);
                 Assert.True(connectionId != default(NetworkConnection));
                 driver.ScheduleUpdate().Complete();
 
@@ -295,18 +277,17 @@ namespace Unity.Networking.Transport.Tests
             NetworkConnection connection;
             NetworkEvent.Type eventType = 0;
             DataStreamReader reader;
-            var hostAddress = IPCManager.Instance.CreateEndPoint(Utilities.Random.String(32));
 
             // Tiny connect timeout for this test to be quicker
-            using (var client = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64},
-                new NetworkConfigParameter {connectTimeoutMS = 1, maxConnectAttempts = 10}))
+            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64},
+                new NetworkConfigParameter {connectTimeoutMS = 15, maxConnectAttempts = 10, fixedFrameTimeMS = 10}))
             {
+                var hostAddress = NetworkEndPoint.LoopbackIpv4.WithPort(1);
                 client.Connect(hostAddress);
 
                 // Wait past the connect timeout so there will be unanswered connect requests
-                long timeout = m_timer.ElapsedMilliseconds + 2;
-                while (m_timer.ElapsedMilliseconds < timeout)
-                    client.ScheduleUpdate().Complete();
+                client.ScheduleUpdate().Complete();
+                client.ScheduleUpdate().Complete();
 
                 using (var host = new LocalDriverHelper(hostAddress))
                 {
@@ -314,15 +295,12 @@ namespace Unity.Networking.Transport.Tests
 
                     // Now give the next connect attempt time to happen
                     // TODO: Would be better to be able to see internal state here and explicitly wait until next connect attempt happens
-                    timeout = m_timer.ElapsedMilliseconds + 10;
-                    while (m_timer.ElapsedMilliseconds < timeout)
-                        client.ScheduleUpdate().Complete();
+                    //client.ScheduleUpdate().Complete();
 
                     host.Assert_GotConnectionRequest(client.LocalEndPoint(), true);
 
                     // Wait for the client to get the connect event back
-                    timeout = m_timer.ElapsedMilliseconds + 2;
-                    while (m_timer.ElapsedMilliseconds < timeout)
+                    for (int i = 0; i < 2; ++i)
                     {
                         client.ScheduleUpdate().Complete();
                         eventType = client.PopEvent(out connection, out reader);
@@ -341,10 +319,10 @@ namespace Unity.Networking.Transport.Tests
             using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
             {
                 host.Host();
-                var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+                var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
 
                 // Need to be connected in order to be able to send a disconnect packet.
-                NetworkConnection connectionId = driver.Connect(host.Address);
+                NetworkConnection connectionId = driver.Connect(host.EndPoint);
                 Assert.True(connectionId != default(NetworkConnection));
                 driver.ScheduleUpdate().Complete();
 
@@ -369,8 +347,8 @@ namespace Unity.Networking.Transport.Tests
         public void DisconnectTimeoutOnServer()
         {
             using (var host = new LocalDriverHelper(default(NetworkEndPoint),
-                new NetworkConfigParameter {disconnectTimeoutMS = 40}))
-            using (var client = new LocalNetworkDriver(new NetworkConfigParameter {disconnectTimeoutMS = 40}))
+                new NetworkConfigParameter {disconnectTimeoutMS = 40, fixedFrameTimeMS = 10}))
+            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkConfigParameter {disconnectTimeoutMS = 40, fixedFrameTimeMS = 10}))
             {
                 NetworkConnection id;
                 NetworkEvent.Type popEvent = NetworkEvent.Type.Empty;
@@ -378,26 +356,24 @@ namespace Unity.Networking.Transport.Tests
 
                 host.Host();
 
-                client.Connect(host.Address);
+                client.Connect(host.EndPoint);
                 client.ScheduleUpdate().Complete();
                 host.Assert_GotConnectionRequest(client.LocalEndPoint(), true);
 
-                var stream = new DataStreamWriter(100, Allocator.Persistent);
-                for (int i = 0; i < 100; i++)
-                    stream.Write((byte) i);
-
                 // Host sends stuff but gets nothing back, until disconnect timeout happens
-                var timeout = m_timer.ElapsedMilliseconds + 100;
-                while (m_timer.ElapsedMilliseconds < timeout)
+                for (int frm = 0; frm < 10; ++frm)
                 {
-                    host.m_LocalDriver.Send(NetworkPipeline.Null, host.ClientConnections[0], stream);
+                    var stream = host.m_LocalDriver.BeginSend(NetworkPipeline.Null, host.ClientConnections[0]);
+                    for (int i = 0; i < 100; i++)
+                        stream.WriteByte((byte) i);
+
+                    host.m_LocalDriver.EndSend(stream);
                     popEvent = host.m_LocalDriver.PopEvent(out id, out reader);
                     if (popEvent != NetworkEvent.Type.Empty)
                         break;
                     host.Update();
                 }
 
-                stream.Dispose();
                 Assert.AreEqual(NetworkEvent.Type.Disconnect, popEvent);
             }
         }
@@ -405,14 +381,13 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void SendDataToRemoteEndPoint()
         {
-            using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var stream = new DataStreamWriter(64, Allocator.Persistent))
+            using (var host = new LocalDriverHelper(default))
             {
                 host.Host();
-                var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+                var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
 
                 // Need to be connected in order to be able to send a disconnect packet.
-                NetworkConnection connectionId = driver.Connect(host.Address);
+                NetworkConnection connectionId = driver.Connect(host.EndPoint);
                 Assert.True(connectionId != default(NetworkConnection));
                 driver.ScheduleUpdate().Complete();
                 var local = driver.LocalEndPoint();
@@ -424,10 +399,10 @@ namespace Unity.Networking.Transport.Tests
                 driver.ScheduleUpdate().Complete();
                 Assert.AreEqual(NetworkEvent.Type.Connect, driver.PopEvent(out con, out slice));
 
-                stream.Clear();
+                var stream = driver.BeginSend(NetworkPipeline.Null, connectionId);
                 var data = Encoding.ASCII.GetBytes("data to send");
-                stream.Write(data);
-                driver.Send(NetworkPipeline.Null, connectionId, stream);
+                stream.WriteBytes(new NativeArray<byte>(data, Allocator.Temp));
+                driver.EndSend(stream);
                 driver.ScheduleUpdate().Complete();
 
                 host.Assert_GotDataRequest(local, data);
@@ -439,13 +414,13 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void HandleEventsFromSpecificEndPoint()
         {
-            using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var client0 = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var client1 = new LocalDriverHelper(default(NetworkEndPoint)))
+            using (var host = new LocalDriverHelper(default))
+            using (var client0 = new LocalDriverHelper(default))
+            using (var client1 = new LocalDriverHelper(default))
             {
                 host.Host();
-                client0.Connect(host.Address);
-                client1.Connect(host.Address);
+                client0.Connect(host.EndPoint);
+                client1.Connect(host.EndPoint);
 
                 host.Assert_PopEventForConnection(client0.Connection, NetworkEvent.Type.Empty);
                 host.Assert_PopEventForConnection(client1.Connection, NetworkEvent.Type.Empty);
@@ -468,13 +443,13 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void HandleEventsFromAnyEndPoint()
         {
-            using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var client0 = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var client1 = new LocalDriverHelper(default(NetworkEndPoint)))
+            using (var host = new LocalDriverHelper(default))
+            using (var client0 = new LocalDriverHelper(default))
+            using (var client1 = new LocalDriverHelper(default))
             {
                 host.Host();
-                client0.Connect(host.Address);
-                client1.Connect(host.Address);
+                client0.Connect(host.EndPoint);
+                client1.Connect(host.EndPoint);
 
                 host.Assert_PopEventForConnection(client0.Connection, NetworkEvent.Type.Empty);
                 host.Assert_PopEventForConnection(client1.Connection, NetworkEvent.Type.Empty);
@@ -505,11 +480,11 @@ namespace Unity.Networking.Transport.Tests
             const int k_PacketCount = 21; // Exactly enough to fill the receive buffer + 1 too much
             const int k_PacketSize = 50;
 
-            using (var host = new LocalNetworkDriver(new NetworkDataStreamParameter {size = k_InternalBufferSize}))
-            using (var client = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}))
-            using (var stream = new DataStreamWriter(64, Allocator.Persistent))
+            using (var host = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = k_InternalBufferSize}))
+            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
             {
-                host.Bind(IPCManager.Instance.CreateEndPoint(Utilities.Random.String(32)));
+                host.Bind(NetworkEndPoint.LoopbackIpv4);
+
                 host.Listen();
 
                 NetworkConnection connectionId = client.Connect(host.LocalEndPoint());
@@ -535,9 +510,9 @@ namespace Unity.Networking.Transport.Tests
 
                 for (int i = 0; i < k_PacketCount; ++i)
                 {
-                    stream.Clear();
-                    stream.Write(dataBlob[i]);
-                    client.Send(NetworkPipeline.Null, connectionId, stream);
+                    var stream = client.BeginSend(NetworkPipeline.Null, connectionId);
+                    stream.WriteBytes(new NativeArray<byte>(dataBlob[i], Allocator.Temp));
+                    client.EndSend(stream);
                 }
 
                 // Process the pending events
@@ -559,10 +534,9 @@ namespace Unity.Networking.Transport.Tests
                     Assert.AreEqual(retval, NetworkEvent.Type.Data);
                     Assert.AreEqual(k_PacketSize, reader.Length);
 
-                    var readerCtx = default(DataStreamReader.Context);
                     for (int j = 0; j < k_PacketSize; ++j)
                     {
-                        Assert.AreEqual(dataBlob[i][j], reader.ReadByte(ref readerCtx));
+                        Assert.AreEqual(dataBlob[i][j], reader.ReadByte());
                     }
                 }
             }
@@ -571,21 +545,17 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void SendAndReceiveMessage_RealNetwork()
         {
-            using (var clientSendData = new DataStreamWriter(64, Allocator.Persistent))
+            using (var serverDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var clientDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
             {
                 DataStreamReader stream;
-                var serverEndpoint = NetworkEndPoint.LoopbackIpv4;
-                serverEndpoint.Port = (ushort)Random.Range(2000, 65000);
 
-                var serverDriver = new UdpNetworkDriver(new NetworkDataStreamParameter {size = 64});
+                var serverEndpoint = NetworkEndPoint.Parse("127.0.0.1", (ushort)Random.Range(2000, 65000));
                 serverDriver.Bind(serverEndpoint);
-
                 serverDriver.Listen();
 
-                var clientDriver = new UdpNetworkDriver(new NetworkDataStreamParameter {size = 64});
-                clientDriver.Bind(NetworkEndPoint.LoopbackIpv4);
-
                 var clientToServerId = clientDriver.Connect(serverEndpoint);
+                clientDriver.ScheduleFlushSend(default).Complete();
 
                 NetworkConnection serverToClientId = default(NetworkConnection);
                 // Retry a few times since the network might need some time to process
@@ -607,99 +577,93 @@ namespace Unity.Networking.Transport.Tests
                 int testInt = 100;
                 float testFloat = 555.5f;
                 byte[] testByteArray = Encoding.ASCII.GetBytes("Some bytes blablabla 1111111111111111111");
-                clientSendData.Write(testInt);
-                clientSendData.Write(testFloat);
-                clientSendData.Write(testByteArray.Length);
-                clientSendData.Write(testByteArray);
-                var sentBytes = clientDriver.Send(NetworkPipeline.Null, clientToServerId, clientSendData);
+                var clientSendData = clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId);
+                clientSendData.WriteInt(testInt);
+                clientSendData.WriteFloat(testFloat);
+                clientSendData.WriteInt(testByteArray.Length);
+                clientSendData.WriteBytes(new NativeArray<byte>(testByteArray, Allocator.Temp));
+                var sentBytes = clientDriver.EndSend(clientSendData);
 
-                // Header size is included in the sent bytes count (4 bytes overhead)
-                Assert.AreEqual(clientSendData.Length + 4, sentBytes);
+                Assert.AreEqual(clientSendData.Length, sentBytes);
 
                 clientDriver.ScheduleUpdate().Complete();
                 serverDriver.ScheduleUpdate().Complete();
 
                 DataStreamReader serverReceiveStream;
                 eventId = serverDriver.PopEventForConnection(serverToClientId, out serverReceiveStream);
-                var readerCtx = default(DataStreamReader.Context);
 
                 Assert.True(eventId == NetworkEvent.Type.Data);
-                var receivedInt = serverReceiveStream.ReadInt(ref readerCtx);
-                var receivedFloat = serverReceiveStream.ReadFloat(ref readerCtx);
-                var byteArrayLength = serverReceiveStream.ReadInt(ref readerCtx);
-                var receivedBytes = serverReceiveStream.ReadBytesAsArray(ref readerCtx, byteArrayLength);
+                var receivedInt = serverReceiveStream.ReadInt();
+                var receivedFloat = serverReceiveStream.ReadFloat();
+                var byteArrayLength = serverReceiveStream.ReadInt();
+                var receivedBytes = new NativeArray<byte>(byteArrayLength, Allocator.Temp);
+                serverReceiveStream.ReadBytes(receivedBytes);
 
                 Assert.True(testInt == receivedInt);
                 Assert.That(Mathf.Approximately(testFloat, receivedFloat));
                 Assert.AreEqual(testByteArray, receivedBytes);
-
-                clientDriver.Dispose();
-                serverDriver.Dispose();
             }
         }
 
         [Test]
         public void SendAndReceiveMessage()
         {
-            using (var clientSendData = new DataStreamWriter(64, Allocator.Persistent))
-            {
-                DataStreamReader stream;
-                var serverEndpoint = IPCManager.Instance.CreateEndPoint("server");
+            DataStreamReader stream;
 
-                var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-                serverDriver.Bind(serverEndpoint);
+            var serverDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
+            var serverEndpoint = NetworkEndPoint.LoopbackIpv4.WithPort(1);
+            serverDriver.Bind(serverEndpoint);
 
-                serverDriver.Listen();
+            serverDriver.Listen();
 
-                var clientDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-                clientDriver.Bind(IPCManager.Instance.CreateEndPoint("client"));
+            var clientDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
+            clientDriver.Bind(NetworkEndPoint.LoopbackIpv4);
 
-                var clientToServerId = clientDriver.Connect(serverEndpoint);
-                clientDriver.ScheduleUpdate().Complete();
+            var clientToServerId = clientDriver.Connect(serverEndpoint);
+            clientDriver.ScheduleUpdate().Complete();
 
-                serverDriver.ScheduleUpdate().Complete();
+            serverDriver.ScheduleUpdate().Complete();
 
-                NetworkConnection serverToClientId = serverDriver.Accept();
-                Assert.That(serverToClientId != default(NetworkConnection));
+            NetworkConnection serverToClientId = serverDriver.Accept();
+            Assert.That(serverToClientId != default(NetworkConnection));
 
-                clientDriver.ScheduleUpdate().Complete();
+            clientDriver.ScheduleUpdate().Complete();
 
-                var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
-                Assert.That(eventId == NetworkEvent.Type.Connect);
+            var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
+            Assert.That(eventId == NetworkEvent.Type.Connect);
 
 
-                int testInt = 100;
-                float testFloat = 555.5f;
-                byte[] testByteArray = Encoding.ASCII.GetBytes("Some bytes blablabla 1111111111111111111");
-                clientSendData.Write(testInt);
-                clientSendData.Write(testFloat);
-                clientSendData.Write(testByteArray.Length);
-                clientSendData.Write(testByteArray);
-                var sentBytes = clientDriver.Send(NetworkPipeline.Null, clientToServerId, clientSendData);
+            int testInt = 100;
+            float testFloat = 555.5f;
+            byte[] testByteArray = Encoding.ASCII.GetBytes("Some bytes blablabla 1111111111111111111");
+            var clientSendData = clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId);
+            clientSendData.WriteInt(testInt);
+            clientSendData.WriteFloat(testFloat);
+            clientSendData.WriteInt(testByteArray.Length);
+            clientSendData.WriteBytes(new NativeArray<byte>(testByteArray, Allocator.Temp));
+            var sentBytes = clientDriver.EndSend(clientSendData);
 
-                // Header size is included in the sent bytes count (4 bytes overhead)
-                Assert.AreEqual(clientSendData.Length + 4, sentBytes);
+            Assert.AreEqual(clientSendData.Length, sentBytes);
 
-                clientDriver.ScheduleUpdate().Complete();
-                serverDriver.ScheduleUpdate().Complete();
+            clientDriver.ScheduleUpdate().Complete();
+            serverDriver.ScheduleUpdate().Complete();
 
-                DataStreamReader serverReceiveStream;
-                eventId = serverDriver.PopEventForConnection(serverToClientId, out serverReceiveStream);
-                var readerCtx = default(DataStreamReader.Context);
+            DataStreamReader serverReceiveStream;
+            eventId = serverDriver.PopEventForConnection(serverToClientId, out serverReceiveStream);
 
-                Assert.True(eventId == NetworkEvent.Type.Data);
-                var receivedInt = serverReceiveStream.ReadInt(ref readerCtx);
-                var receivedFloat = serverReceiveStream.ReadFloat(ref readerCtx);
-                var byteArrayLength = serverReceiveStream.ReadInt(ref readerCtx);
-                var receivedBytes = serverReceiveStream.ReadBytesAsArray(ref readerCtx, byteArrayLength);
+            Assert.True(eventId == NetworkEvent.Type.Data);
+            var receivedInt = serverReceiveStream.ReadInt();
+            var receivedFloat = serverReceiveStream.ReadFloat();
+            var byteArrayLength = serverReceiveStream.ReadInt();
+            var receivedBytes = new NativeArray<byte>(byteArrayLength, Allocator.Temp);
+            serverReceiveStream.ReadBytes(receivedBytes);
 
-                Assert.True(testInt == receivedInt);
-                Assert.That(Mathf.Approximately(testFloat, receivedFloat));
-                Assert.AreEqual(testByteArray, receivedBytes);
+            Assert.True(testInt == receivedInt);
+            Assert.That(Mathf.Approximately(testFloat, receivedFloat));
+            Assert.AreEqual(testByteArray, receivedBytes);
 
-                clientDriver.Dispose();
-                serverDriver.Dispose();
-            }
+            clientDriver.Dispose();
+            serverDriver.Dispose();
         }
     }
 }

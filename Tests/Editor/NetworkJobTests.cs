@@ -1,3 +1,6 @@
+#if UNITY_2020_1_OR_NEWER
+#define UNITY_TRANSPORT_ENABLE_BASELIB
+#endif
 using System;
 using NUnit.Framework;
 using Unity.Burst;
@@ -9,23 +12,11 @@ namespace Unity.Networking.Transport.Tests
 {
     public class NetworkJobTests
     {
-        [SetUp]
-        public void IPC_Setup()
-        {
-            IPCManager.Instance.Initialize(100);
-        }
-
-        [TearDown]
-        public void IPC_TearDown()
-        {
-            IPCManager.Instance.Destroy();
-        }
-
-        void WaitForConnected(LocalNetworkDriver clientDriver, LocalNetworkDriver serverDriver,
+        void WaitForConnected(NetworkDriver clientDriver, NetworkDriver serverDriver,
             NetworkConnection clientToServer)
         {
             // Make sure connect message is sent
-            clientDriver.ScheduleUpdate().Complete();
+            clientDriver.ScheduleFlushSend(default).Complete();
             // Make sure connection accept message is sent back
             serverDriver.ScheduleUpdate().Complete();
             // Handle the connection accept message
@@ -38,7 +29,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void ScheduleUpdateWorks()
         {
-            var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             var updateHandle = driver.ScheduleUpdate();
             updateHandle.Complete();
             driver.Dispose();
@@ -46,47 +37,44 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void ScheduleUpdateWithMissingDependencyThrowsException()
         {
-            var driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             var updateHandle = driver.ScheduleUpdate();
             Assert.Throws<InvalidOperationException>(() => { driver.ScheduleUpdate().Complete(); });
             updateHandle.Complete();
             driver.Dispose();
         }
 
-#if UNITY_2019_3_OR_NEWER
-        [Ignore("Safety check temporarily disabled in 2019.3+")]
-#endif
         [Test]
         public void DataStremReaderIsOnlyUsableUntilUpdate()
         {
-            var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-            serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
-            var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-            strmWriter.Write(42);
-            clientToServer.Send(clientDriver, strmWriter);
+            var strmWriter = clientDriver.BeginSend(clientToServer);
+            strmWriter.WriteInt(42);
+            clientDriver.EndSend(strmWriter);
             clientDriver.ScheduleUpdate().Complete();
             var serverToClient = serverDriver.Accept();
             serverDriver.ScheduleUpdate().Complete();
             DataStreamReader strmReader;
             Assert.AreEqual(NetworkEvent.Type.Data, serverToClient.PopEvent(serverDriver, out strmReader));
-            var ctx = default(DataStreamReader.Context);
-            Assert.AreEqual(42, strmReader.ReadInt(ref ctx));
-            ctx = default(DataStreamReader.Context);
-            Assert.AreEqual(42, strmReader.ReadInt(ref ctx));
+            var ctx = strmReader;
+            Assert.AreEqual(42, strmReader.ReadInt());
+            strmReader = ctx;
+            Assert.AreEqual(42, strmReader.ReadInt());
             serverDriver.ScheduleUpdate().Complete();
-            ctx = default(DataStreamReader.Context);
-            Assert.Throws<InvalidOperationException>(() => { strmReader.ReadInt(ref ctx); });
+            strmReader = ctx;
+            Assert.Throws<InvalidOperationException>(() => { strmReader.ReadInt(); });
             clientDriver.Dispose();
             serverDriver.Dispose();
         }
 
         struct AcceptJob : IJob
         {
-            public LocalNetworkDriver driver;
+            public NetworkDriver driver;
             public NativeArray<NetworkConnection> connections;
             public void Execute()
             {
@@ -97,10 +85,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void AcceptInJobWorks()
         {
-            var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-            serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             /*var clientToServer =*/ clientDriver.Connect(serverDriver.LocalEndPoint());
             clientDriver.ScheduleUpdate().Complete();
 
@@ -116,7 +104,7 @@ namespace Unity.Networking.Transport.Tests
         }
         struct ReceiveJob : IJob
         {
-            public LocalNetworkDriver driver;
+            public NetworkDriver driver;
             public NativeArray<NetworkConnection> connections;
             public NativeArray<int> result;
             public void Execute()
@@ -124,22 +112,21 @@ namespace Unity.Networking.Transport.Tests
                 DataStreamReader strmReader;
                 // Data
                 connections[0].PopEvent(driver, out strmReader);
-                var ctx = default(DataStreamReader.Context);
-                result[0] = strmReader.ReadInt(ref ctx);
+                result[0] = strmReader.ReadInt();
             }
         }
         [Test]
         public void ReceiveInJobWorks()
         {
-            var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-            serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
-            var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-            strmWriter.Write(42);
-            clientToServer.Send(clientDriver, strmWriter);
+            var strmWriter = clientDriver.BeginSend(clientToServer);
+            strmWriter.WriteInt(42);
+            clientDriver.EndSend(strmWriter);
             clientDriver.ScheduleUpdate().Complete();
 
             var serverToClient = new NativeArray<NetworkConnection>(1, Allocator.TempJob);
@@ -158,22 +145,22 @@ namespace Unity.Networking.Transport.Tests
 
         struct SendJob : IJob
         {
-            public LocalNetworkDriver driver;
+            public NetworkDriver driver;
             public NetworkConnection connection;
             public void Execute()
             {
-                var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-                strmWriter.Write(42);
-                connection.Send(driver, strmWriter);
+                var strmWriter = driver.BeginSend(connection);
+                strmWriter.WriteInt(42);
+                driver.EndSend(strmWriter);
             }
         }
         [Test]
         public void SendInJobWorks()
         {
-            var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-            serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
             var sendJob = new SendJob {driver = clientDriver, connection = clientToServer};
@@ -182,14 +169,13 @@ namespace Unity.Networking.Transport.Tests
             serverDriver.ScheduleUpdate().Complete();
             DataStreamReader strmReader;
             Assert.AreEqual(NetworkEvent.Type.Data, serverToClient.PopEvent(serverDriver, out strmReader));
-            var ctx = default(DataStreamReader.Context);
-            Assert.AreEqual(42, strmReader.ReadInt(ref ctx));
+            Assert.AreEqual(42, strmReader.ReadInt());
             clientDriver.Dispose();
             serverDriver.Dispose();
         }
         struct SendReceiveParallelJob : IJobParallelFor
         {
-            public LocalNetworkDriver.Concurrent driver;
+            public NetworkDriver.Concurrent driver;
             public NativeArray<NetworkConnection> connections;
             public void Execute(int i)
             {
@@ -197,36 +183,37 @@ namespace Unity.Networking.Transport.Tests
                 // Data
                 if (driver.PopEventForConnection(connections[i], out strmReader) != NetworkEvent.Type.Data)
                     throw new InvalidOperationException("Expected data: " + i);
-                var ctx = default(DataStreamReader.Context);
-                int result = strmReader.ReadInt(ref ctx);
-                var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-                strmWriter.Write(result + 1);
-                driver.Send(NetworkPipeline.Null, connections[i], strmWriter);
+                int result = strmReader.ReadInt();
+                var strmWriter = driver.BeginSend(connections[i]);
+                strmWriter.WriteInt(result + 1);
+                driver.EndSend(strmWriter);
             }
         }
         [Test]
         public void SendReceiveInParallelJobWorks()
         {
             NativeArray<NetworkConnection> serverToClient;
-            using (var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}))
-            using (var clientDriver0 = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}))
-            using (var clientDriver1 = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}))
+            using (var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var clientDriver0 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var clientDriver1 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
             using (serverToClient = new NativeArray<NetworkConnection>(2, Allocator.Persistent))
             {
-                serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+                serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
                 serverDriver.Listen();
-                var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-                strmWriter.Write(42);
                 var clientToServer0 = clientDriver0.Connect(serverDriver.LocalEndPoint());
                 var clientToServer1 = clientDriver1.Connect(serverDriver.LocalEndPoint());
                 WaitForConnected(clientDriver0, serverDriver, clientToServer0);
+                var strmWriter = clientDriver0.BeginSend(clientToServer0);
+                strmWriter.WriteInt(42);
                 serverToClient[0] = serverDriver.Accept();
                 Assert.IsTrue(serverToClient[0].IsCreated);
                 WaitForConnected(clientDriver1, serverDriver, clientToServer1);
                 serverToClient[1] = serverDriver.Accept();
                 Assert.IsTrue(serverToClient[1].IsCreated);
-                clientToServer0.Send(clientDriver0, strmWriter);
-                clientToServer1.Send(clientDriver1, strmWriter);
+                clientDriver0.EndSend(strmWriter);
+                var strmWriter2 = clientDriver1.BeginSend(clientToServer1);
+                strmWriter2.WriteBytes(strmWriter.AsNativeArray());
+                clientDriver1.EndSend(strmWriter2);
                 clientDriver0.ScheduleUpdate().Complete();
                 clientDriver1.ScheduleUpdate().Complete();
 
@@ -242,7 +229,7 @@ namespace Unity.Networking.Transport.Tests
         [BurstCompile/*(CompileSynchronously = true)*/] // FIXME: sync compilation makes tests timeout
         struct SendReceiveWithPipelineParallelJob : IJobParallelFor
         {
-            public LocalNetworkDriver.Concurrent driver;
+            public NetworkDriver.Concurrent driver;
             public NativeArray<NetworkConnection> connections;
             public NetworkPipeline pipeline;
             public void Execute(int i)
@@ -251,11 +238,10 @@ namespace Unity.Networking.Transport.Tests
                 // Data
                 if (driver.PopEventForConnection(connections[i], out strmReader) != NetworkEvent.Type.Data)
                     throw new InvalidOperationException("Expected data: " + i);
-                var ctx = default(DataStreamReader.Context);
-                int result = strmReader.ReadInt(ref ctx);
-                var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-                strmWriter.Write(result + 1);
-                driver.Send(pipeline, connections[i], strmWriter);
+                int result = strmReader.ReadInt();
+                var strmWriter = driver.BeginSend(connections[i]);
+                strmWriter.WriteInt(result + 1);
+                driver.EndSend(strmWriter);
             }
         }
         [Test]
@@ -269,18 +255,16 @@ namespace Unity.Networking.Transport.Tests
                 maxFrameTimeMS = 16
             };
             NativeArray<NetworkConnection> serverToClient;
-            using (var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}, timeoutParam))
-            using (var clientDriver0 = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}, timeoutParam))
-            using (var clientDriver1 = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}, timeoutParam))
+            using (var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam))
+            using (var clientDriver0 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam))
+            using (var clientDriver1 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam))
             using (serverToClient = new NativeArray<NetworkConnection>(2, Allocator.Persistent))
             {
                 var serverPipeline = serverDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-                serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+                serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
                 serverDriver.Listen();
                 var client0Pipeline = clientDriver0.CreatePipeline(typeof(ReliableSequencedPipelineStage));
                 var client1Pipeline = clientDriver1.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-                var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-                strmWriter.Write(42);
                 var clientToServer0 = clientDriver0.Connect(serverDriver.LocalEndPoint());
                 var clientToServer1 = clientDriver1.Connect(serverDriver.LocalEndPoint());
                 WaitForConnected(clientDriver0, serverDriver, clientToServer0);
@@ -289,8 +273,12 @@ namespace Unity.Networking.Transport.Tests
                 WaitForConnected(clientDriver1, serverDriver, clientToServer1);
                 serverToClient[1] = serverDriver.Accept();
                 Assert.IsTrue(serverToClient[1].IsCreated);
-                clientToServer0.Send(clientDriver0, client0Pipeline, strmWriter);
-                clientToServer1.Send(clientDriver1, client1Pipeline, strmWriter);
+                var strmWriter0 = clientDriver0.BeginSend(clientToServer0);
+                var strmWriter1 = clientDriver1.BeginSend(clientToServer1);
+                strmWriter0.WriteInt(42);
+                strmWriter1.WriteInt(42);
+                clientDriver0.EndSend(strmWriter0);
+                clientDriver1.EndSend(strmWriter1);
                 clientDriver0.ScheduleUpdate().Complete();
                 clientDriver1.ScheduleUpdate().Complete();
 
@@ -316,24 +304,26 @@ namespace Unity.Networking.Transport.Tests
                 maxFrameTimeMS = 16
             };
             NativeArray<NetworkConnection> serverToClient;
-            var clientDrivers = new List<LocalNetworkDriver>();
+            var clientDrivers = new List<NetworkDriver>();
             var clientPipelines = new List<NetworkPipeline>();
             var clientToServer = new List<NetworkConnection>();
             try
             {
                 for (int i = 0; i < 250; ++i)
                 {
-                    clientDrivers.Add(new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64}, timeoutParam));
+                    clientDrivers.Add(TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam));
                     clientPipelines.Add(clientDrivers[i].CreatePipeline(typeof(ReliableSequencedPipelineStage)));
                 }
-                using (var serverDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 17*clientDrivers.Count}, timeoutParam))
+#if UNITY_TRANSPORT_ENABLE_BASELIB
+                using (var serverDriver = TestNetworkDriver.Create(new BaselibNetworkParameter {maximumPayloadSize = 64, receiveQueueCapacity = clientDrivers.Count, sendQueueCapacity = clientDrivers.Count }, timeoutParam))
+#else
+                using (var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 17*clientDrivers.Count}, timeoutParam))
+#endif
                 using (serverToClient = new NativeArray<NetworkConnection>(clientDrivers.Count, Allocator.Persistent))
                 {
                     var serverPipeline = serverDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-                    serverDriver.Bind(IPCManager.Instance.CreateEndPoint());
+                    serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
                     serverDriver.Listen();
-                    var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-                    strmWriter.Write(42);
                     for (var i = 0; i < clientDrivers.Count; ++i)
                     {
                         var drv = clientDrivers[i];
@@ -345,8 +335,10 @@ namespace Unity.Networking.Transport.Tests
                     }
                     for (var i = 0; i < clientDrivers.Count; ++i)
                     {
-                        clientToServer[i].Send(clientDrivers[i], clientPipelines[i], strmWriter);
-                        clientDrivers[i].ScheduleUpdate().Complete();
+                        var strmWriter = clientDrivers[i].BeginSend(clientPipelines[i], clientToServer[i]);
+                        strmWriter.WriteInt(42);
+                        clientDrivers[i].EndSend(strmWriter);
+                        clientDrivers[i].ScheduleFlushSend(default).Complete();
                     }
 
                     var sendRecvJob = new SendReceiveWithPipelineParallelJob
@@ -365,7 +357,7 @@ namespace Unity.Networking.Transport.Tests
                     drv.Dispose();
             }
         }
-        void AssertDataReceived(LocalNetworkDriver serverDriver, NativeArray<NetworkConnection> serverConnections, LocalNetworkDriver clientDriver, NetworkConnection clientToServerConnection, int assertValue, bool serverResend)
+        void AssertDataReceived(NetworkDriver serverDriver, NativeArray<NetworkConnection> serverConnections, NetworkDriver clientDriver, NetworkConnection clientToServerConnection, int assertValue, bool serverResend)
         {
             DataStreamReader strmReader;
             clientDriver.ScheduleUpdate().Complete();
@@ -381,15 +373,16 @@ namespace Unity.Networking.Transport.Tests
                     if (!serverResend)
                         break;
                     counter = 0;
-                    var strmWriter = new DataStreamWriter(4, Allocator.Temp);
-                    strmWriter.Write(assertValue);
                     for (int i = 0; i < serverConnections.Length; ++i)
-                        serverDriver.Send(NetworkPipeline.Null, serverConnections[i], strmWriter);
+                    {
+                        var strmWriter = serverDriver.BeginSend(serverConnections[i]);
+                        strmWriter.WriteInt(assertValue);
+                        serverDriver.EndSend(strmWriter);
+                    }
                 }
             }
             Assert.AreEqual(NetworkEvent.Type.Data, evnt);
-            var ctx = default(DataStreamReader.Context);
-            Assert.AreEqual(assertValue, strmReader.ReadInt(ref ctx));
+            Assert.AreEqual(assertValue, strmReader.ReadInt());
         }
     }
 }

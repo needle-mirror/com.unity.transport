@@ -4,16 +4,14 @@ namespace Unity.Networking.Transport.Tests
 {
     public class NetworkHostUnitTests
     {
-        private LocalNetworkDriver Driver;
-        private LocalNetworkDriver RemoteDriver;
+        private NetworkDriver Driver;
+        private NetworkDriver RemoteDriver;
 
         [SetUp]
         public void IPC_Setup()
         {
-            IPCManager.Instance.Initialize(100);
-
-            Driver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
-            RemoteDriver = new LocalNetworkDriver(new NetworkDataStreamParameter {size = 64});
+            Driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            RemoteDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
         }
 
         [TearDown]
@@ -21,13 +19,12 @@ namespace Unity.Networking.Transport.Tests
         {
             Driver.Dispose();
             RemoteDriver.Dispose();
-            IPCManager.Instance.Destroy();
         }
 
         [Test]
         public void Listen()
         {
-            Driver.Bind(IPCManager.Instance.CreateEndPoint("network_host"));
+            Driver.Bind(NetworkEndPoint.LoopbackIpv4);
             Driver.Listen();
             Assert.That(Driver.Listening);
         }
@@ -35,7 +32,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void Accept()
         {
-            Driver.Bind(IPCManager.Instance.CreateEndPoint("network_host"));
+            Driver.Bind(NetworkEndPoint.LoopbackIpv4);
             Driver.Listen();
             Assert.That(Driver.Listening);
 

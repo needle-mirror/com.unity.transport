@@ -7,66 +7,62 @@ using Unity.Networking.Transport;
 
 struct ClientUpdateJob : IJob
 {
-	public UdpNetworkDriver driver;
-	public NativeArray<NetworkConnection> connection;
-	public NativeArray<byte> done;
+    public NetworkDriver driver;
+    public NativeArray<NetworkConnection> connection;
+    public NativeArray<byte> done;
 
-	public void Execute()
-	{
-		if (!connection[0].IsCreated)
-		{
-			if (done[0] != 1)
-				Debug.Log("Something went wrong during connect");
-			return;
-		}
+    public void Execute()
+    {
+        if (!connection[0].IsCreated)
+        {
+            if (done[0] != 1)
+                Debug.Log("Something went wrong during connect");
+            return;
+        }
 
-		DataStreamReader stream;
-		NetworkEvent.Type cmd;
+        DataStreamReader stream;
+        NetworkEvent.Type cmd;
 
-		while ((cmd = connection[0].PopEvent(driver, out stream)) !=
-			   NetworkEvent.Type.Empty)
-		{
-			if (cmd == NetworkEvent.Type.Connect)
-			{
-				Debug.Log("We are now connected to the server");
+        while ((cmd = connection[0].PopEvent(driver, out stream)) != NetworkEvent.Type.Empty)
+        {
+            if (cmd == NetworkEvent.Type.Connect)
+            {
+                Debug.Log("We are now connected to the server");
 
-				var value = 1;
-				using (var writer = new DataStreamWriter(4, Allocator.Temp))
-				{
-					writer.Write(value);
-					connection[0].Send(driver, writer);
-				}
-			}
-			else if (cmd == NetworkEvent.Type.Data)
-			{
-				var readerCtx = default(DataStreamReader.Context);
-				uint value = stream.ReadUInt(ref readerCtx);
-				Debug.Log("Got the value = " + value + " back from the server");
-				// And finally change the `done[0]` to `1`
-				done[0] = 1;
-				connection[0].Disconnect(driver);
-				connection[0] = default(NetworkConnection);
-			}
-			else if (cmd == NetworkEvent.Type.Disconnect)
-			{
-				Debug.Log("Client got disconnected from server");
-				connection[0] = default(NetworkConnection);
-			}
-		}
-	}
+                uint value = 1;
+                var writer = driver.BeginSend(connection[0]);
+                writer.WriteUInt(value);
+                driver.EndSend(writer);
+            }
+            else if (cmd == NetworkEvent.Type.Data)
+            {
+                uint value = stream.ReadUInt();
+                Debug.Log("Got the value = " + value + " back from the server");
+                // And finally change the `done[0]` to `1`
+                done[0] = 1;
+                connection[0].Disconnect(driver);
+                connection[0] = default(NetworkConnection);
+            }
+            else if (cmd == NetworkEvent.Type.Disconnect)
+            {
+                Debug.Log("Client got disconnected from server");
+                connection[0] = default(NetworkConnection);
+            }
+        }
+    }
 }
 
 public class JobifiedClientBehaviour : MonoBehaviour
 {
-    public UdpNetworkDriver m_Driver;
+    public NetworkDriver m_Driver;
     public NativeArray<NetworkConnection> m_Connection;
     public NativeArray<byte> m_Done;
 
     public JobHandle ClientJobHandle;
 
     void Start ()
-	{
-        m_Driver = new UdpNetworkDriver(new INetworkParameter[0]);
+    {
+        m_Driver = NetworkDriver.Create();
 
         m_Connection = new NativeArray<NetworkConnection>(1, Allocator.Persistent);
         m_Done = new NativeArray<byte>(1, Allocator.Persistent);

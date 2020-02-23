@@ -1,4 +1,3 @@
-using System;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -6,55 +5,66 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
-    public struct UnreliableSequencedPipelineStage : INetworkPipelineStage
+    [BurstCompile]
+    public unsafe struct UnreliableSequencedPipelineStage : INetworkPipelineStage
     {
-        public NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            needsResume = false;
-            var reader = new DataStreamReader(inboundBuffer);
-            var context = default(DataStreamReader.Context);
-            unsafe
-            {
-                var oldSequenceId = (int*) ctx.internalProcessBuffer.GetUnsafePtr();
-                ushort sequenceId = reader.ReadUShort(ref context);
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: UnsafeUtility.SizeOf<int>(),
+                SendCapacity: UnsafeUtility.SizeOf<int>(),
+                HeaderCapacity: UnsafeUtility.SizeOf<ushort>(),
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 0;
 
-                if (SequenceHelpers.GreaterThan16(sequenceId, (ushort)*oldSequenceId))
-                {
-                    *oldSequenceId = sequenceId;
-                    // Skip over the part of the buffer which contains the header
-                    return inboundBuffer.Slice(sizeof(ushort));
-                }
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        {
+            var inboundArray = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(inboundBuffer.buffer, inboundBuffer.bufferLength, Allocator.Invalid);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            var safetyHandle = AtomicSafetyHandle.GetTempMemoryHandle();
+            NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref inboundArray, safetyHandle);
+#endif
+            var reader = new DataStreamReader(inboundArray);
+            var oldSequenceId = (int*) ctx.internalProcessBuffer;
+            ushort sequenceId = reader.ReadUShort();
+
+            if (SequenceHelpers.GreaterThan16(sequenceId, (ushort)*oldSequenceId))
+            {
+                *oldSequenceId = sequenceId;
+                // Skip over the part of the buffer which contains the header
+                inboundBuffer = inboundBuffer.Slice(sizeof(ushort));
+                return;
             }
-            return default(NativeSlice<byte>);
+            inboundBuffer = default;
         }
 
-        public InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
-            needsResume = false;
-            unsafe
-            {
-                var sequenceId = (int*) ctx.internalProcessBuffer.GetUnsafePtr();
-                ctx.header.Write((ushort)*sequenceId);
-                *sequenceId = (ushort)(*sequenceId + 1);
-            }
-            return inboundBuffer;
+            var sequenceId = (int*) ctx.internalProcessBuffer;
+            ctx.header.WriteUShort((ushort)*sequenceId);
+            *sequenceId = (ushort)(*sequenceId + 1);
         }
 
-        public void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
-            unsafe
+            if (recvProcessBufferLength > 0)
             {
-                if (recvProcessBuffer.Length > 0)
-                {
-                    // The receive processing buffer contains the current sequence ID, initialize it to -1 as it will be incremented when used.
-                    *(int*) recvProcessBuffer.GetUnsafePtr() = -1;
-                }
+                // The receive processing buffer contains the current sequence ID, initialize it to -1 as it will be incremented when used.
+                *(int*) recvProcessBuffer = -1;
             }
         }
-
-        public int ReceiveCapacity => sizeof(int);
-        public int SendCapacity => sizeof(int);
-        public int HeaderCapacity => sizeof(ushort);
-        public int SharedStateCapacity { get; }
     }
 }

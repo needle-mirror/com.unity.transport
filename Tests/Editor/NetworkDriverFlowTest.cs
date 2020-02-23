@@ -24,13 +24,13 @@ namespace Unity.Networking.Transport.Tests
 
         public class UnreliableServer : IDisposable
         {
-            private LocalNetworkDriver m_Driver;
+            private NetworkDriver m_Driver;
 
             //private List<NetworkConnection> m_Connections;
 
             public UnreliableServer()
             {
-                m_Driver = new LocalNetworkDriver(new NetworkDataStreamParameter
+                m_Driver = TestNetworkDriver.Create(new NetworkDataStreamParameter
                     {size = NetworkParameterConstants.MTU});
             }
 

@@ -3,59 +3,71 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.LowLevel.Unsafe;
 using Unity.Networking.Transport.Protocols;
 
 namespace Unity.Networking.Transport
 {
-    public struct IPCSocket : INetworkInterface
+    [BurstCompile]
+    public struct IPCNetworkInterface : INetworkInterface
     {
-        [NativeDisableContainerSafetyRestriction] private NativeQueue<IPCManager.IPCQueuedMessage> m_IPCQueue;
-        private NativeQueue<IPCManager.IPCQueuedMessage>.ParallelWriter m_IPCQueueParallel;
-        [ReadOnly] private NativeArray<NetworkEndPoint> m_LocalEndPoint;
+        [ReadOnly] private NativeArray<NetworkInterfaceEndPoint> m_LocalEndPoint;
 
-        public NetworkEndPoint LocalEndPoint => m_LocalEndPoint[0];
-        public NetworkEndPoint RemoteEndPoint { get; }
+        public NetworkInterfaceEndPoint LocalEndPoint => m_LocalEndPoint[0];
 
-        public NetworkFamily Family { get; }
-
-        public void Initialize()
+        public NetworkInterfaceEndPoint CreateInterfaceEndPoint(NetworkEndPoint endPoint)
         {
-            m_LocalEndPoint = new NativeArray<NetworkEndPoint>(1, Allocator.Persistent);
-            m_LocalEndPoint[0] = IPCManager.Instance.CreateEndPoint();
-            m_IPCQueue = new NativeQueue<IPCManager.IPCQueuedMessage>(Allocator.Persistent);
-            m_IPCQueueParallel = m_IPCQueue.AsParallelWriter();
+            if (!endPoint.IsLoopback && !endPoint.IsAny)
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new ArgumentException("IPC network driver can only handle loopback addresses");
+#else
+                return default;
+#endif
+            var endpoint = IPCManager.Instance.CreateEndPoint(endPoint.Port);
+            return endpoint;
+        }
+
+        public NetworkEndPoint GetGenericEndPoint(NetworkInterfaceEndPoint endpoint)
+        {
+            if (!IPCManager.Instance.GetEndPointPort(endpoint, out var port))
+                return default;
+            return NetworkEndPoint.LoopbackIpv4.WithPort(port);
+        }
+
+        public void Initialize(params INetworkParameter[] param)
+        {
+            IPCManager.Instance.AddRef();
+            m_LocalEndPoint = new NativeArray<NetworkInterfaceEndPoint>(1, Allocator.Persistent);
+            m_LocalEndPoint[0] = CreateInterfaceEndPoint(NetworkEndPoint.LoopbackIpv4);
         }
 
         public void Dispose()
         {
-            IPCManager.Instance.ReleaseEndPoint(m_LocalEndPoint[0]);
             m_LocalEndPoint.Dispose();
-            m_IPCQueue.Dispose();
+            IPCManager.Instance.Release();
         }
 
         [BurstCompile]
         struct SendUpdate : IJob
         {
             public IPCManager ipcManager;
-            public NativeQueue<IPCManager.IPCQueuedMessage> ipcQueue;
+            public NativeQueue<QueuedSendMessage> ipcQueue;
+            [ReadOnly] public NativeArray<NetworkInterfaceEndPoint> localEndPoint;
 
             public void Execute()
             {
-                ipcManager.Update(ipcQueue);
+                ipcManager.Update(localEndPoint[0], ipcQueue);
             }
         }
 
         [BurstCompile]
-        struct ReceiveJob<T> : IJob where T : struct, INetworkPacketReceiver
+        struct ReceiveJob : IJob
         {
-            public T receiver;
+            public NetworkPacketReceiver receiver;
             public IPCManager ipcManager;
-            public NetworkEndPoint localEndPoint;
+            public NetworkInterfaceEndPoint localEndPoint;
 
             public unsafe void Execute()
             {
-                var address = new NetworkEndPoint {length = sizeof(NetworkEndPoint)};
                 var header = new UdpCHeader();
                 var stream = receiver.GetDataStream();
                 receiver.ReceiveCount = 0;
@@ -63,16 +75,17 @@ namespace Unity.Networking.Transport
 
                 while (true)
                 {
+                    int dataStreamSize = receiver.GetDataStreamSize();
                     if (receiver.DynamicDataStreamSize())
                     {
-                        while (stream.Length+NetworkParameterConstants.MTU >= stream.Capacity)
-                            stream.Capacity *= 2;
+                        while (dataStreamSize+NetworkParameterConstants.MTU-UdpCHeader.Length >= stream.Length)
+                            stream.ResizeUninitialized(stream.Length*2);
                     }
-                    else if (stream.Length >= stream.Capacity)
+                    else if (dataStreamSize >= stream.Length)
                         return;
-                    var sliceOffset = stream.Length;
-                    var result = NativeReceive(ref header, stream.GetUnsafePtr() + sliceOffset,
-                        Math.Min(NetworkParameterConstants.MTU, stream.Capacity - stream.Length), ref address);
+                    var endpoint = default(NetworkInterfaceEndPoint);
+                    var result = NativeReceive(ref header, (byte*)stream.GetUnsafePtr() + dataStreamSize,
+                        Math.Min(NetworkParameterConstants.MTU-UdpCHeader.Length, stream.Length - dataStreamSize), ref endpoint);
                     if (result <= 0)
                     {
                         // FIXME: handle error
@@ -81,11 +94,11 @@ namespace Unity.Networking.Transport
                         return;
                     }
 
-                    receiver.ReceiveCount += receiver.AppendPacket(address, header, result);
+                    receiver.ReceiveCount += receiver.AppendPacket(endpoint, header, result);
                 }
             }
 
-            unsafe int NativeReceive(ref UdpCHeader header, void* data, int length, ref NetworkEndPoint address)
+            unsafe int NativeReceive(ref UdpCHeader header, void* data, int length, ref NetworkInterfaceEndPoint address)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (length <= 0)
@@ -102,43 +115,73 @@ namespace Unity.Networking.Transport
                     iov[1].len = length;
                 }
 
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (localEndPoint.Family != NetworkFamily.IPC || localEndPoint.nbo_port == 0)
-                    throw new InvalidOperationException();
-#endif
                 return ipcManager.ReceiveMessageEx(localEndPoint, iov, 2, ref address);
             }
         }
 
-        public JobHandle ScheduleReceive<T>(T receiver, JobHandle dep) where T : struct, INetworkPacketReceiver
+        public JobHandle ScheduleReceive(NetworkPacketReceiver receiver, JobHandle dep)
         {
-            var sendJob = new SendUpdate {ipcManager = IPCManager.Instance, ipcQueue = m_IPCQueue};
-            var job = new ReceiveJob<T>
-                {receiver = receiver, ipcManager = IPCManager.Instance, localEndPoint = m_LocalEndPoint[0]};
+            var job = new ReceiveJob
+                {receiver = receiver, ipcManager = IPCManager.Instance, localEndPoint = LocalEndPoint};
             dep = job.Schedule(JobHandle.CombineDependencies(dep, IPCManager.ManagerAccessHandle));
-            dep = sendJob.Schedule(dep);
+            IPCManager.ManagerAccessHandle = dep;
+            return dep;
+        }
+        public JobHandle ScheduleSend(NativeQueue<QueuedSendMessage> sendQueue, JobHandle dep)
+        {
+            var sendJob = new SendUpdate {ipcManager = IPCManager.Instance, ipcQueue = sendQueue, localEndPoint = m_LocalEndPoint};
+            dep = sendJob.Schedule(JobHandle.CombineDependencies(dep, IPCManager.ManagerAccessHandle));
             IPCManager.ManagerAccessHandle = dep;
             return dep;
         }
 
-        public int Bind(NetworkEndPoint endpoint)
+        public unsafe int Bind(NetworkInterfaceEndPoint endpoint)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (endpoint.Family != NetworkFamily.IPC || endpoint.nbo_port == 0)
+            if (endpoint.dataLength != 4 || *(int*)endpoint.data == 0)
                 throw new InvalidOperationException();
 #endif
-            IPCManager.Instance.ReleaseEndPoint(m_LocalEndPoint[0]);
             m_LocalEndPoint[0] = endpoint;
             return 0;
         }
 
-        public unsafe int SendMessage(network_iovec* iov, int iov_len, ref NetworkEndPoint address)
+        static TransportFunctionPointer<NetworkSendInterface.BeginSendMessageDelegate> BeginSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.BeginSendMessageDelegate>(BeginSendMessage);
+        static TransportFunctionPointer<NetworkSendInterface.EndSendMessageDelegate> EndSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.EndSendMessageDelegate>(EndSendMessage);
+        static TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate> AbortSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate>(AbortSendMessage);
+        public NetworkSendInterface CreateSendInterface()
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (m_LocalEndPoint[0].Family != NetworkFamily.IPC || m_LocalEndPoint[0].nbo_port == 0)
-                throw new InvalidOperationException();
-#endif
-            return IPCManager.SendMessageEx(m_IPCQueueParallel, m_LocalEndPoint[0], iov, iov_len, ref address);
+            return new NetworkSendInterface
+            {
+                BeginSendMessage = BeginSendMessageFunctionPointer,
+                EndSendMessage = EndSendMessageFunctionPointer,
+                AbortSendMessage = AbortSendMessageFunctionPointer,
+            };
+        }
+
+        [BurstCompile]
+        private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData)
+        {
+            handle.id = 0;
+            handle.size = 0;
+            handle.capacity = NetworkParameterConstants.MTU;
+            handle.data = (IntPtr)UnsafeUtility.Malloc(handle.capacity, 8, Allocator.Temp);
+            return 0;
+        }
+
+        [BurstCompile]
+        private static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueueHandle)
+        {
+            var sendQueue = sendQueueHandle.FromHandle();
+            var msg = default(QueuedSendMessage);
+            msg.Dest = address;
+            msg.DataLength = handle.size;
+            UnsafeUtility.MemCpy(msg.Data, (void*)handle.data, handle.size);
+            sendQueue.Enqueue(msg);
+            return handle.size;
+        }
+        [BurstCompile]
+        private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
+        {
         }
     }
 }

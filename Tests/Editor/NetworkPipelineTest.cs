@@ -1,551 +1,439 @@
 using System;
-using System.Diagnostics;
 using NUnit.Framework;
-using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Utilities;
+using Unity.Burst;
 
 namespace Unity.Networking.Transport.Tests
 {
-    public struct TestPipelineStageWithHeader : INetworkPipelineStage
+    [BurstCompile]
+    public unsafe struct TestPipelineStageWithHeader : INetworkPipelineStage
     {
-        public NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            unsafe
-            {
-                var headerData = (int*)inboundBuffer.GetUnsafeReadOnlyPtr();
-                if (*headerData != 1)
-                    throw new InvalidOperationException("Header data invalid, got " + *headerData);
-            }
-            return new NativeSlice<byte>(inboundBuffer, 4, inboundBuffer.Length - 4);
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 0,
+                SendCapacity: 0,
+                HeaderCapacity: 4,
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 0;
+
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            var headerData = (int*)inboundBuffer.buffer;
+            if (*headerData != 1)
+                throw new InvalidOperationException("Header data invalid, got " + *headerData);
+            inboundBuffer = inboundBuffer.Slice(4);
         }
 
-        public InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            ctx.header.Write((int) 1);
-            return inboundBuffer;
+            ctx.header.WriteInt((int) 1);
         }
 
-        public void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
         }
-
-        public int ReceiveCapacity => 0;
-        public int SendCapacity => 0;
-        public int HeaderCapacity => 4;
-        public int SharedStateCapacity { get; }
     }
 
-    public struct TestPipelineStageWithHeaderTwo : INetworkPipelineStage
+    [BurstCompile]
+    public unsafe struct TestPipelineStageWithHeaderTwo : INetworkPipelineStage
     {
-        public unsafe NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            var headerData = (int*)inboundBuffer.GetUnsafeReadOnlyPtr();
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 0,
+                SendCapacity: 0,
+                HeaderCapacity: 4,
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 0;
+
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            var headerData = (int*)inboundBuffer.buffer;
             if (*headerData != 2)
                 throw new InvalidOperationException("Header data invalid, got " + *headerData);
 
-            return new NativeSlice<byte>(inboundBuffer, 4, inboundBuffer.Length - 4);
+            inboundBuffer = inboundBuffer.Slice(4);
         }
 
-        public InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            ctx.header.Write((int) 2);
-            return inboundBuffer;
+            ctx.header.WriteInt((int) 2);
         }
 
-        public void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
         }
-
-        public int ReceiveCapacity => 0;
-        public int SendCapacity => 0;
-        public int HeaderCapacity => 4;
-        public int SharedStateCapacity { get; }
     }
 
-    public struct TestEncryptPipelineStage : INetworkPipelineStage
+    [BurstCompile]
+    public unsafe struct TestEncryptPipelineStage : INetworkPipelineStage
     {
         private const int k_MaxPacketSize = 64;
-
-        public NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            for (int i = 0; i < inboundBuffer.Length; ++i)
-                ctx.internalProcessBuffer[i] = (byte)(inboundBuffer[i] ^ 0xff);
-            return new NativeSlice<byte>(ctx.internalProcessBuffer, 0, inboundBuffer.Length);
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: k_MaxPacketSize,
+                SendCapacity: k_MaxPacketSize,
+                HeaderCapacity: 0,
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 0;
+
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            for (int i = 0; i < inboundBuffer.bufferLength; ++i)
+                ctx.internalProcessBuffer[i] = (byte)(inboundBuffer.buffer[i] ^ 0xff);
+            inboundBuffer.buffer = ctx.internalProcessBuffer;
         }
 
-        public InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            var len1 = inboundBuffer.buffer1.Length;
-            var len2 = inboundBuffer.buffer2.Length;
-            for (int i = 0; i < len1; ++i)
-                ctx.internalProcessBuffer[i] = (byte)(inboundBuffer.buffer1[i] ^ 0xff);
-            for (int i = 0; i < len2; ++i)
-                ctx.internalProcessBuffer[len1+i] = (byte)(inboundBuffer.buffer2[i] ^ 0xff);
-            var nextInbound = default(InboundBufferVec);
-            nextInbound.buffer1 =  new NativeSlice<byte>(ctx.internalProcessBuffer, 0, len1+len2);
-            return nextInbound;
+            var len = inboundBuffer.bufferLength;
+            for (int i = 0; i < len; ++i)
+                ctx.internalProcessBuffer[inboundBuffer.headerPadding + i] = (byte)(inboundBuffer.buffer[i] ^ 0xff);
+            var nextInbound = default(InboundSendBuffer);
+            nextInbound.bufferWithHeaders =  ctx.internalProcessBuffer;
+            nextInbound.bufferWithHeadersLength = len + inboundBuffer.headerPadding;
+            nextInbound.SetBufferFrombufferWithHeaders();
+            inboundBuffer = nextInbound;
         }
 
-        public void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
         }
-
-        public int ReceiveCapacity => k_MaxPacketSize;
-        public int SendCapacity => k_MaxPacketSize;
-        public int HeaderCapacity => 0;
-        public int SharedStateCapacity { get; }
     }
-    public struct TestEncryptInPlacePipelineStage : INetworkPipelineStage
+    [BurstCompile]
+    public unsafe struct TestEncryptInPlacePipelineStage : INetworkPipelineStage
     {
-        public NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            for (int i = 0; i < inboundBuffer.Length; ++i)
-                inboundBuffer[i] = (byte)(inboundBuffer[i] ^ 0xff);
-            return inboundBuffer;
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 0,
+                SendCapacity: NetworkParameterConstants.MTU,
+                HeaderCapacity: 0,
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 0;
+
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            for (int i = 0; i < inboundBuffer.bufferLength; ++i)
+                inboundBuffer.buffer[i] = (byte)(inboundBuffer.buffer[i] ^ 0xff);
         }
 
-        public InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            var len1 = inboundBuffer.buffer1.Length;
-            var len2 = inboundBuffer.buffer2.Length;
-            for (int i = 0; i < len1; ++i)
-                ctx.internalProcessBuffer[i] = (byte)(inboundBuffer.buffer1[i] ^ 0xff);
-            for (int i = 0; i < len2; ++i)
-                ctx.internalProcessBuffer[len1+i] = (byte)(inboundBuffer.buffer2[i] ^ 0xff);
-            var nextInbound = default(InboundBufferVec);
-            nextInbound.buffer1 =  new NativeSlice<byte>(ctx.internalProcessBuffer, 0, len1+len2);
-            return nextInbound;
+            var len = inboundBuffer.bufferLength;
+            for (int i = 0; i < len; ++i)
+                ctx.internalProcessBuffer[inboundBuffer.headerPadding + i] = (byte)(inboundBuffer.buffer[i] ^ 0xff);
+            var nextInbound = default(InboundSendBuffer);
+            nextInbound.bufferWithHeaders =  ctx.internalProcessBuffer;
+            nextInbound.bufferWithHeadersLength = len + inboundBuffer.headerPadding;
+            nextInbound.SetBufferFrombufferWithHeaders();
+            inboundBuffer = nextInbound;
         }
 
-        public void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
         }
-
-        public int ReceiveCapacity => 0;
-        public int SendCapacity => NetworkParameterConstants.MTU;
-        public int HeaderCapacity => 0;
-        public int SharedStateCapacity { get; }
     }
-    public struct TestInvertPipelineStage : INetworkPipelineStage
+    [BurstCompile]
+    public unsafe struct TestInvertPipelineStage : INetworkPipelineStage
     {
-        public NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            return inboundBuffer;
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 0,
+                SendCapacity: NetworkParameterConstants.MTU,
+                HeaderCapacity: 0,
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 0;
+
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
         }
 
-        public unsafe InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static unsafe void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            var len1 = inboundBuffer.buffer1.Length;
-            var len2 = inboundBuffer.buffer2.Length;
-            for (int i = 0; i < len1; ++i)
-                ctx.internalProcessBuffer[i] = (byte)(inboundBuffer.buffer1[i] ^ 0xff);
-            for (int i = 0; i < len2; ++i)
-                ctx.internalProcessBuffer[len1+i] = (byte)(inboundBuffer.buffer2[i] ^ 0xff);
-            var nextInbound = default(InboundBufferVec);
-            nextInbound.buffer1 =  new NativeSlice<byte>(ctx.internalProcessBuffer, 0, len1+len2);
-            return nextInbound;
+            var len = inboundBuffer.bufferLength;
+            for (int i = 0; i < len; ++i)
+                ctx.internalProcessBuffer[inboundBuffer.headerPadding + i] = (byte)(inboundBuffer.buffer[i] ^ 0xff);
+            var nextInbound = default(InboundSendBuffer);
+            nextInbound.bufferWithHeaders =  ctx.internalProcessBuffer;
+            nextInbound.bufferWithHeadersLength = len + inboundBuffer.headerPadding;
+            nextInbound.SetBufferFrombufferWithHeaders();
+            inboundBuffer = nextInbound;
         }
 
-        public void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
         }
-
-        public int ReceiveCapacity => 0;
-        public int SendCapacity => NetworkParameterConstants.MTU;
-        public int HeaderCapacity => 0;
-        public int SharedStateCapacity { get; }
     }
 
+    [BurstCompile]
     public unsafe struct TestPipelineWithInitializers : INetworkPipelineStage
     {
-        public NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            var receiveData = (int*)ctx.internalProcessBuffer.GetUnsafePtr();
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 3*UnsafeUtility.SizeOf<int>(),
+                SendCapacity: 3*UnsafeUtility.SizeOf<int>(),
+                HeaderCapacity: 0,
+                SharedStateCapacity: 3*UnsafeUtility.SizeOf<int>()
+            );
+        }
+        public int StaticSize => 0;
+
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            var receiveData = (int*)ctx.internalProcessBuffer;
             for (int i = 4; i <= 6; ++i)
             {
                 Assert.AreEqual(*receiveData, i);
                 receiveData++;
             }
-            var sharedData = (int*)ctx.internalSharedProcessBuffer.GetUnsafePtr();
+            var sharedData = (int*)ctx.internalSharedProcessBuffer;
             for (int i = 7; i <= 8; ++i)
             {
                 Assert.AreEqual(*sharedData, i);
                 sharedData++;
             }
-            return inboundBuffer;
         }
 
-        public unsafe InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            var sendData = (int*)ctx.internalProcessBuffer.GetUnsafePtr();
+            var sendData = (int*)ctx.internalProcessBuffer;
             for (int i = 1; i <= 3; ++i)
             {
                 Assert.AreEqual(*sendData, i);
                 sendData++;
             }
-            var sharedData = (int*)ctx.internalSharedProcessBuffer.GetUnsafePtr();
+            var sharedData = (int*)ctx.internalSharedProcessBuffer;
             for (int i = 7; i <= 8; ++i)
             {
                 Assert.AreEqual(*sharedData, i);
                 sharedData++;
             }
-            return inboundBuffer;
         }
 
-        public unsafe void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
-            var sendData = (int*)sendProcessBuffer.GetUnsafePtr();
+            var sendData = (int*)sendProcessBuffer;
             *sendData = 1;
             sendData++;
             *sendData = 2;
             sendData++;
             *sendData = 3;
-            var receiveData = (int*)recvProcessBuffer.GetUnsafePtr();
+            var receiveData = (int*)recvProcessBuffer;
             *receiveData = 4;
             receiveData++;
             *receiveData = 5;
             receiveData++;
             *receiveData = 6;
-            var sharedData = (int*) sharedProcessBuffer.GetUnsafePtr();
+            var sharedData = (int*) sharedProcessBuffer;
             *sharedData = 7;
             sharedData++;
             *sharedData = 8;
             sharedData++;
             *sharedData = 9;
         }
-
-        public int ReceiveCapacity => 3*sizeof(int);
-        public int SendCapacity => 3*sizeof(int);
-        public int HeaderCapacity => 0;
-        public int SharedStateCapacity => 3*sizeof(int);
     }
 
+    [BurstCompile]
     public unsafe struct TestPipelineWithInitializersTwo : INetworkPipelineStage
     {
-        public NativeSlice<byte> Receive(NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
-            var receiveData = (int*)ctx.internalProcessBuffer.GetUnsafePtr();
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 3*UnsafeUtility.SizeOf<int>(),
+                SendCapacity: 3*UnsafeUtility.SizeOf<int>(),
+                HeaderCapacity: 0,
+                SharedStateCapacity: 3*UnsafeUtility.SizeOf<int>()
+            );
+        }
+        public int StaticSize => 0;
+
+        [BurstCompile]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            var receiveData = (int*)ctx.internalProcessBuffer;
             for (int i = 4; i <= 6; ++i)
             {
                 Assert.AreEqual(*receiveData, i*10);
                 receiveData++;
             }
-            var sharedData = (int*)ctx.internalSharedProcessBuffer.GetUnsafePtr();
+            var sharedData = (int*)ctx.internalSharedProcessBuffer;
             for (int i = 7; i <= 8; ++i)
             {
                 Assert.AreEqual(*sharedData, i*10);
                 sharedData++;
             }
-            return inboundBuffer;
         }
 
-        public unsafe InboundBufferVec Send(NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
+        [BurstCompile]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            var sendData = (int*)ctx.internalProcessBuffer.GetUnsafePtr();
+            var sendData = (int*)ctx.internalProcessBuffer;
             for (int i = 1; i <= 3; ++i)
             {
                 Assert.AreEqual(*sendData, i*10);
                 sendData++;
             }
-            var sharedData = (int*)ctx.internalSharedProcessBuffer.GetUnsafePtr();
+            var sharedData = (int*)ctx.internalSharedProcessBuffer;
             for (int i = 7; i <= 8; ++i)
             {
                 Assert.AreEqual(*sharedData, i*10);
                 sharedData++;
             }
-            return inboundBuffer;
         }
 
-        public unsafe void InitializeConnection(NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer, NativeSlice<byte> sharedProcessBuffer)
+        [BurstCompile]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
-            var sendData = (int*)sendProcessBuffer.GetUnsafePtr();
+            var sendData = (int*)sendProcessBuffer;
             *sendData = 10;
             sendData++;
             *sendData = 20;
             sendData++;
             *sendData = 30;
-            var receiveData = (int*)recvProcessBuffer.GetUnsafePtr();
+            var receiveData = (int*)recvProcessBuffer;
             *receiveData = 40;
             receiveData++;
             *receiveData = 50;
             receiveData++;
             *receiveData = 60;
-            var sharedData = (int*) sharedProcessBuffer.GetUnsafePtr();
+            var sharedData = (int*) sharedProcessBuffer;
             *sharedData = 70;
             sharedData++;
             *sharedData = 80;
             sharedData++;
             *sharedData = 90;
         }
-
-        public int ReceiveCapacity => 3*sizeof(int);
-        public int SendCapacity => 3*sizeof(int);
-        public int HeaderCapacity => 0;
-        public int SharedStateCapacity => 3*sizeof(int);
     }
 
-    public struct TestNetworkPipelineStageCollection : INetworkPipelineStageCollection
+    public struct TestNetworkPipelineStageCollection
     {
-        private TestPipelineStageWithHeader testPipelineStageWithHeader;
-        private TestPipelineStageWithHeaderTwo testPipelineStageWithHeaderTwo;
-        private TestEncryptPipelineStage testEncryptPipelineStage;
-        private TestEncryptInPlacePipelineStage testEncryptInPlacePipelineStage;
-        private TestInvertPipelineStage testInvertPipelineStage;
-        private TestPipelineWithInitializers testPipelineWithInitializers;
-        private TestPipelineWithInitializersTwo testPipelineWithInitializersTwo;
-        private SimulatorPipelineStage testDelayedReadPipelineStage;
-        private SimulatorPipelineStageInSend testDelayedSendPipelineStage;
-        private UnreliableSequencedPipelineStage testUnreliableSequencedPipelineStage;
-
-        public int GetStageId(Type type)
+        public static void Register()
         {
-            if (type == typeof(TestPipelineStageWithHeader))
-                return 0;
-            if (type == typeof(TestEncryptPipelineStage))
-                return 1;
-            if (type == typeof(TestEncryptInPlacePipelineStage))
-                return 2;
-            if (type == typeof(TestInvertPipelineStage))
-                return 3;
-            if (type == typeof(SimulatorPipelineStage))
-                return 4;
-            if (type == typeof(SimulatorPipelineStageInSend))
-                return 5;
-            if (type == typeof(UnreliableSequencedPipelineStage))
-                return 6;
-            if (type == typeof(TestPipelineStageWithHeaderTwo))
-                return 7;
-            if (type == typeof(TestPipelineWithInitializers))
-                return 8;
-            if (type == typeof(TestPipelineWithInitializersTwo))
-                return 9;
-
-            return -1;
-        }
-
-        public void Initialize(params INetworkParameter[] param)
-        {
-            for (int i = 0; i < param.Length; ++i)
-            {
-                if (param[i] is SimulatorUtility.Parameters)
-                {
-                    testDelayedReadPipelineStage.Initialize((SimulatorUtility.Parameters)param[i]);
-                    testDelayedSendPipelineStage.Initialize((SimulatorUtility.Parameters)param[i]);
-                }
-            }
-        }
-
-        public void InvokeInitialize(int pipelineStageId, NativeSlice<byte> sendProcessBuffer, NativeSlice<byte> recvProcessBuffer,
-            NativeSlice<byte> sharedStateBuffer)
-        {
-            switch (pipelineStageId)
-            {
-                case 4:
-                    testDelayedReadPipelineStage.InitializeConnection(sendProcessBuffer, recvProcessBuffer, sharedStateBuffer);
-                    break;
-                case 5:
-                    testDelayedSendPipelineStage.InitializeConnection(sendProcessBuffer, recvProcessBuffer, sharedStateBuffer);
-                    break;
-                case 6:
-                    testUnreliableSequencedPipelineStage.InitializeConnection(sendProcessBuffer, recvProcessBuffer, sharedStateBuffer);
-                    break;
-                case 8:
-                    testPipelineWithInitializers.InitializeConnection(sendProcessBuffer, recvProcessBuffer, sharedStateBuffer);
-                    break;
-                case 9:
-                    testPipelineWithInitializersTwo.InitializeConnection(sendProcessBuffer, recvProcessBuffer, sharedStateBuffer);
-                    break;
-            }
-        }
-
-        public InboundBufferVec InvokeSend(int pipelineStageId, NetworkPipelineContext ctx, InboundBufferVec inboundBuffer, ref bool needsResume, ref bool needsUpdate)
-        {
-            switch (pipelineStageId)
-            {
-                case 0:
-                    return testPipelineStageWithHeader.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 1:
-                    return testEncryptPipelineStage.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 2:
-                    return testEncryptInPlacePipelineStage.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 3:
-                    return testInvertPipelineStage.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 4:
-                    return testDelayedReadPipelineStage.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 5:
-                    return testDelayedSendPipelineStage.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 6:
-                    return testUnreliableSequencedPipelineStage.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 7:
-                    return testPipelineStageWithHeaderTwo.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 8:
-                    return testPipelineWithInitializers.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-                case 9:
-                    return testPipelineWithInitializersTwo.Send(ctx, inboundBuffer, ref needsResume, ref needsUpdate);
-            }
-            return inboundBuffer;
-        }
-
-        public NativeSlice<byte> InvokeReceive(int pipelineStageId, NetworkPipelineContext ctx, NativeSlice<byte> inboundBuffer, ref bool needsResume, ref bool needsUpdate, ref bool needsSendUpdate)
-        {
-            switch (pipelineStageId)
-            {
-                case 0:
-                    return testPipelineStageWithHeader.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 1:
-                    return testEncryptPipelineStage.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 2:
-                    return testEncryptInPlacePipelineStage.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 3:
-                    return testInvertPipelineStage.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 4:
-                    return testDelayedReadPipelineStage.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 5:
-                    return testDelayedSendPipelineStage.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 6:
-                    return testUnreliableSequencedPipelineStage.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 7:
-                    return testPipelineStageWithHeaderTwo.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 8:
-                    return testPipelineWithInitializers.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-                case 9:
-                    return testPipelineWithInitializersTwo.Receive(ctx, inboundBuffer, ref needsResume, ref needsUpdate, ref needsSendUpdate);
-            }
-            return inboundBuffer;
-        }
-
-        public int GetReceiveCapacity(int pipelineStageId)
-        {
-            switch (pipelineStageId)
-            {
-                case 0:
-                    return testPipelineStageWithHeader.ReceiveCapacity;
-                case 1:
-                    return testEncryptPipelineStage.ReceiveCapacity;
-                case 2:
-                    return testEncryptInPlacePipelineStage.ReceiveCapacity;
-                case 3:
-                    return testInvertPipelineStage.ReceiveCapacity;
-                case 4:
-                    return testDelayedReadPipelineStage.ReceiveCapacity;
-                case 5:
-                    return testDelayedSendPipelineStage.ReceiveCapacity;
-                case 6:
-                    return testUnreliableSequencedPipelineStage.ReceiveCapacity;
-                case 7:
-                    return testPipelineStageWithHeaderTwo.ReceiveCapacity;
-                case 8:
-                    return testPipelineWithInitializers.ReceiveCapacity;
-                case 9:
-                    return testPipelineWithInitializersTwo.ReceiveCapacity;
-            }
-            return 0;
-        }
-
-        public int GetSendCapacity(int pipelineStageId)
-        {
-            switch (pipelineStageId)
-            {
-                case 0:
-                    return testPipelineStageWithHeader.SendCapacity;
-                case 1:
-                    return testEncryptPipelineStage.SendCapacity;
-                case 2:
-                    return testEncryptInPlacePipelineStage.SendCapacity;
-                case 3:
-                    return testInvertPipelineStage.SendCapacity;
-                case 4:
-                    return testDelayedReadPipelineStage.SendCapacity;
-                case 5:
-                    return testDelayedSendPipelineStage.SendCapacity;
-                case 6:
-                    return testUnreliableSequencedPipelineStage.SendCapacity;
-                case 7:
-                    return testPipelineStageWithHeaderTwo.SendCapacity;
-                case 8:
-                    return testPipelineWithInitializers.SendCapacity;
-                case 9:
-                    return testPipelineWithInitializersTwo.SendCapacity;
-            }
-            return 0;
-        }
-
-        public int GetHeaderCapacity(int pipelineStageId)
-        {
-            switch (pipelineStageId)
-            {
-                case 0:
-                    return testPipelineStageWithHeader.HeaderCapacity;
-                case 1:
-                    return testEncryptPipelineStage.HeaderCapacity;
-                case 2:
-                    return testEncryptInPlacePipelineStage.HeaderCapacity;
-                case 3:
-                    return testInvertPipelineStage.HeaderCapacity;
-                case 4:
-                    return testDelayedReadPipelineStage.HeaderCapacity;
-                case 5:
-                    return testDelayedSendPipelineStage.HeaderCapacity;
-                case 6:
-                    return testUnreliableSequencedPipelineStage.HeaderCapacity;
-                case 7:
-                    return testPipelineStageWithHeaderTwo.HeaderCapacity;
-                case 8:
-                    return testPipelineWithInitializers.HeaderCapacity;
-                case 9:
-                    return testPipelineWithInitializersTwo.HeaderCapacity;
-            }
-            return 0;
-        }
-
-        public int GetSharedStateCapacity(int pipelineStageId)
-        {
-            switch (pipelineStageId)
-            {
-                case 0:
-                    return testPipelineStageWithHeader.SharedStateCapacity;
-                case 1:
-                    return testEncryptPipelineStage.SharedStateCapacity;
-                case 2:
-                    return testEncryptInPlacePipelineStage.SharedStateCapacity;
-                case 3:
-                    return testInvertPipelineStage.SharedStateCapacity;
-                case 4:
-                    return testDelayedReadPipelineStage.SharedStateCapacity;
-                case 5:
-                    return testDelayedSendPipelineStage.SharedStateCapacity;
-                case 6:
-                    return testUnreliableSequencedPipelineStage.SharedStateCapacity;
-                case 7:
-                    return testPipelineStageWithHeaderTwo.SharedStateCapacity;
-                case 8:
-                    return testPipelineWithInitializers.SharedStateCapacity;
-                case 9:
-                    return testPipelineWithInitializersTwo.SharedStateCapacity;
-            }
-            return 0;
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TestPipelineStageWithHeader());
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TestPipelineStageWithHeaderTwo());
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TestEncryptPipelineStage());
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TestEncryptInPlacePipelineStage());
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TestInvertPipelineStage());
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TestPipelineWithInitializers());
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TestPipelineWithInitializersTwo());
         }
     }
 
     public class NetworkPipelineTest
     {
-        private GenericNetworkDriver<IPCSocket, TestNetworkPipelineStageCollection> m_ServerDriver;
-        private GenericNetworkDriver<IPCSocket, TestNetworkPipelineStageCollection> m_ClientDriver;
-        private GenericNetworkDriver<IPCSocket, TestNetworkPipelineStageCollection> m_ClientDriver2;
+        private NetworkDriver m_ServerDriver;
+        private NetworkDriver m_ClientDriver;
+        private NetworkDriver m_ClientDriver2;
 
         [SetUp]
         public void IPC_Setup()
         {
-            IPCManager.Instance.Initialize(100);
+            var timeoutParam = new NetworkConfigParameter
+            {
+                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
+                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
+                disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
+                fixedFrameTimeMS = 16
+            };
             // NOTE: MaxPacketSize should be 64 for all the tests using simulator except needs to account for header size as well (one test has 2x2B headers)
             var simulatorParams = new SimulatorUtility.Parameters()
-                {MaxPacketSize = 68, MaxPacketCount = 30, PacketDelayMs = 100};
-            m_ServerDriver = new GenericNetworkDriver<IPCSocket, TestNetworkPipelineStageCollection>(simulatorParams);
-            m_ServerDriver.Bind(IPCManager.Instance.CreateEndPoint());
+                {MaxPacketSize = 72, MaxPacketCount = 30, PacketDelayMs = 100};
+            TestNetworkPipelineStageCollection.Register();
+            m_ServerDriver = TestNetworkDriver.Create(timeoutParam, simulatorParams);
+            m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             m_ServerDriver.Listen();
-            m_ClientDriver = new GenericNetworkDriver<IPCSocket, TestNetworkPipelineStageCollection>(simulatorParams);
-            m_ClientDriver2 = new GenericNetworkDriver<IPCSocket, TestNetworkPipelineStageCollection>(simulatorParams);
+            m_ClientDriver = TestNetworkDriver.Create(timeoutParam, simulatorParams);
+            m_ClientDriver2 = TestNetworkDriver.Create(timeoutParam, simulatorParams);
         }
 
         [TearDown]
@@ -554,7 +442,6 @@ namespace Unity.Networking.Transport.Tests
             m_ClientDriver.Dispose();
             m_ClientDriver2.Dispose();
             m_ServerDriver.Dispose();
-            IPCManager.Instance.Destroy();
         }
         [Test]
         public void NetworkPipeline_CreatePipelineIsSymetrical()
@@ -594,9 +481,9 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = new DataStreamWriter(4, Allocator.Temp);
-            strm.Write((int) 42);
-            m_ServerDriver.Send(serverPipe, serverToClient, strm);
+            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+            strm.WriteInt((int) 42);
+            m_ServerDriver.EndSend(strm);
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -605,8 +492,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(4, readStrm.Length);
-            var readCtx = default(DataStreamReader.Context);
-            Assert.AreEqual(42, readStrm.ReadInt(ref readCtx));
+            Assert.AreEqual(42, readStrm.ReadInt());
         }
         [Test]
         public void NetworkPipeline_CanModifyAndRestoreData()
@@ -627,9 +513,9 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = new DataStreamWriter(4, Allocator.Temp);
-            strm.Write((int) 42);
-            m_ServerDriver.Send(serverPipe, serverToClient, strm);
+            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+            strm.WriteInt((int) 42);
+            m_ServerDriver.EndSend(strm);
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -638,8 +524,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(4, readStrm.Length);
-            var readCtx = default(DataStreamReader.Context);
-            Assert.AreEqual(42, readStrm.ReadInt(ref readCtx));
+            Assert.AreEqual(42, readStrm.ReadInt());
         }
         [Test]
         public void NetworkPipeline_CanModifyAndRestoreDataInPlace()
@@ -660,9 +545,9 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = new DataStreamWriter(4, Allocator.Temp);
-            strm.Write((int) 42);
-            m_ServerDriver.Send(serverPipe, serverToClient, strm);
+            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+            strm.WriteInt((int) 42);
+            m_ServerDriver.EndSend(strm);
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -671,8 +556,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(4, readStrm.Length);
-            var readCtx = default(DataStreamReader.Context);
-            Assert.AreEqual(42, readStrm.ReadInt(ref readCtx));
+            Assert.AreEqual(42, readStrm.ReadInt());
         }
         [Test]
         public void NetworkPipeline_CanModifyData()
@@ -693,9 +577,9 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = new DataStreamWriter(4, Allocator.Temp);
-            strm.Write((int) 42);
-            m_ServerDriver.Send(serverPipe, serverToClient, strm);
+            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+            strm.WriteInt((int) 42);
+            m_ServerDriver.EndSend(strm);
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -704,8 +588,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(4, readStrm.Length);
-            var readCtx = default(DataStreamReader.Context);
-            Assert.AreEqual(-1^42, readStrm.ReadInt(ref readCtx));
+            Assert.AreEqual(-1^42, readStrm.ReadInt());
         }
 
         [Test]
@@ -726,9 +609,9 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = new DataStreamWriter(4, Allocator.Temp);
-            strm.Write((int) 42);
-            m_ServerDriver.Send(serverPipe, serverToClient, strm);
+            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+            strm.WriteInt((int) 42);
+            m_ServerDriver.EndSend(strm);
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -737,8 +620,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(4, readStrm.Length);
-            var readCtx = default(DataStreamReader.Context);
-            Assert.AreEqual(42, readStrm.ReadInt(ref readCtx));
+            Assert.AreEqual(42, readStrm.ReadInt());
         }
 
         [Test]
@@ -888,7 +770,7 @@ namespace Unity.Networking.Transport.Tests
             m_ClientDriver2.ScheduleUpdate().Complete();
 
             // Driver only updates time in update, so must read start time before update
-            var startTime = Stopwatch.GetTimestamp() / TimeSpan.TicksPerMillisecond;
+            var startTime = m_ServerDriver.LastUpdateTime;
             // Handle incoming connection from client
             m_ServerDriver.ScheduleUpdate().Complete();
             var serverToClient = m_ServerDriver.Accept();
@@ -898,14 +780,17 @@ namespace Unity.Networking.Transport.Tests
 
             // Send given packetCount number of packets in a row in one update
             // Write 1's for packet 1, 2's for packet 2 and so on and verify they're received in same order
-            var strm = new DataStreamWriter(64, Allocator.Temp);
             for (int i = 0; i < packetCount; i++)
             {
-                strm.Clear();
+                var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+                var strm2 = m_ServerDriver.BeginSend(serverPipe, serverToClient2);
                 for (int j = 0; j < 16; j++)
-                    strm.Write((int) i + 1);
-                m_ServerDriver.Send(serverPipe, serverToClient, strm);
-                m_ServerDriver.Send(serverPipe, serverToClient2, strm);
+                {
+                    strm.WriteInt((int) i + 1);
+                    strm2.WriteInt((int) i + 1);
+                }
+                m_ServerDriver.EndSend(strm);
+                m_ServerDriver.EndSend(strm2);
             }
 
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -921,14 +806,14 @@ namespace Unity.Networking.Transport.Tests
             ClientReceivePackets(m_ClientDriver2, packetCount, clientToServer2, startTime, packetDelay);
         }
 
-        private void ClientReceivePackets(GenericNetworkDriver<IPCSocket, TestNetworkPipelineStageCollection> clientDriver, int packetCount, NetworkConnection clientToServer, long startTime, int minDelay)
+        private void ClientReceivePackets(NetworkDriver clientDriver, int packetCount, NetworkConnection clientToServer, long startTime, int minDelay)
         {
             DataStreamReader readStrm;
             NetworkEvent.Type netEvent;
-            var abortTimer = new Timer();
+            var abortFrame = 0;
             while (true)
             {
-                if (abortTimer.ElapsedMilliseconds > 2000)
+                if (abortFrame++ > 125)
                     Assert.Fail("Did not receive first delayed packet");
                 netEvent = clientToServer.PopEvent(clientDriver, out readStrm);
                 if (netEvent == NetworkEvent.Type.Data)
@@ -940,14 +825,13 @@ namespace Unity.Networking.Transport.Tests
             // All delayed packets (from first patch) should be poppable now
             for (int i = 0; i < packetCount; i++)
             {
-                var delay = Stopwatch.GetTimestamp() / TimeSpan.TicksPerMillisecond - startTime;
+                var delay = m_ServerDriver.LastUpdateTime - startTime;
                 Assert.AreEqual(NetworkEvent.Type.Data, netEvent);
-                Assert.That(delay >= minDelay, "Delay too low on packet " + i + ": " + delay);
+                Assert.GreaterOrEqual(delay, minDelay, $"Delay too low on packet {i}");
                 Assert.AreEqual(64, readStrm.Length);
-                var readCtx = default(DataStreamReader.Context);
                 for (int j = 0; j < 16; j++)
                 {
-                    var read = readStrm.ReadInt(ref readCtx);
+                    var read = readStrm.ReadInt();
                     Assert.AreEqual(i + 1, read);
                     Assert.True(read > 0 && read <= packetCount, "read incorrect value: " + read);
                 }
@@ -957,10 +841,10 @@ namespace Unity.Networking.Transport.Tests
                     break;
 
                 // It could be not all patch of packets were processed in one update (depending on how the timers land)
-                abortTimer = new Timer();
+                abortFrame = 0;
                 while ((netEvent = clientToServer.PopEvent(clientDriver, out readStrm)) == NetworkEvent.Type.Empty)
                 {
-                    if (abortTimer.ElapsedMilliseconds > 1000)
+                    if (abortFrame++ > 75)
                         Assert.Fail("Didn't receive all delayed packets");
                     clientDriver.ScheduleUpdate().Complete();
                     m_ServerDriver.ScheduleUpdate().Complete();

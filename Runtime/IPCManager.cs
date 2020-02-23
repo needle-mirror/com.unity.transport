@@ -1,7 +1,5 @@
 using System;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-using System.IO;
-#endif
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Networking.Transport.Utilities;
@@ -10,7 +8,7 @@ using Unity.Jobs;
 
 namespace Unity.Networking.Transport
 {
-    public struct IPCManager
+    internal struct IPCManager
     {
         public static IPCManager Instance = new IPCManager();
 
@@ -21,161 +19,128 @@ namespace Unity.Networking.Transport
             [FieldOffset(4)] public int length;
             [FieldOffset(8)] public fixed byte data[NetworkParameterConstants.MTU];
         }
-        internal struct IPCQueuedMessage
-        {
-            public IPCManager.IPCData data;
-            public int dest;
-        }
 
-
-        private NativeQueue<int> m_FreeList;
-        private NativeList<ushort> m_IPCEndPoints;
         private NativeMultiQueue<IPCData> m_IPCQueue;
+        private NativeHashMap<ushort, int> m_IPCChannels;
 
-        public int QueueSize { get; private set; }
         internal static JobHandle ManagerAccessHandle;
 
-        public bool IsCreated => m_IPCEndPoints.IsCreated;
+        public bool IsCreated => m_IPCQueue.IsCreated;
 
-        public void Initialize(int receiveQueueSize)
+        private int m_RefCount;
+
+        public void AddRef()
         {
-            m_IPCQueue = new NativeMultiQueue<IPCData>(receiveQueueSize);
-            m_FreeList = new NativeQueue<int>(Allocator.Persistent);
-            m_IPCEndPoints = new NativeList<ushort>(1, Allocator.Persistent);
-            QueueSize = receiveQueueSize;
+            if (m_RefCount == 0)
+            {
+                m_IPCQueue = new NativeMultiQueue<IPCData>(128);
+                m_IPCChannels = new NativeHashMap<ushort, int>(64, Allocator.Persistent);
+            }
+            ++m_RefCount;
         }
 
-        public void Destroy()
+        public void Release()
         {
-            ManagerAccessHandle.Complete();
-            m_IPCQueue.Dispose();
-            m_FreeList.Dispose();
-            m_IPCEndPoints.Dispose();
+            --m_RefCount;
+            if (m_RefCount == 0)
+            {
+                ManagerAccessHandle.Complete();
+                m_IPCQueue.Dispose();
+                m_IPCChannels.Dispose();
+            }
         }
 
-        internal void Update(NativeQueue<IPCQueuedMessage> queue)
+        internal unsafe void Update(NetworkInterfaceEndPoint local, NativeQueue<QueuedSendMessage> queue)
         {
-            IPCQueuedMessage val;
+            QueuedSendMessage val;
             while (queue.TryDequeue(out val))
             {
-                m_IPCQueue.Enqueue(val.dest, val.data);
+                var ipcData = new IPCData();
+                UnsafeUtility.MemCpy(ipcData.data, val.Data, val.DataLength);
+                ipcData.length = val.DataLength;
+                ipcData.from = *(int*)local.data;
+                m_IPCQueue.Enqueue(*(int*)val.Dest.data, ipcData);
             }
         }
 
-        /// <summary>
-        /// Create a NetworkEndPoint for IPC. If the EndPoint is passed to Bind the driver will assume ownership,
-        /// otherwise the EndPoint must be destroyed by calling ReleaseEndPoint.
-        /// </summary>
-        public unsafe NetworkEndPoint CreateEndPoint(string name = null)
+        public unsafe NetworkInterfaceEndPoint CreateEndPoint(ushort port)
         {
             ManagerAccessHandle.Complete();
-            int id;
-            if (!m_FreeList.TryDequeue(out id))
+            int id = 0;
+            if (port == 0)
             {
-                id = m_IPCEndPoints.Length;
-                m_IPCEndPoints.Add(1);
+                var rnd = new Random();
+                while (id == 0)
+                {
+                    port = (ushort)rnd.Next(1, 0xffff);
+                    int tmp;
+                    if (!m_IPCChannels.TryGetValue(port, out tmp))
+                    {
+                        id = m_IPCChannels.Length + 1;
+                        m_IPCChannels.TryAdd(port, id);
+                    }
+                }
+
+            }
+            else
+            {
+                if (!m_IPCChannels.TryGetValue(port, out id))
+                {
+                    id = m_IPCChannels.Length + 1;
+                    m_IPCChannels.TryAdd(port, id);
+                }
             }
 
-            var endpoint = new NetworkEndPoint
-            {
-                Family = NetworkFamily.IPC,
-                ipc_handle = id,
-                length = 6,
-                nbo_port = m_IPCEndPoints[id]
-            };
+            var endpoint = default(NetworkInterfaceEndPoint);
+            endpoint.dataLength = 4;
+            *(int*) endpoint.data = id;
 
             return endpoint;
         }
-
-        public unsafe void ReleaseEndPoint(NetworkEndPoint endpoint)
+        public unsafe bool GetEndPointPort(NetworkInterfaceEndPoint ep, out ushort port)
         {
             ManagerAccessHandle.Complete();
-            if (endpoint.Family == NetworkFamily.IPC)
+            int id = *(int*) ep.data;
+            var values = m_IPCChannels.GetValueArray(Allocator.Temp);
+            var keys = m_IPCChannels.GetKeyArray(Allocator.Temp);
+            port = 0;
+            for (var i = 0; i < m_IPCChannels.Length; ++i)
             {
-                int handle = endpoint.ipc_handle;
-                m_IPCQueue.Clear(handle);
-                // Bump the version of the endpoint
-                ushort version = m_IPCEndPoints[handle];
-                ++version;
-                if (version == 0)
-                    version = 1;
-                m_IPCEndPoints[handle] = version;
-
-                m_FreeList.Enqueue(handle);
+                if (values[i] == id)
+                {
+                    port = keys[i];
+                    return true;
+                }
             }
+
+            return false;
         }
 
-        public unsafe int PeekNext(NetworkEndPoint local, void* slice, out int length, out NetworkEndPoint from)
+        public unsafe int PeekNext(NetworkInterfaceEndPoint local, void* slice, out int length, out NetworkInterfaceEndPoint from)
         {
             ManagerAccessHandle.Complete();
             IPCData data;
-            from = default(NetworkEndPoint);
+            from = default(NetworkInterfaceEndPoint);
             length = 0;
 
-            if (m_IPCQueue.Peek(local.ipc_handle, out data))
+            if (m_IPCQueue.Peek(*(int*)local.data, out data))
             {
-                ushort version = m_IPCEndPoints[data.from];
-
                 UnsafeUtility.MemCpy(slice, data.data, data.length);
 
                 length = data.length;
             }
 
-            NetworkEndPoint endpoint;
-            if (!TryGetEndPointByHandle(data.from, out endpoint))
-                return -1;
-            from = endpoint;
+            GetEndPointByHandle(data.from, out from);
 
             return length;
         }
 
-        static internal unsafe int SendMessageEx(NativeQueue<IPCQueuedMessage>.ParallelWriter queue, NetworkEndPoint local,
-            network_iovec* iov, int iov_len, ref NetworkEndPoint address)
-        {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (address.Family != NetworkFamily.IPC || local.Family != NetworkFamily.IPC ||
-                address.nbo_port == 0 || local.nbo_port == 0)
-                throw new InvalidOperationException("Sending data over IPC requires both local and remote EndPoint to be valid IPC EndPoints");
-#endif
-
-            var data = new IPCData();
-            data.from = local.ipc_handle;
-            data.length = 0;
-
-            for (int i = 0; i < iov_len; i++)
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (data.length + iov[i].len >= NetworkParameterConstants.MTU)
-                    throw new ArgumentOutOfRangeException("Cannot send more data than an MTU");
-#endif
-                UnsafeUtility.MemCpy(data.data+data.length, iov[i].buf, iov[i].len);
-                data.length += iov[i].len;
-            }
-            queue.Enqueue(new IPCQueuedMessage {dest = address.ipc_handle, data = data});
-            return data.length;
-        }
-
-        public unsafe int ReceiveMessageEx(NetworkEndPoint local, network_iovec* iov, int iov_len, ref NetworkEndPoint remote)
+        public unsafe int ReceiveMessageEx(NetworkInterfaceEndPoint local, network_iovec* iov, int iov_len, ref NetworkInterfaceEndPoint remote)
         {
             IPCData data;
-            if (!m_IPCQueue.Peek(local.ipc_handle, out data))
+            if (!m_IPCQueue.Peek(*(int*)local.data, out data))
                 return 0;
-            NetworkEndPoint endpoint;
-            if (!TryGetEndPointByHandle(data.from, out endpoint))
-                return -1;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (endpoint.Family != NetworkFamily.IPC)
-                throw new InvalidDataException("An incorrect message was pushed to the IPC message queue");
-#endif
-
-#if (UNITY_EDITOR_OSX || ((UNITY_STANDALONE_OSX || UNITY_IOS) && !UNITY_EDITOR))
-            remote.family.sa_family = (byte) NetworkFamily.IPC;
-#else
-            remote.family.sa_family = (ushort) NetworkFamily.IPC;
-#endif
-            remote.ipc_handle = endpoint.ipc_handle;
-            remote.nbo_port = endpoint.nbo_port;
-            remote.length = 6;
+            GetEndPointByHandle(data.from, out remote);
 
             int totalLength = 0;
             for (int i = 0; i < iov_len; i++)
@@ -188,25 +153,18 @@ namespace Unity.Networking.Transport
 
             if (totalLength < data.length)
                 return -1;
-            m_IPCQueue.Dequeue(local.ipc_handle, out data);
+            m_IPCQueue.Dequeue(*(int*)local.data, out data);
 
             return totalLength;
         }
 
-        public unsafe bool TryGetEndPointByHandle(int handle, out NetworkEndPoint endpoint)
+        private unsafe void GetEndPointByHandle(int handle, out NetworkInterfaceEndPoint endpoint)
         {
-            endpoint = default(NetworkEndPoint);
-            if (handle >= m_IPCEndPoints.Length)
-                return false;
+            var temp = default(NetworkInterfaceEndPoint);
+            temp.dataLength = 4;
+            *(int*)temp.data = handle;
 
-            var temp = new NetworkEndPoint();
-            temp.Family = NetworkFamily.IPC;
-            temp.ipc_handle = handle;
-
-            temp.nbo_port = m_IPCEndPoints[handle];
             endpoint = temp;
-            endpoint.length = 6;
-            return true;
         }
     }
 }

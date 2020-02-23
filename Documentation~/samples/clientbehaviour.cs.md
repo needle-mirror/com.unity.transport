@@ -1,18 +1,17 @@
 ```c#
 using UnityEngine;
 
-using Unity.Collections;
 using Unity.Networking.Transport;
 
 public class ClientBehaviour : MonoBehaviour
 {
-    public UdpNetworkDriver m_Driver;
+    public NetworkDriver m_Driver;
     public NetworkConnection m_Connection;
     public bool m_Done;
 
     void Start ()
-	{
-        m_Driver = new UdpNetworkDriver(new INetworkParameter[0]);
+    {
+        m_Driver = NetworkDriver.Create();
         m_Connection = default(NetworkConnection);
 
         var endpoint = NetworkEndPoint.LoopbackIpv4;
@@ -39,24 +38,20 @@ public class ClientBehaviour : MonoBehaviour
         DataStreamReader stream;
         NetworkEvent.Type cmd;
 
-        while ((cmd = m_Connection.PopEvent(m_Driver, out stream)) !=
-               NetworkEvent.Type.Empty)
+        while ((cmd = m_Connection.PopEvent(m_Driver, out stream)) != NetworkEvent.Type.Empty)
         {
             if (cmd == NetworkEvent.Type.Connect)
             {
                 Debug.Log("We are now connected to the server");
 
-                var value = 1;
-                using (var writer = new DataStreamWriter(4, Allocator.Temp))
-                {
-                    writer.Write(value);
-                    m_Connection.Send(m_Driver, writer);
-                }
+                uint value = 1;
+                var writer = m_Driver.BeginSend(m_Connection);
+                writer.WriteUInt(value);
+                m_Driver.EndSend(writer);
             }
             else if (cmd == NetworkEvent.Type.Data)
             {
-                var readerCtx = default(DataStreamReader.Context);
-                uint value = stream.ReadUInt(ref readerCtx);
+                uint value = stream.ReadUInt();
                 Debug.Log("Got the value = " + value + " back from the server");
                 m_Done = true;
                 m_Connection.Disconnect(m_Driver);

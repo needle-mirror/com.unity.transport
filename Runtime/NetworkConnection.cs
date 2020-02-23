@@ -1,3 +1,5 @@
+using Unity.Collections;
+
 namespace Unity.Networking.Transport
 {
     /// <summary>
@@ -28,7 +30,7 @@ namespace Unity.Networking.Transport
         /// Disconnects a virtual connection and marks it for deletion. This connection will be removed on next the next frame.
         /// </summary>
         /// <param name="driver">The driver that owns the virtual connection.</param>
-        public int Disconnect<T>(T driver) where T : struct, INetworkDriver
+        public int Disconnect(NetworkDriver driver)
         {
             return driver.Disconnect(this);
         }
@@ -40,31 +42,16 @@ namespace Unity.Networking.Transport
         /// <param name="strm">A DataStreamReader, that will only be populated if a <see cref="NetworkEvent.Type.Data"/>
         /// event was received.
         /// </param>
-        public NetworkEvent.Type PopEvent<T>(T driver, out DataStreamReader stream) where T : struct, INetworkDriver
+        public NetworkEvent.Type PopEvent(NetworkDriver driver, out DataStreamReader stream)
         {
             return driver.PopEventForConnection(this, out stream);
-        }
-
-        /// <summary>
-        /// Send data to the remote endpoint.
-        /// </summary>
-        /// <param name="driver">The driver that owns the virtual connection.</param>
-        /// <param name="strm">A valid <see cref="DataStreamWriter"/> filled with the data you want to send.</param>
-        public int Send<T>(T driver, DataStreamWriter bs) where T : struct, INetworkDriver
-        {
-            return driver.Send(NetworkPipeline.Null, this, bs);
-        }
-        
-        public int Send<T>(T driver, NetworkPipeline pipeline, DataStreamWriter bs) where T : struct, INetworkDriver
-        {
-            return driver.Send(pipeline, this, bs);
         }
 
         /// <summary>
         /// Close an active NetworkConnection, similar to <see cref="Disconnect{T}"/>.
         /// </summary>
         /// <param name="driver">The driver that owns the virtual connection.</param>
-        public int Close<T>(T driver) where T : struct, INetworkDriver
+        public int Close(NetworkDriver driver)
         {
             if (m_NetworkId >= 0)
                 return driver.Disconnect(this);
@@ -75,13 +62,13 @@ namespace Unity.Networking.Transport
         /// Check to see if a NetworkConnection is Created.
         /// </summary>
         /// <returns>`true` if the NetworkConnection has been correctly created by a call to
-        /// <see cref="INetworkDriver.Accept"/> or <see cref="INetworkDriver.Connect"/></returns>
+        /// <see cref="NetworkDriver.Accept"/> or <see cref="NetworkDriver.Connect"/></returns>
         public bool IsCreated
         {
             get { return m_NetworkVersion != 0; }
         }
 
-        public State GetState<T>(T driver) where T : struct, INetworkDriver
+        public State GetState(NetworkDriver driver)
         {
             return driver.GetConnectionState(this);
         }

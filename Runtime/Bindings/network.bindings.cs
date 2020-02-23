@@ -33,6 +33,14 @@ namespace Unity.Networking.Transport
     }
 
     [StructLayout(LayoutKind.Explicit)]
+    public unsafe struct network_address
+    {
+        internal const int Length = 28;
+        [FieldOffset(0)] public fixed byte data[28];
+        [FieldOffset(28)] public int length;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
     internal unsafe struct sockaddr
     {
         [FieldOffset(0)] public fixed byte data[16];
@@ -87,7 +95,7 @@ namespace Unity.Networking.Transport
         public static extern int network_terminate();
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int network_create_and_bind(ref long socket_handle, ref NetworkEndPoint address, ref int errorcode);
+        public static extern int network_create_and_bind(ref long socket_handle, ref network_address address, ref int errorcode);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int network_close(ref long socket_handle, ref int errorcode);
@@ -105,14 +113,14 @@ namespace Unity.Networking.Transport
         public static extern int network_set_connection_reset(long socket_handle, int value);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int network_get_socket_address(long socket_handle, ref NetworkEndPoint own_address, ref int errorcode);
+        public static extern int network_get_socket_address(long socket_handle, ref network_address own_address, ref int errorcode);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int network_sendmsg(long socket_handle, void* iov, int iov_len,
-            ref NetworkEndPoint address, ref int errorcode);
+            ref network_address address, ref int errorcode);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int network_recvmsg(long socket_handle, void* iov, int iov_len,
-            ref NetworkEndPoint remote, ref int errorcode);
+            ref network_address remote, ref int errorcode);
     }
 }

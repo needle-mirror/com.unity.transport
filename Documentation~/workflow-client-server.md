@@ -22,7 +22,7 @@ This workflow helps you create a sample project that highlights how to use the `
 
 The goal is to make a remote `add` function. The flow will be: a client connects to the server, and sends a number, this number is then received by the server that adds another number to it and sends it back to the client. The client, upon receiving the number, disconnects and quits.
 
-Using the `INetworkDriver` to write client and server code is pretty similar between clients and servers, there are a few subtle differences that you can see demonstrated below.
+Using the `NetworkDriver` to write client and server code is pretty similar between clients and servers, there are a few subtle differences that you can see demonstrated below.
 
 ## Creating a Server
 
@@ -83,7 +83,7 @@ using ...
 
 public class ServerBehaviour : MonoBehaviour {
 
-    public UdpNetworkDriver m_Driver;
+    public NetworkDriver m_Driver;
     private NativeList<NetworkConnection> m_Connections;
 
     void Start () {
@@ -100,11 +100,11 @@ public class ServerBehaviour : MonoBehaviour {
 #### Code walkthrough
 
 ```
-public UdpNetworkDriver m_Driver;
+public NetworkDriver m_Driver;
 private NativeList<NetworkConnection> m_Connections;
 ```
 
-You need to declare a `INetworkDriver`, in this case you can use the UdpNetworkDriver. You also need to create a [NativeList](http://native-list-info) to hold our connections.
+You need to declare a `NetworkDriver`. You also need to create a [NativeList](http://native-list-info) to hold our connections.
 
 ### Start method
 
@@ -113,7 +113,7 @@ You need to declare a `INetworkDriver`, in this case you can use the UdpNetworkD
 ```c#
     void Start ()
     {
-        m_Driver = new UdpNetworkDriver(new INetworkParameter[0]);
+        m_Driver = NetworkDriver.Create();
         var endpoint = NetworkEndPoint.AnyIpv4;
         endpoint.Port = 9000;
         if (m_Driver.Bind(endpoint) != 0)
@@ -127,7 +127,7 @@ You need to declare a `INetworkDriver`, in this case you can use the UdpNetworkD
 
 #### Code walkthrough
 
-The first line of code, `m_Driver = new UdpNetworkDriver(new INetworkParameter[0]);` , just makes sure you are creating your driver without any parameters.
+The first line of code, `m_Driver = NetworkDriver.Create();` , just makes sure you are creating your driver without any parameters.
 
 ```c#
         if (m_Driver.Bind(endpoint) != 0)
@@ -146,7 +146,7 @@ Finally we create a `NativeList` to hold all the connections.
 
 ### OnDestroy method
 
-Both `UdpNetworkDriver` and `NativeList` allocate unmanaged memory and need to be disposed. To make sure this happens we can simply call the `Dispose` method when we are done with both of them.
+Both `NetworkDriver` and `NativeList` allocate unmanaged memory and need to be disposed. To make sure this happens we can simply call the `Dispose` method when we are done with both of them.
 
 Add the following code to the `OnDestroy` method on your [MonoBehaviour](https://docs.unity3d.com/ScriptReference/MonoBehaviour.html):
 
@@ -163,7 +163,7 @@ Add the following code to the `OnDestroy` method on your [MonoBehaviour](https:/
 
 ### Server Update loop
 
-As the `unity.networking.transport` package uses the [Unity C# Job System](https://docs.unity3d.com/Manual/JobSystem.html) internally, the `m_Driver` has a `ScheduleUpdate` method call. Inside our `Update` loop you need to make sure to call the `Complete` method on the [JobHandle](https://docs.unity3d.com/Manual/JobSystemJobDependencies.html) that is returned, in order to know when you are ready to process any updates.
+As the `com.unity.transport` package uses the [Unity C# Job System](https://docs.unity3d.com/Manual/JobSystem.html) internally, the `m_Driver` has a `ScheduleUpdate` method call. Inside our `Update` loop you need to make sure to call the `Complete` method on the [JobHandle](https://docs.unity3d.com/Manual/JobSystemJobDependencies.html) that is returned, in order to know when you are ready to process any updates.
 
 ```c#
     void Update () {
@@ -215,8 +215,7 @@ For each connection we want to call `PopEventForConnection` while there are more
 
 ```c#
             NetworkEvent.Type cmd;
-            while ((cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream)) !=
-                NetworkEvent.Type.Empty)
+            while ((cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream)) != NetworkEvent.Type.Empty)
             {
 ```
 
@@ -227,34 +226,29 @@ We are now ready to process events. Lets start with the `Data` event.
 ```c#
                 if (cmd == NetworkEvent.Type.Data)
                 {
-                    var readerCtx = default(DataStreamReader.Context);
 ```
 
-Inside this block, you start by defining a `readerCtx`, this is a `DataStreamReader.Context` type. This type can be seen as a set of indices into a `DataStreamReader`, to help with knowing where in the stream you are, and how much you have read.
-
-Next, we use our context and try to read a `uint` from the stream and output what we have received:
+Next, we try to read a `uint` from the stream and output what we have received:
 
 ```c#
-                    uint number = stream.ReadUInt(ref readerCtx);
+                    uint number = stream.ReadUInt();
                     Debug.Log("Got " + number + " from the Client adding + 2 to it.");
 ```
 
-When this is done we simply add two to the number we received and send it back. To send anything with the `INetworkDriver` we need a instance of a `DataStreamWriter`. A `DataStreamWriter` is a new collection that comes with the `unity.networking.transport` package. It's also a type that needs to be disposed. In this workflow, the `using` statement makes sure that you clean up after yourself.
+When this is done we simply add two to the number we received and send it back. To send anything with the `NetworkDriver` we need a instance of a `DataStreamWriter`. A `DataStreamWriter` is a new type that comes with the `com.unity.transport` package. You get a `DataStreamWriter` when you start sending a message by calling `BeginSend`.
 
-After you have written your updated number to your stream, you call the `Send` method on the driver and off it goes:
+After you have written your updated number to your stream, you call the `EndSend` method on the driver and off it goes:
 
 ```c#
                     number +=2;
 
-                    using (var writer = new DataStreamWriter(4, Allocator.Temp))
-                    {
-                        writer.Write(number);
-                        m_Driver.Send(NetworkPipeline.Null, m_Connections[i], writer);
-                    }
+                    var writer = m_Driver.BeginSend(NetworkPipeline.Null, m_Connections[i]);
+                    writer.WriteUInt(number);
+                    m_Driver.EndSend(writer);
                 }
 ```
 
-> One thing to note here is that we are `NetworkPipeline.Null`, to the `Send` function. This way we say to the driver to use the unreliable pipeline to send our data.
+> One thing to note here is that we are `NetworkPipeline.Null`, to the `BeginSend` function. This way we say to the driver to use the unreliable pipeline to send our data. It is also possible to not specify a pipeline.
 
 Finally, you need to handle the disconnect case. This is pretty straight forward, if you receive a disconnect message you need to reset that connection to a `default(NetworkConnection)`. As you might remember, the next time the `Update` loop runs you will clean up after yourself.
 
@@ -278,7 +272,7 @@ The client code looks pretty similar to the server code at first glance, but the
 
 ### ClientBehaviour.cs
 
-You still define a `UdpNetworkDriver` but instead of having a list of connections we now only have one. There is a `Done` flag to indicate when we are done, or in case you have issues with a connection, you can exit quick.
+You still define a `NetworkDriver` but instead of having a list of connections we now only have one. There is a `Done` flag to indicate when we are done, or in case you have issues with a connection, you can exit quick.
 
 **Filename**: [_Assets\Scripts\ClientBehaviour.cs_](samples/clientbehaviour.cs.md)
 
@@ -287,7 +281,7 @@ using ...
 
 public class ClientBehaviour : MonoBehaviour {
 
-    public UdpNetworkDriver m_Driver;
+    public NetworkDriver m_Driver;
     public NetworkConnection m_Connection;
     public bool Done;
 
@@ -302,7 +296,7 @@ public class ClientBehaviour : MonoBehaviour {
 Start by creating a driver for the client and an address for the server.
 ```c#
     void Start () {
-        m_Driver = new UdpNetworkDriver(new INetworkParameter[0]);
+        m_Driver = NetworkDriver.Create();
         m_Connection = default(NetworkConnection);
 
         var endpoint = NetworkEndPoint.LoopbackIpv4;
@@ -343,30 +337,27 @@ You should recognize the code below, but if you look closely you can see that th
 ```c#
         DataStreamReader stream;
         NetworkEvent.Type cmd;
-        while ((cmd = m_Connection.PopEvent(m_Driver, out stream)) !=
-            NetworkEvent.Type.Empty)
+        while ((cmd = m_Connection.PopEvent(m_Driver, out stream)) != NetworkEvent.Type.Empty)
         {
 ```
 
 Now you encounter a new event you have not seen yet: a `NetworkEvent.Type.Connect` event.
 This event tells you that you have received a `ConnectionAccept` message and you are now connected to the remote peer.
 
-> **Note**: In this case, the server that is listening on port `9000` on `IPAddress.Loopback` is more commonly known as `127.0.0.1`.
+> **Note**: In this case, the server that is listening on port `9000` on `NetworkEndPoint.LoopbackIpv4` is more commonly known as `127.0.0.1`.
 
 ```
             if (cmd == NetworkEvent.Type.Connect)
             {
                 Debug.Log("We are now connected to the server");
 
-                var value = 1;
-                using (var writer = new DataStreamWriter(4, Allocator.Temp))
-                {
-                    writer.Write(value);
-                    m_Connection.Send(m_Driver, writer);
-                }
+                uint value = 1;
+                var writer = m_Driver.BeginSend(m_Connection);
+                writer.WriteUInt(value);
+                m_Driver.EndSend(writer);
             }
 ```
-When you establish a connection between the client and the server, you send a number (that you want the server to increment by two). The use of the `using` pattern together with the `DataStreamWriter`, where we set `value` to one, write it into the stream, and finally send it out on the network.
+When you establish a connection between the client and the server, you send a number (that you want the server to increment by two). The use of the `BeginSend` / `EndSend` pattern together with the `DataStreamWriter`, where we set `value` to one, write it into the stream, and finally send it out on the network.
 
 When the `NetworkEvent` type is `Data`, as below, you read the `value` back that you received from the server and then call the `Disconnect` method.
 
@@ -375,8 +366,7 @@ When the `NetworkEvent` type is `Data`, as below, you read the `value` back that
 ```c#
             else if (cmd == NetworkEvent.Type.Data)
             {
-                var readerCtx = default(DataStreamReader.Context);
-                uint value = stream.ReadUInt(ref readerCtx);
+                uint value = stream.ReadUInt();
                 Debug.Log("Got the value = " + value + " back from the server");
                 Done = true;
                 m_Connection.Disconnect(m_Driver);

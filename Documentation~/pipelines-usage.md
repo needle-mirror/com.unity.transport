@@ -3,7 +3,7 @@ Pipelines are a feature which offers layers of functionality on top of the defau
 
 ## How it works
 
-The way it works is that you can add any number of pipeline stages to your transport driver. So when you send a packet it will go to the first stage, then the next and so on until it's sent on the wire. On the receiving side the stages are then processed in reverse order, so the packet is correctly "unpacked" by the stages. 
+The way it works is that you can add any number of pipeline stages to your transport driver. So when you send a packet it will go to the first stage, then the next and so on until it's sent on the wire. On the receiving side the stages are then processed in reverse order, so the packet is correctly "unpacked" by the stages.
 
 For example the first stage might compress a packet and a second stage could add a sequence number (just the packets header). When receiving the packet is first passed through the sequence stage and then decompressed. The sequence stage could drop the packet if it's out of order in which case it leaves the pipeline and doesn't continue to the decompression.
 
@@ -19,13 +19,12 @@ When sending packets the pipeline can then be specified as a parameter, so the p
 
 ```c#
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Utilities;
 
-public class Client {
-
-    UdpNetworkDriver m_DriverHandle;
+public class Client
+{
+    NetworkDriver m_DriverHandle;
     NetworkPipeline m_Pipeline;
 
     const int k_PacketSize = 256;
@@ -36,17 +35,17 @@ public class Client {
     public void Configure()
     {
         // Driver can be used as normal
-        m_DriverHandle = new UdpNetworkDriver(new SimulatorUtility.Parameters {MaxPacketSize = k_PacketSize, MaxPacketCount = 30, PacketDelayMs = 100});
+        m_DriverHandle = NetworkDriver.Create(new SimulatorUtility.Parameters {MaxPacketSize = k_PacketSize, MaxPacketCount = 30, PacketDelayMs = 100});
         // Driver now knows about this pipeline and can explicitly be asked to send packets through it (by default it sends directly)
         m_Pipeline = m_DriverHandle.CreatePipeline(typeof(UnreliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
     }
 
-    public unsafe void SendMessage(NativeArray<byte> someData)
+    public void SendMessage(NativeArray<byte> someData)
     {
-        var writer = new DataStreamWriter(k_PacketSize, Allocator.Persistent);
-        writer.WriteBytes((byte*)someData.GetUnsafeReadOnlyPtr(), someData.Length);
         // Send using the pipeline created in Configure()
-        m_ConnectionToServer.Send(m_DriverHandle, m_Pipeline, writer);
+        var writer = m_DriverHandle.BeginSend(m_Pipeline, m_ConnectionToServer);
+        writer.WriteBytes(someData);
+        m_DriverHandle.EndSend(writer);
     }
 }
 ```
@@ -59,7 +58,7 @@ The simulator pipeline stage could be added on either the client or server to si
 
 Nothing needs to be done after configuring the pipline, it can be set up like this when the driver is created:
 ```c#
-m_DriverHandle = new UdpNetworkDriver(new SimulatorUtility.Parameters {MaxPacketSize = NetworkParameterConstants.MTU, MaxPacketCount = 30, PacketDelayMs = 25, PacketDropPercentage = 10});
+m_DriverHandle = NetworkDriver.Create(new SimulatorUtility.Parameters {MaxPacketSize = NetworkParameterConstants.MTU, MaxPacketCount = 30, PacketDelayMs = 25, PacketDropPercentage = 10});
 m_Pipeline = m_DriverHandle.CreatePipeline(typeof(SimulatorPipelineStage));
 ```
 
@@ -72,10 +71,8 @@ To get information about internal state in the simulator you can check the Simul
 ```c#
 public unsafe void DumpSimulatorStatistics()
 {
-    NativeSlice<byte> receiveBuffer = default;
-    NativeSlice<byte> sendBuffer = default;
-    NativeSlice<byte> sharedBuffer = default;
-    driver.GetPipelineBuffers(pipeline, 0, connection[0], ref receiveBuffer, ref sendBuffer, ref sharedBuffer);
+    var simulatorStageId = NetworkPipelineStageCollection.GetStageId(typeof(SimulatorPipelineStage));
+    driver.GetPipelineBuffers(pipeline, simulatorStageId, connection[0], out var receiveBuffer, out var sendBuffer, out var sharedBuffer);
     var simCtx = (SimulatorUtility.Context*)sharedBuffer.GetUnsafeReadOnlyPtr();
     UnityEngine.Debug.Log("Simulator stats\n" +
         "PacketCount: " + simCtx->PacketCount + "\n" +
@@ -109,7 +106,7 @@ The ack packet type is used when a certain amount of time has passed and nothing
 ### Using the reliability pipeline
 
 ```c#
-m_ServerDriver = new UdpNetworkDriver(new ReliableUtility.Parameters { WindowSize = 32 });
+m_ServerDriver = NetworkDriver.Create(new ReliableUtility.Parameters { WindowSize = 32 });
 m_Pipeline = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
 ```
 This would create a pipeline with just the reliability pipeline stage present, and initialize it to a window size of 32 (so it can keep track of 32 reliable packets at a one time). The maximum value for this is 32.
@@ -118,13 +115,12 @@ Because only 32 packets can be tracked at a time there can't be more than 32 pac
 
 ```c#
 // Get a reference to the internal state or shared context of the reliability
-NativeSlice<byte> tmpReceiveBuffer = default;
-NativeSlice<byte> tmpSendBuffer = default;
-NativeSlice<byte> serverReliableBuffer = default;
-m_ServerDriver.GetPipelineBuffers(typeof(ReliableSequencedPipelineStage), serverToClient, ref tmpReceiveBuffer, ref tmpSendBuffer, ref serverReliableBuffer);
+var reliableStageId = NetworkPipelineStageCollection.GetStageId(typeof(ReliableSequencedPipelineStage));
+m_ServerDriver.GetPipelineBuffers(serverPipe, reliableStageId, serverToClient, out var tmpReceiveBuffer, out var tmpSendBuffer, out var serverReliableBuffer);
 var serverReliableCtx = (ReliableUtility.SharedContext*) serverReliableBuffer.GetUnsafePtr();
 
-m_ServerDriver.Send(serverPipe, serverToClient, strm);
+var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+m_ServerDriver.EndSend(strm);
 if (serverReliableCtx->errorCode != 0)
 {
     // Failed to send with reliability, error code will be ReliableUtility.ErrorCodes.OutgoingQueueIsFull if no buffer space is left to store the packet

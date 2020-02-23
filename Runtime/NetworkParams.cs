@@ -31,9 +31,9 @@ namespace Unity.Networking.Transport
     }
 
     /// <summary>
-    /// The NetworkDataStreamParameter is used to set the initial data stream size.
+    /// The NetworkDataStreamParameter is used to set a fixed data stream size.
     /// </summary>
-    /// <remarks>The <see cref="DataStreamWriter"/> can grow on demand so its not necessary to set this value. </remarks>
+    /// <remarks>The <see cref="DataStreamWriter"/> will grow on demand if the size is set to zero. </remarks>
     public struct NetworkDataStreamParameter : INetworkParameter
     {
         /// <summary>Size of the default <see cref="DataStreamWriter"/></summary>
@@ -55,5 +55,8 @@ namespace Unity.Networking.Transport
         /// <summary>The maximum amount of time a single frame can advance timeout values.</summary>
         /// <remarks>The main use for this parameter is to not get disconnects at frame spikes when both endpoints lives in the same process.</remarks>
         public int maxFrameTimeMS;
+        /// <summary>A fixed amount of time to use for an interval between ScheduleUpdate. This is used instead of a clock.</summary>
+        /// <remarks>The main use for this parameter is tests where determinism is more important than correctness.</remarks>
+        public int fixedFrameTimeMS;
     }
 }

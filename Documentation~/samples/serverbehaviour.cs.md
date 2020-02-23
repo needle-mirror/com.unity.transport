@@ -7,12 +7,12 @@ using Unity.Networking.Transport;
 
 public class ServerBehaviour : MonoBehaviour
 {
-    public UdpNetworkDriver m_Driver;
+    public NetworkDriver m_Driver;
     private NativeList<NetworkConnection> m_Connections;
 
     void Start ()
     {
-        m_Driver = new UdpNetworkDriver(new INetworkParameter[0]);
+        m_Driver = NetworkDriver.Create();
         var endpoint = NetworkEndPoint.AnyIpv4;
         endpoint.Port = 9000;
         if (m_Driver.Bind(endpoint) != 0)
@@ -30,7 +30,7 @@ public class ServerBehaviour : MonoBehaviour
     }
 
     void Update ()
-	{
+    {
         m_Driver.ScheduleUpdate().Complete();
 
         // CleanUpConnections
@@ -53,26 +53,21 @@ public class ServerBehaviour : MonoBehaviour
         DataStreamReader stream;
         for (int i = 0; i < m_Connections.Length; i++)
         {
-            if (!m_Connections[i].IsCreated)
-                Assert.IsTrue(true);
+            Assert.IsTrue(m_Connections[i].IsCreated);
 
             NetworkEvent.Type cmd;
-            while ((cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream)) !=
-                   NetworkEvent.Type.Empty)
+            while ((cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream)) != NetworkEvent.Type.Empty)
             {
                 if (cmd == NetworkEvent.Type.Data)
                 {
-                    var readerCtx = default(DataStreamReader.Context);
-                    uint number = stream.ReadUInt(ref readerCtx);
+                    uint number = stream.ReadUInt();
 
                     Debug.Log("Got " + number + " from the Client adding + 2 to it.");
                     number +=2;
 
-                    using (var writer = new DataStreamWriter(4, Allocator.Temp))
-                    {
-                        writer.Write(number);
-                        m_Driver.Send(NetworkPipeline.Null, m_Connections[i], writer);
-                    }
+                    var writer = m_Driver.BeginSend(NetworkPipeline.Null, m_Connections[i]);
+                    writer.WriteUInt(number);
+                    m_Driver.EndSend(writer);
                 }
                 else if (cmd == NetworkEvent.Type.Disconnect)
                 {
