@@ -84,7 +84,12 @@ namespace Unity.Networking.Transport
                 {
                     reliable->LastSentTime = ctx.timestamp;
 
-                    ReliableUtility.Write(ctx, inboundBuffer, ref header);
+                    if (ReliableUtility.Write(ctx, inboundBuffer, ref header) < 0)
+                    {
+                        // We failed to store the packet for possible later resends, abort and report this as a send error
+                        ctx.errorCode[0] = -1;
+                        return default;
+                    }
                     ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                     if (reliable->Resume != ReliableUtility.NullEntry)
                         needsResume = true;
@@ -135,6 +140,8 @@ namespace Unity.Networking.Transport
         public void Initialize(ReliableUtility.Parameters param)
         {
             m_ReliableParams = param;
+            if (param.WindowSize < 0 || param.WindowSize > 32)
+                throw new System.ArgumentOutOfRangeException("The reliability pipeline does not support negative WindowSize nor WindowSizes larger than 32");
         }
 
         public int HeaderCapacity => UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>();

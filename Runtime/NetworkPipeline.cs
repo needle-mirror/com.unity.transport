@@ -27,6 +27,7 @@ namespace Unity.Networking.Transport
         public NativeSlice<byte> internalProcessBuffer;
         public DataStreamWriter header;
         public long timestamp;
+        public NativeSlice<int> errorCode;
     }
 
     public class NetworkPipelineInitilizeAttribute : Attribute
@@ -153,16 +154,16 @@ namespace Unity.Networking.Transport
                 }
 
                 NativeList<UpdatePipeline> currentUpdates = new NativeList<UpdatePipeline>(128, Allocator.Temp);
-                ProcessPipelineSend(driver, startStage, pipeline, connection, payloadData, currentUpdates);
+                bool couldSend = ProcessPipelineSend(driver, startStage, pipeline, connection, payloadData, currentUpdates);
                 // Move the updates requested in this iteration to the concurrent queue so it can be read/parsed in update routine
                 for (int i = 0; i < currentUpdates.Length; ++i)
                     m_SendStageNeedsUpdateWrite.Enqueue(currentUpdates[i]);
 
                 Interlocked.Exchange(ref *sendBufferLock, 0);
-                return payloadData.Length;
+                return couldSend ? payloadData.Length : -1;
             }
 
-            internal unsafe void ProcessPipelineSend<T>(T driver, int startStage, NetworkPipeline pipeline, NetworkConnection connection,
+            internal unsafe bool ProcessPipelineSend<T>(T driver, int startStage, NetworkPipeline pipeline, NetworkConnection connection,
                 NativeSlice<byte> payloadBuffer, NativeList<UpdatePipeline> currentUpdates) where T : struct, INetworkPipelineSender
             {
                 NetworkPipelineContext ctx = default(NetworkPipelineContext);
@@ -178,6 +179,10 @@ namespace Unity.Networking.Transport
                 inboundBuffer.buffer1 = payloadBuffer;
 
                 var prevHeader = new DataStreamWriter(p.headerCapacity, Allocator.Temp);
+
+                bool sendStatus = true;
+                bool isInitialSend = (payloadBuffer.Length > 0);
+                ctx.errorCode = new NativeArray<int>(1, Allocator.Temp);
 
                 while (true)
                 {
@@ -198,7 +203,10 @@ namespace Unity.Networking.Transport
                     for (int i = startStage; i < p.NumStages; ++i)
                     {
                         var prevInbound = inboundBuffer;
+                        ctx.errorCode[0] = 0;
                         ProcessSendStage(i, internalBufferOffset, internalSharedBufferOffset, p, ref resumeQ, ref ctx, ref inboundBuffer, ref needsUpdate);
+                        if (ctx.errorCode[0] != 0 && isInitialSend)
+                            sendStatus = false;
                         if (inboundBuffer.buffer1 == prevInbound.buffer1 &&
                             inboundBuffer.buffer2 == prevInbound.buffer2)
                         {
@@ -274,7 +282,9 @@ namespace Unity.Networking.Transport
 
                     prevHeader.Clear();
                     inboundBuffer = default(InboundBufferVec);
+                    isInitialSend = false;
                 }
+                return sendStatus;
             }
 
             internal static unsafe NativeSlice<byte> Unsafe_GetSliceFromReadOnlyArray(NativeArray<byte> array, int offset, int length)
@@ -392,7 +402,7 @@ namespace Unity.Networking.Transport
                 m_SendBuffer.ResizeUninitialized(requiredSendSize);
             if (m_SharedBuffer.Length < requiredSharedSize)
                 m_SharedBuffer.ResizeUninitialized(requiredSharedSize);
-            
+
             UnsafeUtility.MemClear((byte*)m_ReceiveBuffer.GetUnsafePtr() + con.m_NetworkId * sizePerConnection[RecveiveSizeOffset], sizePerConnection[RecveiveSizeOffset]);
             UnsafeUtility.MemClear((byte*)m_SendBuffer.GetUnsafePtr() + con.m_NetworkId * sizePerConnection[SendSizeOffset], sizePerConnection[SendSizeOffset]);
             UnsafeUtility.MemClear((byte*)m_SharedBuffer.GetUnsafePtr() + con.m_NetworkId * sizePerConnection[SharedSizeOffset], sizePerConnection[SharedSizeOffset]);
@@ -418,7 +428,7 @@ namespace Unity.Networking.Transport
                 {
                     var sendProcessBuffer =
                         new NativeSlice<byte>(m_SendBuffer, sendBufferOffset, m_StageCollection.GetSendCapacity(m_StageList[stage]));
-                    var recvProcessBuffer = 
+                    var recvProcessBuffer =
                         new NativeSlice<byte>(m_ReceiveBuffer, recvBufferOffset, m_StageCollection.GetReceiveCapacity(m_StageList[stage]));
                     var sharedProcessBuffer =
                         new NativeSlice<byte>(m_SharedBuffer, sharedBufferOffset, m_StageCollection.GetSharedStateCapacity(m_StageList[stage]));

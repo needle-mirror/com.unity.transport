@@ -1,5 +1,9 @@
 # Change log
 
+## [0.2.4-preview.0] - 2020-02-28
+### Fixes
+* Fixed an issue in the reliable pipeline which would cause it to not recover if one end did not receive packages for a while.
+
 ## [0.2.3-preview.0] - 2019-12-12
 ### New features
 ### Changes
