@@ -1,3 +1,4 @@
+using AOT;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Utilities;
@@ -21,6 +22,8 @@ namespace Unity.Networking.Transport
             }
             if (param.WindowSize == 0)
                 param = new ReliableUtility.Parameters{WindowSize = ReliableUtility.ParameterConstants.WindowSize};
+            if (param.WindowSize <= 0 || param.WindowSize > 32)
+                throw new System.ArgumentOutOfRangeException("The reliability pipeline does not support negative WindowSize nor WindowSizes larger than 32");
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -35,6 +38,7 @@ namespace Unity.Networking.Transport
         public int StaticSize => UnsafeUtility.SizeOf<ReliableUtility.Parameters>();
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             // Request a send update to see if a queued packet needs to be resent later or if an ack packet should be sent
@@ -101,6 +105,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             // Request an update to see if a queued packet needs to be resent later or if an ack packet should be sent
@@ -118,7 +123,13 @@ namespace Unity.Networking.Transport
             {
                 reliable->LastSentTime = ctx.timestamp;
 
-                ReliableUtility.Write(ctx, inboundBuffer, ref header);
+                if (ReliableUtility.Write(ctx, inboundBuffer, ref header) < 0)
+                {
+                    // We failed to store the packet for possible later resends, abort and report this as a send error
+                    inboundBuffer = default;
+                    requests |= NetworkPipelineStage.Requests.Error;
+                    return;
+                }
                 ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 if (reliable->Resume != ReliableUtility.NullEntry)
                     requests |= NetworkPipelineStage.Requests.Resume;
@@ -157,6 +168,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
             byte* sharedProcessBuffer, int sharedProcessBufferLength)

@@ -19,13 +19,40 @@ namespace Tests
         NetworkEvent.Type ev;
         DataStreamReader stream;
 
+#if UNITY_TRANSPORT_ENABLE_BASELIB
+        private const string backend = "baselib";
+#else
+        private const string backend = "transport";
+#endif
+
+        NetworkEvent.Type PollDriverAndFindDataEvent(ref NetworkDriver driver, NetworkConnection connection, NetworkEvent.Type eventType, int maxRetryCount=10)
+        {
+            for (int retry = 0; retry < maxRetryCount; ++retry)
+            {
+                driver.ScheduleUpdate().Complete();
+                ev = driver.PopEventForConnection(connection, out stream);
+                if (ev == eventType || ev != NetworkEvent.Type.Empty)
+                {
+                    return ev;
+                }
+            }
+            return NetworkEvent.Type.Empty;
+        }
+
         public void SetupServerAndClientAndConnectThem(int bufferSize)
         {
             //setup server
             server_driver = NetworkDriver.Create(new NetworkDataStreamParameter { size = bufferSize });
             NetworkEndPoint server_endpoint = NetworkEndPoint.LoopbackIpv4;
             server_endpoint.Port = 1337;
-            server_driver.Bind(server_endpoint);
+            var ret = server_driver.Bind(server_endpoint);
+            int maxRetry = 10;
+            while (ret != 0 && --maxRetry > 0)
+            {
+                server_endpoint.Port += 17;
+                ret = server_driver.Bind(server_endpoint);
+            };
+            Assert.AreEqual(ret, 0, "Failed to bind the socket");
             server_driver.Listen();
 
             //setup client
@@ -34,18 +61,22 @@ namespace Tests
 
             //update drivers
             client_driver.ScheduleUpdate().Complete();
-            server_driver.ScheduleUpdate().Complete();
 
-            //accept connection
-            connectionToClient = server_driver.Accept();
+            for (int i = 0; i < 10; ++i)
+            {
+                server_driver.ScheduleUpdate().Complete();
+                //accept connection
+                connectionToClient = server_driver.Accept();
+                if (connectionToClient.IsCreated)
+                    break;
+            }
+            Assert.IsTrue(connectionToClient.IsCreated, "Failed to accept the connection");
 
-            server_driver.ScheduleUpdate().Complete();
-            ev = server_driver.PopEventForConnection(connectionToClient, out stream);
-            Assert.IsTrue(ev == NetworkEvent.Type.Empty, "Not empty NetworkEvent on the server appeared");
+            ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Empty);
+            Assert.IsTrue(ev == NetworkEvent.Type.Empty, $"Not empty NetworkEvent on the server appeared, got {ev} using {backend}");
 
-            client_driver.ScheduleUpdate().Complete();
-            ev = clientToServerConnection.PopEvent(client_driver, out stream);
-            Assert.IsTrue(ev == NetworkEvent.Type.Connect, "NetworkEvent should have Type.Connect on the client");
+            ev = PollDriverAndFindDataEvent(ref client_driver, clientToServerConnection, NetworkEvent.Type.Connect);
+            Assert.IsTrue(ev == NetworkEvent.Type.Connect, $"NetworkEvent should have Type.Connect on the client, but got {ev} using {backend}");
         }
 
         public void DisconnectAndCleanup()
@@ -54,10 +85,8 @@ namespace Tests
 
             //update drivers
             client_driver.ScheduleUpdate().Complete();
-            server_driver.ScheduleUpdate().Complete();
-
-            ev = server_driver.PopEventForConnection(connectionToClient, out stream);
-            Assert.IsTrue(ev == NetworkEvent.Type.Disconnect, "NetworkEvent.Type.Disconnect was expected to appear, but " + ev + "appeared");
+            ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Disconnect);
+            Assert.IsTrue(ev == NetworkEvent.Type.Disconnect, "NetworkEvent.Type.Disconnect was expected to appear, but " + ev + " appeared");
 
             server_driver.Dispose();
             client_driver.Dispose();
@@ -105,13 +134,9 @@ namespace Tests
             for (int i = 0; i < numberOfClients; i++)
             {
                 connectionToClientArray[i] = server_driver.Accept();
-
-                server_driver.ScheduleUpdate().Complete();
-                ev = server_driver.PopEventForConnection(connectionToClientArray[i], out stream);
+                ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClientArray[i], NetworkEvent.Type.Empty);
                 Assert.IsTrue(ev == NetworkEvent.Type.Empty, "Not empty NetworkEvent on the server appeared");
-
-                client_driversArray[i].ScheduleUpdate().Complete();
-                ev = clientToServerConnectionsArray[i].PopEvent(client_driversArray[i], out stream);
+                ev = PollDriverAndFindDataEvent(ref client_driversArray[i], clientToServerConnectionsArray[i], NetworkEvent.Type.Connect);
                 Assert.IsTrue(ev == NetworkEvent.Type.Connect, "NetworkEvent should have Type.Connect on the client");
             }
             //close connections
@@ -121,10 +146,8 @@ namespace Tests
 
                 //update drivers
                 client_driversArray[i].ScheduleUpdate().Complete();
-                server_driver.ScheduleUpdate().Complete();
-
-                ev = server_driver.PopEventForConnection(connectionToClientArray[i], out stream);
-                Assert.IsTrue(ev == NetworkEvent.Type.Disconnect, "NetworkEvent.Type.Disconnect was expected to appear, but " + ev + "appeared");
+                ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClientArray[i], NetworkEvent.Type.Disconnect);
+                Assert.IsTrue(ev == NetworkEvent.Type.Disconnect, "NetworkEvent.Type.Disconnect was expected to appear, but " + ev + " appeared");
             }
 
             server_driver.Dispose();
@@ -151,8 +174,7 @@ namespace Tests
             client_driver.ScheduleFlushSend(default).Complete();
 
             //handle sent data
-            server_driver.ScheduleUpdate().Complete();
-            ev = server_driver.PopEventForConnection(connectionToClient, out stream);
+            ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Data);
             Assert.IsTrue(ev == NetworkEvent.Type.Data, "Expected to get Type.Data");
             var msg = new NativeArray<byte>(stream.Length, Allocator.Temp);
             stream.ReadBytes(msg);
@@ -176,8 +198,8 @@ namespace Tests
 
             //handle sent data
             server_driver.ScheduleUpdate().Complete();
-            client_driver.ScheduleUpdate().Complete();
-            ev = clientToServerConnection.PopEvent(client_driver, out stream);
+
+            ev = PollDriverAndFindDataEvent(ref client_driver, clientToServerConnection, NetworkEvent.Type.Data);
             Assert.IsTrue(ev == NetworkEvent.Type.Data, "Expected to get Type.Data");
             msg = new NativeArray<byte>(stream.Length, Allocator.Temp);
             stream.ReadBytes(msg);
@@ -239,8 +261,7 @@ namespace Tests
             client_driver.EndSend(m_OutStream);
             client_driver.ScheduleFlushSend(default).Complete();
 
-            server_driver.ScheduleUpdate().Complete();
-            ev = server_driver.PopEventForConnection(connectionToClient, out stream);
+            ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Data);
             Assert.IsTrue(ev == NetworkEvent.Type.Data, "Expected to get Type.Data");
             var msg = new NativeArray<byte>(stream.Length, Allocator.Temp);
             stream.ReadBytes(msg);
@@ -270,10 +291,8 @@ namespace Tests
             client_driver.ScheduleFlushSend(default).Complete();
 
             //handle sent data
-            server_driver.ScheduleUpdate().Complete();
             client_driver.ScheduleUpdate().Complete();
-
-            ev = server_driver.PopEventForConnection(connectionToClient, out stream);
+            ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Data);
             Assert.IsTrue(ev == NetworkEvent.Type.Data, "Expected to get Type.Empty");
             Assert.IsFalse(stream.IsCreated);
 

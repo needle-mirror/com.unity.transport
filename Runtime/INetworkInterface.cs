@@ -74,7 +74,7 @@ namespace Unity.Networking.Transport
     }
     public struct NetworkSendInterface
     {
-        public delegate int BeginSendMessageDelegate(out NetworkInterfaceSendHandle handle, IntPtr userData);
+        public delegate int BeginSendMessageDelegate(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPatyloadSize);
         public delegate int EndSendMessageDelegate(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueue);
         public delegate void AbortSendMessageDelegate(ref NetworkInterfaceSendHandle handle, IntPtr userData);
         public TransportFunctionPointer<BeginSendMessageDelegate> BeginSendMessage;

@@ -67,7 +67,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(42, strmReader.ReadInt());
             serverDriver.ScheduleUpdate().Complete();
             strmReader = ctx;
-            Assert.Throws<InvalidOperationException>(() => { strmReader.ReadInt(); });
+            Assert.Catch(() => { strmReader.ReadInt(); });
             clientDriver.Dispose();
             serverDriver.Dispose();
         }

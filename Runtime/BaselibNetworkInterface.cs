@@ -4,6 +4,7 @@
 #if UNITY_TRANSPORT_ENABLE_BASELIB
 using System;
 using System.Collections.Generic;
+using AOT;
 using Unity.Baselib;
 using Unity.Baselib.LowLevel;
 using Unity.Burst;
@@ -458,7 +459,8 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
-        private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData)
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
+        private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize)
         {
             var baselib = (BaselibData*)userData;
             handle = default(NetworkInterfaceSendHandle);
@@ -466,15 +468,21 @@ namespace Unity.Networking.Transport
             if (index < 0)
                 return -1;
 
+            var message = baselib->m_PayloadsTx.GetRequestFromHandle(index);
+            if ((int) message.payload.size < requiredPayloadSize)
+            {
+                baselib->m_PayloadsTx.ReleaseHandle(index);
+                return -1;
+            }
             handle.id = index;
             handle.size = 0;
-            var message = baselib->m_PayloadsTx.GetRequestFromHandle(index);
             handle.data = (IntPtr)message.payload.data;
             handle.capacity = (int) message.payload.size;
             return 0;
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
         private static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueueHandle)
         {
             var baselib = (BaselibData*)userData;
@@ -503,6 +511,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static unsafe void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
         {
             var baselib = (BaselibData*)userData;

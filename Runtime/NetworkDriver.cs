@@ -99,11 +99,11 @@ namespace Unity.Networking.Transport
                 public NetworkInterfaceSendHandle SendHandle;
                 public int headerSize;
             }
-            public DataStreamWriter BeginSend(NetworkConnection id)
+            public DataStreamWriter BeginSend(NetworkConnection id, int requiredPayloadSize = 0)
             {
-                return BeginSend(NetworkPipeline.Null, id);
+                return BeginSend(NetworkPipeline.Null, id, requiredPayloadSize);
             }
-            public unsafe DataStreamWriter BeginSend(NetworkPipeline pipe, NetworkConnection id)
+            public unsafe DataStreamWriter BeginSend(NetworkPipeline pipe, NetworkConnection id, int requiredPayloadSize = 0)
             {
                 if (id.m_NetworkId < 0 || id.m_NetworkId >= m_ConnectionList.Length)
                     return default;
@@ -116,29 +116,42 @@ namespace Unity.Networking.Transport
                     throw new InvalidOperationException("Cannot send data while connecting");
 #endif
 
-                NetworkInterfaceSendHandle sendHandle;
-                if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData) != 0)
-                    return default;
-                var header = (UdpCHeader*) sendHandle.data;
-                *header = new UdpCHeader
-                {
-                    Type = (byte) UdpCProtocol.Data,
-                    SessionToken = connection.SendToken,
-                    Flags = m_DefaultHeaderFlags
-                };
+                var flags = m_DefaultHeaderFlags;
                 var headerSize = UnsafeUtility.SizeOf<UdpCHeader>();
                 if (pipe.Id > 0)
                 {
-                    header->Flags |= UdpCHeader.HeaderFlags.HasPipeline;
+                    flags |= UdpCHeader.HeaderFlags.HasPipeline;
                     // All headers plus one byte for pipeline id
                     headerSize += m_PipelineProcessor.SendHeaderCapacity(pipe) + 1;
                 }
                 var footerSize = 0;
                 if (connection.DidReceiveData == 0)
                 {
-                    header->Flags |= UdpCHeader.HeaderFlags.HasConnectToken;
+                    flags |= UdpCHeader.HeaderFlags.HasConnectToken;
                     footerSize = 2;
                 }
+
+                // Make sure there is space for headers and footers too
+                if (requiredPayloadSize == 0)
+                    requiredPayloadSize = NetworkParameterConstants.MTU;
+                else
+                {
+                    requiredPayloadSize += headerSize + footerSize;
+                    if (requiredPayloadSize > NetworkParameterConstants.MTU)
+                        throw new InvalidOperationException("It is not possible to send packages larger than the MTU");
+                }
+
+
+                NetworkInterfaceSendHandle sendHandle;
+                if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, requiredPayloadSize) != 0)
+                    return default;
+                var header = (UdpCHeader*) sendHandle.data;
+                *header = new UdpCHeader
+                {
+                    Type = (byte) UdpCProtocol.Data,
+                    SessionToken = connection.SendToken,
+                    Flags = flags
+                };
 
                 if (headerSize + footerSize >= sendHandle.capacity)
                     throw new InvalidOperationException("Package could not fit any data");
@@ -231,56 +244,6 @@ namespace Unity.Networking.Transport
             internal void AbortSend(NetworkInterfaceSendHandle sendHandle)
             {
                 m_NetworkSendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, m_NetworkSendInterface.UserData);
-            }
-
-            internal unsafe int Send(NetworkConnection id, network_iovec* dataIov, int dataIovLen)
-            {
-                if (id.m_NetworkId < 0 || id.m_NetworkId >= m_ConnectionList.Length)
-                    return 0;
-                var connection = m_ConnectionList[id.m_NetworkId];
-                if (connection.Version != id.m_NetworkVersion)
-                    return 0;
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (connection.State == NetworkConnection.State.Connecting)
-                    throw new InvalidOperationException("Cannot send data while connecting");
-#endif
-
-                // update last attempt;
-                NetworkInterfaceSendHandle sendHandle;
-                if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData) != 0)
-                    return -1;
-                byte* packet = (byte*) sendHandle.data;
-                sendHandle.size = UdpCHeader.Length;
-                if (sendHandle.size > sendHandle.capacity)
-                    return -1;
-                var header = (UdpCHeader*) packet;
-                *header = new UdpCHeader
-                {
-                    Type = (byte) UdpCProtocol.Data,
-                    SessionToken = connection.SendToken,
-                    Flags = m_DefaultHeaderFlags
-                };
-                packet += UdpCHeader.Length;
-                for (int i = 0; i < dataIovLen; ++i)
-                {
-                    sendHandle.size += dataIov[i].len;
-                    if (sendHandle.size > sendHandle.capacity)
-                        return -1;
-                    UnsafeUtility.MemCpy(packet, dataIov[i].buf, dataIov[i].len);
-                    packet += dataIov[i].len;
-                }
-
-                if (connection.DidReceiveData == 0)
-                {
-                    header->Flags |= UdpCHeader.HeaderFlags.HasConnectToken;
-                    sendHandle.size += 2;
-                    if (sendHandle.size > sendHandle.capacity)
-                        return -1;
-                    UnsafeUtility.MemCpy(packet, &connection.ReceiveToken, 2);
-                }
-                var queueHandle = NetworkSendQueueHandle.ToTempHandle(m_ConcurrentParallelSendQueue);
-                return m_NetworkSendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref connection.Address, m_NetworkSendInterface.UserData, ref queueHandle);
             }
             public NetworkConnection.State GetConnectionState(NetworkConnection id)
             {
@@ -845,7 +808,7 @@ namespace Unity.Networking.Transport
             unsafe
             {
                 NetworkInterfaceSendHandle sendHandle;
-                if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData) != 0)
+                if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, UdpCHeader.Length) != 0)
                 {
                     m_Logger.Log(NetworkLogger.LogLevel.Error, m_StringDB[(int) StringType.ConnectionRequestSendError]);
                     return;
@@ -921,13 +884,13 @@ namespace Unity.Networking.Transport
             return s_NetworkInterfaces[m_NetworkInterfaceIndex].GetGenericEndPoint(ep);
         }
 
-        public DataStreamWriter BeginSend(NetworkPipeline pipe, NetworkConnection id)
+        public DataStreamWriter BeginSend(NetworkPipeline pipe, NetworkConnection id, int requiredPayloadSize = 0)
         {
-            return ToConcurrentSendOnly().BeginSend(pipe, id);
+            return ToConcurrentSendOnly().BeginSend(pipe, id, requiredPayloadSize);
         }
-        public DataStreamWriter BeginSend(NetworkConnection id)
+        public DataStreamWriter BeginSend(NetworkConnection id, int requiredPayloadSize = 0)
         {
-            return ToConcurrentSendOnly().BeginSend(NetworkPipeline.Null, id);
+            return ToConcurrentSendOnly().BeginSend(NetworkPipeline.Null, id, requiredPayloadSize);
         }
         public int EndSend(DataStreamWriter writer)
         {
@@ -1039,7 +1002,7 @@ namespace Unity.Networking.Transport
         unsafe int SendPacket(UdpCProtocol type, Connection connection)
         {
             NetworkInterfaceSendHandle sendHandle;
-            if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData) != 0)
+            if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, UdpCHeader.Length + 2) != 0)
                 return -1;
             byte* packet = (byte*) sendHandle.data;
             sendHandle.size = UdpCHeader.Length;

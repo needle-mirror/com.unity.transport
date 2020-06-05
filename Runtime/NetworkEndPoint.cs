@@ -39,9 +39,9 @@ namespace Unity.Networking.Transport
         [StructLayout(LayoutKind.Explicit)]
         public struct RawNetworkAddress
         {
-            [FieldOffset(0)] public fixed byte data[19];
-            [FieldOffset(0)] public fixed byte ipv6[16];
-            [FieldOffset(0)] public fixed byte ipv4_bytes[4];
+            [FieldOffset(0)] public fixed byte data[rawLength];
+            [FieldOffset(0)] public fixed byte ipv6[rawIpv6Length];
+            [FieldOffset(0)] public fixed byte ipv4_bytes[rawIpv4Length];
             [FieldOffset(0)] public uint ipv4;
             [FieldOffset(16)] public ushort port;
             [FieldOffset(18)] public byte family;
@@ -91,13 +91,13 @@ namespace Unity.Networking.Transport
         {
             if (Family == NetworkFamily.Ipv4)
             {
-                var bytes = new NativeArray<byte>(4, Allocator.Temp);
+                var bytes = new NativeArray<byte>(rawIpv4Length, Allocator.Temp);
                 UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref rawNetworkAddress), rawIpv4Length);
                 return bytes;
             }
             else if (Family == NetworkFamily.Ipv6)
             {
-                var bytes = new NativeArray<byte>(16, Allocator.Temp);
+                var bytes = new NativeArray<byte>(rawIpv6Length, Allocator.Temp);
                 UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref rawNetworkAddress), rawIpv6Length);
                 return bytes;
             }
@@ -106,20 +106,21 @@ namespace Unity.Networking.Transport
 
         public void SetRawAddressBytes(NativeArray<byte> bytes, NetworkFamily family = NetworkFamily.Ipv4)
         {
-            if (family == NetworkFamily.Ipv4 && bytes.Length== rawIpv4Length)
+            if (family == NetworkFamily.Ipv4)
             {
-                UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(),  rawIpv4Length);
+                if (bytes.Length != rawIpv4Length)
+                    throw new InvalidOperationException($"Bad input length, a ipv4 address is 4 bytes long not {bytes.Length}");
+
+                UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(), rawIpv4Length);
+                Family = family;
             }
-            else if (family == NetworkFamily.Ipv6 && bytes.Length == rawIpv6Length)
+            else if (family == NetworkFamily.Ipv6)
             {
-                UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(),  rawIpv6Length);
-            }
-            else
-            {
-                if (family == NetworkFamily.Ipv4 && bytes.Length != rawIpv4Length)
-                    throw new InvalidOperationException("Bad input length, a ipv4 address is 4 bytes long");
-                if (family == NetworkFamily.Ipv6 && bytes.Length == rawIpv6Length)
-                    throw new InvalidOperationException("Bad input length, a ipv6 address is 16 bytes long");
+                if (bytes.Length != rawIpv6Length)
+                    throw new InvalidOperationException($"Bad input length, a ipv6 address is 16 bytes long not {bytes.Length}");
+
+                UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(), rawIpv6Length);
+                Family = family;
             }
         }
 
@@ -284,7 +285,7 @@ namespace Unity.Networking.Transport
 
                 for (int i = 0; i < rawLength; i++)
                 {
-                    result = (result * 31) ^ (int) (IntPtr) (p + 1);
+                    result = (result * 31) ^ (int)p[i];
                 }
 
                 return result;
@@ -295,15 +296,62 @@ namespace Unity.Networking.Transport
         {
             var p = (byte*) UnsafeUtility.AddressOf(ref rawNetworkAddress);
             var p1 = (byte*) UnsafeUtility.AddressOf(ref other.rawNetworkAddress);
-            if (UnsafeUtility.MemCmp(p, p1, rawLength) == 0)
-                return true;
-
-            return false;
+            return UnsafeUtility.MemCmp(p, p1, rawLength) == 0;
         }
 
         private string AddressAsString()
         {
-            return string.Empty;
+            switch (Family)
+            {
+                case NetworkFamily.Ipv4:
+                    return string.Concat(
+#if UNITY_TRANSPORT_ENABLE_BASELIB
+                        // TODO(steve): Update to use ipv4_0 ... 3 when its available.
+                        rawNetworkAddress.data0, ".",
+                        rawNetworkAddress.data1, ".",
+                        rawNetworkAddress.data2, ".",
+                        rawNetworkAddress.data3,
+#else
+                        rawNetworkAddress.ipv4_bytes[0], ".",
+                        rawNetworkAddress.ipv4_bytes[1], ".",
+                        rawNetworkAddress.ipv4_bytes[2], ".",
+                        rawNetworkAddress.ipv4_bytes[3],
+#endif
+                        ":", Port
+                    );
+                case NetworkFamily.Ipv6:
+                    const string numberFormat = "[{0:x}:{1:x}:{2:x}:{3:x}:{4:x}:{5:x}:{6:x}:{7:x}]:{8}";
+                    // TODO(steve): Include scope and handle leading zeros
+#if UNITY_TRANSPORT_ENABLE_BASELIB
+                    // TODO(steve): Update to use ipv6_0 ... 15 when its available.
+                    return String.Format(numberFormat,
+                        rawNetworkAddress.data1 | (rawNetworkAddress.data0 << 8),
+                        rawNetworkAddress.data3 | (rawNetworkAddress.data2 << 8),
+                        rawNetworkAddress.data5 | (rawNetworkAddress.data4 << 8),
+                        rawNetworkAddress.data7 | (rawNetworkAddress.data6 << 8),
+                        rawNetworkAddress.data9 | (rawNetworkAddress.data8 << 8),
+                        rawNetworkAddress.data11 | (rawNetworkAddress.data10 << 8),
+                        rawNetworkAddress.data12 | (rawNetworkAddress.data13 << 8),
+                        rawNetworkAddress.data14 | (rawNetworkAddress.data15 << 8),
+                        Port
+                    );
+#else
+                    return String.Format(numberFormat,
+                        rawNetworkAddress.ipv6[1] | (rawNetworkAddress.ipv6[0] << 8),
+                        rawNetworkAddress.ipv6[3] | (rawNetworkAddress.ipv6[2] << 8),
+                        rawNetworkAddress.ipv6[5] | (rawNetworkAddress.ipv6[4] << 8),
+                        rawNetworkAddress.ipv6[7] | (rawNetworkAddress.ipv6[6] << 8),
+                        rawNetworkAddress.ipv6[9] | (rawNetworkAddress.ipv6[8] << 8),
+                        rawNetworkAddress.ipv6[11] | (rawNetworkAddress.ipv6[10] << 8),
+                        rawNetworkAddress.ipv6[12] | (rawNetworkAddress.ipv6[13] << 8),
+                        rawNetworkAddress.ipv6[14] | (rawNetworkAddress.ipv6[15] << 8),
+                        Port
+                    );
+#endif
+                default:
+                    // TODO(steve): Throw an exception?
+                    return string.Empty;
+            }
         }
 
         private static ushort ByteSwap(ushort val)
@@ -403,7 +451,7 @@ namespace Unity.Networking.Transport
 
                     for (int i = 0; i < dataLength; i++)
                     {
-                        result = (result * 31) ^ (int)(IntPtr) (p + 1);
+                        result = (result * 31) ^ (int)p[i];
                     }
 
                     return result;
@@ -412,23 +460,25 @@ namespace Unity.Networking.Transport
 
         bool Compare(NetworkInterfaceEndPoint other)
         {
-// Workaround for baselib issue on Posix
-            if (dataLength != other.dataLength)
-            {
 #if UNITY_TRANSPORT_ENABLE_BASELIB
-                if (dataLength <= 0 || other.dataLength <= 0)
-                    return false;
-#else
+            // baselib doesn't return consistent lengths under posix, so lengths can
+            // only be used as a shortcut if only one addresses a blank.
+            if (dataLength != other.dataLength && (dataLength <= 0 || other.dataLength <= 0))
                 return false;
-#endif
-            }
+
             fixed (void* p = this.data)
             {
-                if (UnsafeUtility.MemCmp(p, other.data, math.min(dataLength, other.dataLength)) == 0)
-                    return true;
+                return UnsafeUtility.MemCmp(p, other.data, math.min(dataLength, other.dataLength)) == 0;
             }
+#else
+            if (dataLength != other.dataLength)
+                return false;
 
-            return false;
+            fixed (void* p = this.data)
+            {
+                return UnsafeUtility.MemCmp(p, other.data, dataLength) == 0;
+            }
+#endif
         }
     }
 }

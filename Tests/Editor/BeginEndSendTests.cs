@@ -177,7 +177,7 @@ namespace Unity.Networking.Transport.Tests
                 ToRemoteConnection = ToRemoteConnection
             };
             beginJob.Schedule().Complete();
-            Assert.Throws<InvalidOperationException>(()=>{Driver.EndSend(BeginSendJob.writer);});
+            Assert.Catch(()=>{Driver.EndSend(BeginSendJob.writer);});
 
             LogAssert.Expect(LogType.Error, "Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
             Driver.ScheduleUpdate().Complete();

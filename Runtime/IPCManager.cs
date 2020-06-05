@@ -76,7 +76,7 @@ namespace Unity.Networking.Transport
                     int tmp;
                     if (!m_IPCChannels.TryGetValue(port, out tmp))
                     {
-                        id = m_IPCChannels.Length + 1;
+                        id = m_IPCChannels.Count() + 1;
                         m_IPCChannels.TryAdd(port, id);
                     }
                 }
@@ -86,7 +86,7 @@ namespace Unity.Networking.Transport
             {
                 if (!m_IPCChannels.TryGetValue(port, out id))
                 {
-                    id = m_IPCChannels.Length + 1;
+                    id = m_IPCChannels.Count() + 1;
                     m_IPCChannels.TryAdd(port, id);
                 }
             }
@@ -104,7 +104,7 @@ namespace Unity.Networking.Transport
             var values = m_IPCChannels.GetValueArray(Allocator.Temp);
             var keys = m_IPCChannels.GetKeyArray(Allocator.Temp);
             port = 0;
-            for (var i = 0; i < m_IPCChannels.Length; ++i)
+            for (var i = 0; i < m_IPCChannels.Count(); ++i)
             {
                 if (values[i] == id)
                 {

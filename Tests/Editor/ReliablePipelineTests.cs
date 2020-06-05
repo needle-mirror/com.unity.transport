@@ -1,12 +1,117 @@
 using System;
+using AOT;
 using NUnit.Framework;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Utilities;
 using UnityEngine;
+using Unity.Burst;
 
 namespace Unity.Networking.Transport.Tests
 {
+    [BurstCompile]
+    public unsafe struct TempDisconnectPipelineStage : INetworkPipelineStage
+    {
+        public static byte* s_StaticInstanceBuffer;
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        {
+            s_StaticInstanceBuffer = staticInstanceBuffer;
+            *staticInstanceBuffer = 1;
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 0,
+                SendCapacity: 0,
+                HeaderCapacity: 0,
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 1;
+
+        [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            if (*ctx.staticInstanceBuffer == 0)
+            {
+                inboundBuffer = default;
+            }
+        }
+
+        [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+        }
+
+        [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
+        {
+        }
+    }
+    [BurstCompile]
+    public unsafe struct TempDisconnectSendPipelineStage : INetworkPipelineStage
+    {
+        public static byte* s_StaticInstanceBuffer;
+        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
+        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
+        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        {
+            s_StaticInstanceBuffer = staticInstanceBuffer;
+            *staticInstanceBuffer = 1;
+            return new NetworkPipelineStage(
+                Receive: ReceiveFunctionPointer,
+                Send: SendFunctionPointer,
+                InitializeConnection: InitializeConnectionFunctionPointer,
+                ReceiveCapacity: 0,
+                SendCapacity: 0,
+                HeaderCapacity: 0,
+                SharedStateCapacity: 0
+            );
+        }
+        public int StaticSize => 1;
+
+        [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+        }
+
+        [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
+        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        {
+            if (*ctx.staticInstanceBuffer == 0)
+            {
+                inboundBuffer = default;
+            }
+        }
+
+        [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
+        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+            byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
+            byte* sharedProcessBuffer, int sharedProcessBufferLength)
+        {
+        }
+    }
+
+    public struct TempDisconnectPipelineStageCollection
+    {
+        public static void Register()
+        {
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TempDisconnectPipelineStage());
+            NetworkPipelineStageCollection.RegisterPipelineStage(new TempDisconnectSendPipelineStage());
+        }
+    }
     public class ReliablePipelineTests
     {
         [Test]
@@ -1202,6 +1307,7 @@ namespace Unity.Networking.Transport.Tests
         [SetUp]
         public void IPC_Setup()
         {
+            TempDisconnectPipelineStageCollection.Register();
             var timeoutParam = new NetworkConfigParameter
             {
                 connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
@@ -1819,5 +1925,76 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(simulatorCtx->PacketDropCount, 1);
         }
 
+        [Test]
+        public unsafe void NetworkPipeline_ReliableSequenced_CanRecoverFromPause()
+        {
+            var clientPipe = m_ClientDriver.CreatePipeline(typeof(TempDisconnectSendPipelineStage), typeof(ReliableSequencedPipelineStage), typeof(TempDisconnectPipelineStage));
+            var serverPipe = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+            var clientToServer = m_ClientDriver.Connect(m_ServerDriver.LocalEndPoint());
+            m_ClientDriver.ScheduleUpdate().Complete();
+            m_ServerDriver.ScheduleUpdate().Complete();
+            var serverToClient = m_ServerDriver.Accept();
+
+            m_ClientDriver.ScheduleUpdate().Complete();
+            DataStreamReader readStrm;
+            Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
+
+            m_ServerDriver.ScheduleUpdate().Complete();
+            m_ClientDriver.ScheduleUpdate().Complete();
+            Assert.AreEqual(NetworkEvent.Type.Empty, clientToServer.PopEvent(m_ClientDriver, out readStrm));
+
+            // 100 frames = 1600ms
+            int firstFailed = 0;
+            int numFailed = 0;
+            int nextRecv = 0;
+            for (int frame = 0; frame < 300; ++frame)
+            {
+                if (frame == 100)
+                {
+                    // Ignore all send and receive calls on the client after 100 frames
+                    *TempDisconnectPipelineStage.s_StaticInstanceBuffer = 0;
+                    *TempDisconnectSendPipelineStage.s_StaticInstanceBuffer = 0;
+                }
+                else if (frame == 200)
+                {
+                    // Resume send and receive calls again after 200 frames
+                    *TempDisconnectPipelineStage.s_StaticInstanceBuffer = 1;
+                    *TempDisconnectSendPipelineStage.s_StaticInstanceBuffer = 1;
+                }
+                int sendStatus = -1;
+                var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
+                if (strm.IsCreated)
+                {
+                    strm.WriteInt((int) frame);
+                    sendStatus = m_ServerDriver.EndSend(strm);
+                }
+                if (sendStatus != 4)
+                {
+                    if (numFailed == 0)
+                        firstFailed = frame;
+                    ++numFailed;
+                }
+
+                m_ServerDriver.ScheduleUpdate().Complete();
+                m_ClientDriver.ScheduleUpdate().Complete();
+                bool gotData = true;
+                while (gotData)
+                {
+                    var clientEvent = clientToServer.PopEvent(m_ClientDriver, out readStrm);
+                    if (clientEvent == NetworkEvent.Type.Data)
+                    {
+                        if (nextRecv == firstFailed)
+                            nextRecv += numFailed;
+                        var recv = readStrm.ReadInt();
+                        Assert.AreEqual(nextRecv, recv);
+                        nextRecv = recv+1;
+                    }
+                    else
+                        gotData = false;
+                }
+            }
+            Assert.Greater(numFailed, 0);
+            Assert.AreEqual(300, nextRecv);
+        }
     }
 }

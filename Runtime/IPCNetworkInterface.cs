@@ -1,4 +1,5 @@
 using System;
+using AOT;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -159,16 +160,18 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
-        private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData)
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
+        private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize)
         {
             handle.id = 0;
             handle.size = 0;
-            handle.capacity = NetworkParameterConstants.MTU;
+            handle.capacity = requiredPayloadSize;
             handle.data = (IntPtr)UnsafeUtility.Malloc(handle.capacity, 8, Allocator.Temp);
             return 0;
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
         private static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueueHandle)
         {
             var sendQueue = sendQueueHandle.FromHandle();
@@ -180,6 +183,7 @@ namespace Unity.Networking.Transport
             return handle.size;
         }
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
         {
         }

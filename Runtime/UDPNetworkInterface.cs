@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AOT;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -247,16 +248,18 @@ namespace Unity.Networking.Transport
             };
         }
         [BurstCompile]
-        public static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData)
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
+        public static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize)
         {
             handle.id = 0;
             handle.size = 0;
-            handle.capacity = NetworkParameterConstants.MTU;
+            handle.capacity = requiredPayloadSize;
             handle.data = (IntPtr)UnsafeUtility.Malloc(handle.capacity, 8, Allocator.Temp);
             return 0;
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
         public static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueue)
         {
             network_iovec iov;
@@ -267,6 +270,7 @@ namespace Unity.Networking.Transport
             return NativeBindings.network_sendmsg(*(long*)userData, &iov, 1, ref *(network_address*)addr.data, ref errorcode);
         }
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
         {
         }
@@ -281,9 +285,12 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AllSockets.OpenSockets.Add(socket);
 #endif
-            NativeBindings.network_set_nonblocking(socket);
-            NativeBindings.network_set_send_buffer_size(socket, ushort.MaxValue);
-            NativeBindings.network_set_receive_buffer_size(socket, ushort.MaxValue);
+            if ((ret = NativeBindings.network_set_nonblocking(socket, ref errorcode)) != 0)
+                return errorcode;
+            if ((ret = NativeBindings.network_set_send_buffer_size(socket, ushort.MaxValue, ref errorcode)) != 0)
+                return errorcode;
+            if ((ret = NativeBindings.network_set_receive_buffer_size(socket, ushort.MaxValue, ref errorcode)) != 0)
+                return errorcode;
 #if (UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN)
             // Avoid WSAECONNRESET errors when sending to an endpoint which isn't open yet (unclean connect/disconnects)
             NativeBindings.network_set_connection_reset(socket, 0);

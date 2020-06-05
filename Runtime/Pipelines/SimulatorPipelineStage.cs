@@ -1,3 +1,4 @@
+using AOT;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Utilities;
@@ -34,6 +35,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
             byte* sharedProcessBuffer, int sharedProcessBufferLength)
@@ -48,11 +50,13 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             var context = (SimulatorUtility.Context*) ctx.internalSharedProcessBuffer;
@@ -135,6 +139,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
             byte* sharedProcessBuffer, int sharedProcessBufferLength)
@@ -149,6 +154,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             var context = (SimulatorUtility.Context*) ctx.internalSharedProcessBuffer;
@@ -196,6 +202,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
+        [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer,
             ref NetworkPipelineStage.Requests requests)
         {

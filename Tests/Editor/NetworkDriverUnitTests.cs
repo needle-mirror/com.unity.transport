@@ -198,6 +198,11 @@ namespace Unity.Networking.Transport.Tests
 
     public class NetworkDriverUnitTests
     {
+#if UNITY_TRANSPORT_ENABLE_BASELIB
+    private const string backend = "baselib";
+#else
+    private const string backend = "transport";
+#endif
         [Test]
         public void InitializeAndDestroyDriver()
         {
@@ -571,8 +576,7 @@ namespace Unity.Networking.Transport.Tests
                 clientDriver.ScheduleUpdate().Complete();
 
                 var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
-                Assert.That(eventId == NetworkEvent.Type.Connect);
-
+                Assert.That(eventId == NetworkEvent.Type.Connect, $"Expected Connect but got {eventId} using {backend}");
 
                 int testInt = 100;
                 float testFloat = 555.5f;
@@ -630,7 +634,7 @@ namespace Unity.Networking.Transport.Tests
             clientDriver.ScheduleUpdate().Complete();
 
             var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
-            Assert.That(eventId == NetworkEvent.Type.Connect);
+            Assert.That(eventId == NetworkEvent.Type.Connect, $"expected Connect got {eventId} using {backend}");
 
 
             int testInt = 100;

@@ -1,4 +1,6 @@
+using System;
 using System.Runtime.InteropServices;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Networking.Transport
 {
@@ -33,11 +35,20 @@ namespace Unity.Networking.Transport
     }
 
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct network_address
+    public unsafe struct network_address : IEquatable<network_address>
     {
         internal const int Length = 28;
-        [FieldOffset(0)] public fixed byte data[28];
+        [FieldOffset(0)] public fixed byte data[Length];
         [FieldOffset(28)] public int length;
+
+        public bool Equals(network_address other)
+        {
+            if (length != other.length)
+                return false;
+
+            fixed (void* p = this.data)
+                return UnsafeUtility.MemCmp(p, other.data, length) == 0;
+        }
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -101,13 +112,25 @@ namespace Unity.Networking.Transport
         public static extern int network_close(ref long socket_handle, ref int errorcode);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int network_set_nonblocking(long socket_handle);
+        public static extern int network_set_nonblocking(long socket_handle, ref int errorcode);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int network_set_send_buffer_size(long socket_handle, int size);
+        public static extern int network_set_send_buffer_size(long socket_handle, int size, ref int errorcode);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int network_set_receive_buffer_size(long socket_handle, int size);
+        public static extern int network_set_receive_buffer_size(long socket_handle, int size,ref int errorcode);
+
+        [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int network_get_send_buffer_size(long socket_handle, ref int size,ref int errorcode);
+
+        [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int network_get_receive_buffer_size(long socket_handle, ref int size,ref int errorcode);
+
+        [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int network_set_receive_timeout(long socket_handle, ulong timeout, ref int errorcode);
+
+        [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int network_set_blocking(long socket_handle, ref int errorcode);
 
         [DllImport(m_DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int network_set_connection_reset(long socket_handle, int value);

@@ -10,6 +10,7 @@ namespace Unity.Networking.Transport.Utilities
         public int Sequence;
         public int Acked;
         public uint AckMask;
+        public uint LastAckMask;
     }
 
     public struct ReliableUtility
@@ -527,6 +528,7 @@ namespace Unity.Networking.Transport.Utilities
             header.AckMask = reliable->ReceivedPackets.AckMask;
 
             reliable->ReceivedPackets.Acked = reliable->ReceivedPackets.Sequence;
+            reliable->ReceivedPackets.LastAckMask = header.AckMask;
 
             // Attach our processing time of the packet we're acknowledging (time between receiving it and sending this ack)
             header.ProcessingTime =
@@ -557,6 +559,7 @@ namespace Unity.Networking.Transport.Utilities
             header.ProcessingTime =
                 CalculateProcessingTime(context.internalSharedProcessBuffer, header.AckedSequenceId, context.timestamp);
             reliable->ReceivedPackets.Acked = reliable->ReceivedPackets.Sequence;
+            reliable->ReceivedPackets.LastAckMask = header.AckMask;
         }
 
         public static unsafe void StoreTimestamp(byte* sharedBuffer, ushort sequenceId, long timestamp)
@@ -713,14 +716,22 @@ namespace Unity.Networking.Transport.Utilities
 
             // Check the distance of the acked seqId in the header, if it's too far away from last acked packet we
             // can't process it and add it to the ack mask
-            if (!SequenceHelpers.GreaterThan16(header.AckedSequenceId, (ushort) reliable->SentPackets.Acked))
+            if (SequenceHelpers.GreaterThan16((ushort) reliable->SentPackets.Acked, header.AckedSequenceId))
             {
                 // No new acks;
                 return;
             }
 
-            reliable->SentPackets.Acked = header.AckedSequenceId;
-            reliable->SentPackets.AckMask = header.AckMask;
+            if (reliable->SentPackets.Acked == header.AckedSequenceId)
+            {
+                // If the current packet is the same as the last one we acked we do not know which one is newer, but it is safe to keep any packet acked by either ack since we never un-ack
+                reliable->SentPackets.AckMask |= header.AckMask;
+            }
+            else
+            {
+                reliable->SentPackets.Acked = header.AckedSequenceId;
+                reliable->SentPackets.AckMask = header.AckMask;
+            }
         }
 
         public static unsafe bool ShouldSendAck(NetworkPipelineContext ctx)
@@ -729,9 +740,11 @@ namespace Unity.Networking.Transport.Utilities
             var shared = (SharedContext*) ctx.internalSharedProcessBuffer;
 
             // If more than one full frame (timestamp - prevTimestamp = one frame) has elapsed then send ack packet
-            // and if the last received sequence ID has not been acked yet
+            // and if the last received sequence ID has not been acked yet, or the set of acked packet in the window
+            // changed without the sequence ID updating (can happen when receiving out of order packets)
             if (reliable->LastSentTime < reliable->PreviousTimestamp &&
-                shared->ReceivedPackets.Acked < shared->ReceivedPackets.Sequence)
+                (shared->ReceivedPackets.Acked < shared->ReceivedPackets.Sequence ||
+                shared->ReceivedPackets.AckMask != shared->ReceivedPackets.LastAckMask))
                 return true;
             return false;
         }

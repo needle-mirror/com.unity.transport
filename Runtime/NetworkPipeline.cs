@@ -85,7 +85,8 @@ namespace Unity.Networking.Transport
             None = 0,
             Resume = 1,
             Update = 2,
-            SendUpdate = 4
+            SendUpdate = 4,
+            Error = 8
         }
         public delegate void ReceiveDelegate(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref Requests requests);
         public delegate void SendDelegate(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref Requests requests);
@@ -285,7 +286,6 @@ namespace Unity.Networking.Transport
                     int internalBufferOffset = p.sendBufferOffset + sizePerConnection[SendSizeOffset] * connectionId;
                     int internalSharedBufferOffset = p.sharedBufferOffset + sizePerConnection[SharedSizeOffset] * connectionId;
 
-                    bool needsUpdate = false;
                     // If this is not the first stage we need to fast forward the buffer offset to the correct place
                     if (startStage > 0)
                     {
@@ -322,12 +322,17 @@ namespace Unity.Networking.Transport
                         else
                             ctx.header = new DataStreamWriter(stageHeaderCapacity, Allocator.Temp);
                         var prevInbound = inboundBuffer;
-                        ProcessSendStage(i, internalBufferOffset, internalSharedBufferOffset, p, ref resumeQ, ref ctx, ref inboundBuffer, ref needsUpdate);
+                        NetworkPipelineStage.Requests requests = NetworkPipelineStage.Requests.None;
+                        ProcessSendStage(i, internalBufferOffset, internalSharedBufferOffset, p, ref resumeQ, ref ctx, ref inboundBuffer, ref requests);
 
-                        if (needsUpdate)
+                        if ((requests & NetworkPipelineStage.Requests.Update) != 0)
                             AddSendUpdate(connection, i, pipeline, currentUpdates);
                         if (inboundBuffer.bufferWithHeadersLength == 0)
+                        {
+                            if ((requests & NetworkPipelineStage.Requests.Error) != 0 && sendHandle.data != IntPtr.Zero)
+                                retval = -1;
                             break;
+                        }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                         if (inboundBuffer.headerPadding != prevInbound.headerPadding)
@@ -362,8 +367,6 @@ namespace Unity.Networking.Transport
                         inboundBuffer.buffer = inboundBuffer.bufferWithHeaders + headerSize;
                         inboundBuffer.bufferLength = ctx.header.Length + inboundBuffer.bufferLength;
 
-
-                        needsUpdate = false;
 
                         internalBufferOffset += (ctx.internalProcessBufferLength + AlignmentMinusOne) & (~AlignmentMinusOne);
                         internalSharedBufferOffset += (ctx.internalSharedProcessBufferLength + AlignmentMinusOne) & (~AlignmentMinusOne);
@@ -417,7 +420,7 @@ namespace Unity.Networking.Transport
             }
 
             private unsafe void ProcessSendStage(int startStage, int internalBufferOffset, int internalSharedBufferOffset,
-                PipelineImpl p, ref NativeList<int> resumeQ, ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref bool needsUpdate)
+                PipelineImpl p, ref NativeList<int> resumeQ, ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
             {
                 var pipelineStage = m_StageCollection[m_StageList[p.FirstStageIndex + startStage]];
                 ctx.staticInstanceBuffer = (byte*)m_StaticInstanceBuffer.GetUnsafeReadOnlyPtr() + pipelineStage.StaticStateStart;
@@ -428,11 +431,10 @@ namespace Unity.Networking.Transport
                 ctx.internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafeReadOnlyPtr() + internalSharedBufferOffset;
                 ctx.internalSharedProcessBufferLength = pipelineStage.SharedStateCapacity;
 
-                NetworkPipelineStage.Requests requests = NetworkPipelineStage.Requests.None;
+                requests = NetworkPipelineStage.Requests.None;
                 pipelineStage.Send.Ptr.Invoke(ref ctx, ref inboundBuffer, ref requests);
                 if ((requests & NetworkPipelineStage.Requests.Resume) != 0)
                     resumeQ.Add(startStage);
-                needsUpdate = (requests & NetworkPipelineStage.Requests.Update) != 0;
             }
         }
         private NativeArray<NetworkPipelineStage> m_StageCollection;
