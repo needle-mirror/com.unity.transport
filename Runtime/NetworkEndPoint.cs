@@ -1,15 +1,10 @@
-#if UNITY_2020_1_OR_NEWER
-#define UNITY_TRANSPORT_ENABLE_BASELIB
-#endif
 using System;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
-#if UNITY_TRANSPORT_ENABLE_BASELIB
 using Unity.Baselib;
 using Unity.Baselib.LowLevel;
-#endif
 
 namespace Unity.Networking.Transport
 {
@@ -33,21 +28,7 @@ namespace Unity.Networking.Transport
         private const int rawLength = rawDataLength + 3;    // SizeOf<Baselib_NetworkAddress>
         private static readonly bool IsLittleEndian = true;
 
-#if UNITY_TRANSPORT_ENABLE_BASELIB
         internal Binding.Baselib_NetworkAddress rawNetworkAddress;
-#else
-        [StructLayout(LayoutKind.Explicit)]
-        public struct RawNetworkAddress
-        {
-            [FieldOffset(0)] public fixed byte data[rawLength];
-            [FieldOffset(0)] public fixed byte ipv6[rawIpv6Length];
-            [FieldOffset(0)] public fixed byte ipv4_bytes[rawIpv4Length];
-            [FieldOffset(0)] public uint ipv4;
-            [FieldOffset(16)] public ushort port;
-            [FieldOffset(18)] public byte family;
-        }
-        public RawNetworkAddress rawNetworkAddress;
-#endif
         public int length;
 
         static NetworkEndPoint()
@@ -57,7 +38,6 @@ namespace Unity.Networking.Transport
             IsLittleEndian = test_b[0] == 1;
         }
 
-#if UNITY_TRANSPORT_ENABLE_BASELIB
         public ushort Port
         {
             get => (ushort) (rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8));
@@ -73,19 +53,6 @@ namespace Unity.Networking.Transport
             get => FromBaselibFamily((Binding.Baselib_NetworkAddress_Family)rawNetworkAddress.family);
             set => rawNetworkAddress.family = (byte)ToBaselibFamily(value);
         }
-#else
- public ushort Port
-        {
-            get => IsLittleEndian ? ByteSwap(rawNetworkAddress.port) : rawNetworkAddress.port;
-            set => rawNetworkAddress.port = IsLittleEndian ? ByteSwap(value) : value;
-        }
-
-        public NetworkFamily Family
-        {
-            get => (NetworkFamily) rawNetworkAddress.family;
-            set => rawNetworkAddress.family = (byte) value;
-        }
-#endif
 
         public NativeArray<byte> GetRawAddressBytes()
         {
@@ -145,10 +112,8 @@ namespace Unity.Networking.Transport
         public static NetworkEndPoint AnyIpv4 => CreateAddress(0);
         public static NetworkEndPoint LoopbackIpv4 => CreateAddress(0, AddressType.Loopback);
 
-#if UNITY_TRANSPORT_ENABLE_BASELIB
         public static NetworkEndPoint AnyIpv6 => CreateAddress(0, AddressType.Any, NetworkFamily.Ipv6);
         public static NetworkEndPoint LoopbackIpv6 => CreateAddress(0, AddressType.Loopback, NetworkFamily.Ipv6);
-#endif
 
         public NetworkEndPoint WithPort(ushort port)
         {
@@ -156,16 +121,10 @@ namespace Unity.Networking.Transport
             ep.Port = port;
             return ep;
         }
-#if UNITY_TRANSPORT_ENABLE_BASELIB
         public bool IsLoopback => (this == LoopbackIpv4.WithPort(Port)) || (this == LoopbackIpv6.WithPort(Port));
         public bool IsAny => (this == AnyIpv4.WithPort(Port)) || (this == AnyIpv6.WithPort(Port));
-#else
-        public bool IsLoopback => this == LoopbackIpv4.WithPort(Port);
-        public bool IsAny => this == AnyIpv4.WithPort(Port);
-#endif
 
         // Returns true if we can fully parse the input and return a valid endpoint
-#if UNITY_TRANSPORT_ENABLE_BASELIB
         public static bool TryParse(string address, ushort port, out NetworkEndPoint endpoint, NetworkFamily family = NetworkFamily.Ipv4)
         {
             UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
@@ -191,67 +150,6 @@ namespace Unity.Networking.Transport
             }
             return endpoint.IsValid;
         }
-#else
-        public static bool TryParse(string address, ushort port, out NetworkEndPoint endpoint, NetworkFamily family = NetworkFamily.Ipv4)
-        {
-            endpoint = default(NetworkEndPoint);
-
-            if (family != NetworkFamily.Ipv4)
-                return false;
-            // Parse failure check
-            if (address == null || address.Length < 7)
-                return false;
-
-            uint ipaddr = 0;
-            var pos = 0;
-
-            // Parse characters
-            for (var part = 0; part < 4; ++part)
-            {
-                // Parse failure check
-                if (pos >= address.Length || address[pos] < '0' || address[pos] > '9')
-                    return false;
-
-                uint byteVal = 0;
-
-                while (pos < address.Length && address[pos] >= '0' && address[pos] <= '9')
-                {
-                    byteVal = byteVal * 10 + (uint)(address[pos] - '0');
-                    ++pos;
-                }
-
-                // Parse failure check
-                if (byteVal > 255)
-                    return false;
-
-                ipaddr = (ipaddr << 8) | byteVal;
-
-                if (pos < address.Length && address[pos] == '.')
-                    ++pos;
-            }
-
-            if (pos + 1 < address.Length && address[pos] == ':')
-            {
-                ++pos;
-                uint customPort = 0;
-                while (pos < address.Length && address[pos] >= '0' && address[pos] <= '9')
-                {
-                    customPort = customPort * 10 + (uint)(address[pos] - '0');
-                    ++pos;
-                }
-
-                if (customPort > ushort.MaxValue)
-                    return false;
-
-                port = (ushort)customPort;
-            }
-
-            endpoint = CreateAddress(port);
-            endpoint.rawNetworkAddress.ipv4 = IsLittleEndian ? ByteSwap(ipaddr) : ipaddr;
-
-            return endpoint.IsValid;
-        }
-#endif
         // Returns a default address if parsing fails
         public static NetworkEndPoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Ipv4)
         {
@@ -305,24 +203,16 @@ namespace Unity.Networking.Transport
             {
                 case NetworkFamily.Ipv4:
                     return string.Concat(
-#if UNITY_TRANSPORT_ENABLE_BASELIB
                         // TODO(steve): Update to use ipv4_0 ... 3 when its available.
                         rawNetworkAddress.data0, ".",
                         rawNetworkAddress.data1, ".",
                         rawNetworkAddress.data2, ".",
                         rawNetworkAddress.data3,
-#else
-                        rawNetworkAddress.ipv4_bytes[0], ".",
-                        rawNetworkAddress.ipv4_bytes[1], ".",
-                        rawNetworkAddress.ipv4_bytes[2], ".",
-                        rawNetworkAddress.ipv4_bytes[3],
-#endif
                         ":", Port
                     );
                 case NetworkFamily.Ipv6:
                     const string numberFormat = "[{0:x}:{1:x}:{2:x}:{3:x}:{4:x}:{5:x}:{6:x}:{7:x}]:{8}";
                     // TODO(steve): Include scope and handle leading zeros
-#if UNITY_TRANSPORT_ENABLE_BASELIB
                     // TODO(steve): Update to use ipv6_0 ... 15 when its available.
                     return String.Format(numberFormat,
                         rawNetworkAddress.data1 | (rawNetworkAddress.data0 << 8),
@@ -335,19 +225,6 @@ namespace Unity.Networking.Transport
                         rawNetworkAddress.data14 | (rawNetworkAddress.data15 << 8),
                         Port
                     );
-#else
-                    return String.Format(numberFormat,
-                        rawNetworkAddress.ipv6[1] | (rawNetworkAddress.ipv6[0] << 8),
-                        rawNetworkAddress.ipv6[3] | (rawNetworkAddress.ipv6[2] << 8),
-                        rawNetworkAddress.ipv6[5] | (rawNetworkAddress.ipv6[4] << 8),
-                        rawNetworkAddress.ipv6[7] | (rawNetworkAddress.ipv6[6] << 8),
-                        rawNetworkAddress.ipv6[9] | (rawNetworkAddress.ipv6[8] << 8),
-                        rawNetworkAddress.ipv6[11] | (rawNetworkAddress.ipv6[10] << 8),
-                        rawNetworkAddress.ipv6[12] | (rawNetworkAddress.ipv6[13] << 8),
-                        rawNetworkAddress.ipv6[14] | (rawNetworkAddress.ipv6[15] << 8),
-                        Port
-                    );
-#endif
                 default:
                     // TODO(steve): Throw an exception?
                     return string.Empty;
@@ -390,17 +267,14 @@ namespace Unity.Networking.Transport
                 {
                     *(uint*) UnsafeUtility.AddressOf(ref ep.rawNetworkAddress) = ipv4Loopback;
                 }
-#if UNITY_TRANSPORT_ENABLE_BASELIB
                 else if (family == NetworkFamily.Ipv6)
                 {
                     ep.rawNetworkAddress.data15 = 1;
                 }
-#endif
             }
             return ep;
         }
 
-#if UNITY_TRANSPORT_ENABLE_BASELIB
         static NetworkFamily FromBaselibFamily(Binding.Baselib_NetworkAddress_Family family)
         {
             if (family == Binding.Baselib_NetworkAddress_Family.IPv4)
@@ -417,7 +291,6 @@ namespace Unity.Networking.Transport
                 return Binding.Baselib_NetworkAddress_Family.IPv6;
             return Binding.Baselib_NetworkAddress_Family.Invalid;
         }
-#endif
     }
 
     public unsafe struct NetworkInterfaceEndPoint
@@ -460,7 +333,6 @@ namespace Unity.Networking.Transport
 
         bool Compare(NetworkInterfaceEndPoint other)
         {
-#if UNITY_TRANSPORT_ENABLE_BASELIB
             // baselib doesn't return consistent lengths under posix, so lengths can
             // only be used as a shortcut if only one addresses a blank.
             if (dataLength != other.dataLength && (dataLength <= 0 || other.dataLength <= 0))
@@ -470,15 +342,6 @@ namespace Unity.Networking.Transport
             {
                 return UnsafeUtility.MemCmp(p, other.data, math.min(dataLength, other.dataLength)) == 0;
             }
-#else
-            if (dataLength != other.dataLength)
-                return false;
-
-            fixed (void* p = this.data)
-            {
-                return UnsafeUtility.MemCmp(p, other.data, dataLength) == 0;
-            }
-#endif
         }
     }
 }

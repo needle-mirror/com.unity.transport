@@ -5,6 +5,7 @@ using Unity.Collections;
 using Unity.Networking.Transport.Utilities;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Protocols;
 
 namespace Unity.Networking.Transport
 {
@@ -135,7 +136,7 @@ namespace Unity.Networking.Transport
             return length;
         }
 
-        public unsafe int ReceiveMessageEx(NetworkInterfaceEndPoint local, network_iovec* iov, int iov_len, ref NetworkInterfaceEndPoint remote)
+        public unsafe int ReceiveMessageEx(NetworkInterfaceEndPoint local, ref UdpCHeader header, void* payloadData, int payloadLen, ref NetworkInterfaceEndPoint remote)
         {
             IPCData data;
             if (!m_IPCQueue.Peek(*(int*)local.data, out data))
@@ -143,13 +144,16 @@ namespace Unity.Networking.Transport
             GetEndPointByHandle(data.from, out remote);
 
             int totalLength = 0;
-            for (int i = 0; i < iov_len; i++)
+            var curLength = Math.Min(UdpCHeader.Length, data.length - totalLength);
+            fixed (void* headerData = header.Data)
             {
-                var curLength = Math.Min(iov[i].len, data.length - totalLength);
-                UnsafeUtility.MemCpy(iov[i].buf, data.data + totalLength, curLength);
-                totalLength += curLength;
-                iov[i].len = curLength;
+                UnsafeUtility.MemCpy(headerData, data.data + totalLength, curLength);
             }
+            totalLength += curLength;
+
+            curLength = Math.Min(payloadLen, data.length - totalLength);
+            UnsafeUtility.MemCpy(payloadData, data.data + totalLength, curLength);
+            totalLength += curLength;
 
             if (totalLength < data.length)
                 return -1;

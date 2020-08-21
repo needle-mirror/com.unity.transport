@@ -19,11 +19,7 @@ namespace Tests
         NetworkEvent.Type ev;
         DataStreamReader stream;
 
-#if UNITY_TRANSPORT_ENABLE_BASELIB
         private const string backend = "baselib";
-#else
-        private const string backend = "transport";
-#endif
 
         NetworkEvent.Type PollDriverAndFindDataEvent(ref NetworkDriver driver, NetworkConnection connection, NetworkEvent.Type eventType, int maxRetryCount=10)
         {

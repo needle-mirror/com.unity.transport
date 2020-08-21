@@ -66,7 +66,7 @@ This would create a simulator pipeline stage which can delay up to 30 packets of
 
 ### Debug information
 
-To get information about internal state in the simulator you can check the SimulatorUtility.Context structure, stored in the pipeline stage shared buffer. This tracks how many packets have been seet, PacketCount, and how many of those were dropped, PacketDropCount. ReadyPackets and WaitingPackets shows what packets are now ready to be sent (delay time expired) and how many are stored by the simulator. StatsTime and NextPacketTime show the last time the simulator ran and when the next packet is due to be released.
+To get information about internal state in the simulator you can check the SimulatorUtility.Context structure, stored in the pipeline stage shared buffer. This tracks how many packets have been set, PacketCount, and how many of those were dropped, PacketDropCount. ReadyPackets and WaitingPackets shows what packets are now ready to be sent (delay time expired) and how many are stored by the simulator. StatsTime and NextPacketTime show the last time the simulator ran and when the next packet is due to be released.
 
 ```c#
 public unsafe void DumpSimulatorStatistics()
@@ -129,7 +129,7 @@ if (serverReliableCtx->errorCode != 0)
 
 It's possible to run into the OutgoingQueueIsFull error when packets are being sent too frequently for the latency and quality of the connection. High packet loss means packets need to stay for multiple RTTs in the queue and if the RTT is high then that time can end up being longer than the send rate + window size permit. For example with 60 packets sent per second a packet will go out every 16 ms, if the RTT is 250 ms about 16 packets will be in the queue at any one time. With a packet drop the total time will go up to 500 ms and the packet will be in the last slot when it's finally freed.
 
-It best suited to use the reliabilty pipeline for event type messages (door opened), Remote Procedure Calls (RPCs) or slow frequency messages like chat.
+It best suited to use the reliability pipeline for event type messages (door opened), Remote Procedure Calls (RPCs) or slow frequency messages like chat.
 
 ### Debug information
 

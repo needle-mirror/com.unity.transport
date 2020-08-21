@@ -22,14 +22,8 @@ To learn how to use the `com.unity.transport` package in your own project, read 
 
 This version of `com.unity.transport` is compatible with the following versions of the Unity Editor:
 
-* 2019.1 and later
-
-## Known limitations
-
-Unity.Networking.Transport version 0.1.0 has the following limitations:
-
-* Currently only supports the platforms
-  * Windows, Linux, Mac OSX, iOS and Android
+* 2020.1.2 and later
+* All platforms supported by Unity are supported by the transport
 
 ## Package contents
 

@@ -53,6 +53,7 @@ namespace Unity.Networking.Transport
         public int staticInstanceBufferLength;
         public int internalSharedProcessBufferLength;
         public int internalProcessBufferLength;
+        public int accumulatedHeaderCapacity;
     }
 
     public unsafe interface INetworkPipelineStage
@@ -68,7 +69,8 @@ namespace Unity.Networking.Transport
             int ReceiveCapacity,
             int SendCapacity,
             int HeaderCapacity,
-            int SharedStateCapacity)
+            int SharedStateCapacity,
+            int PayloadCapacity = 0)    // 0 means any size
         {
             this.Receive = Receive;
             this.Send = Send;
@@ -77,6 +79,7 @@ namespace Unity.Networking.Transport
             this.SendCapacity = SendCapacity;
             this.HeaderCapacity = HeaderCapacity;
             this.SharedStateCapacity = SharedStateCapacity;
+            this.PayloadCapacity = PayloadCapacity;
             StaticStateStart = StaticStateCapcity = 0;
         }
         [Flags]
@@ -102,6 +105,7 @@ namespace Unity.Networking.Transport
         public readonly int SendCapacity;
         public readonly int HeaderCapacity;
         public readonly int SharedStateCapacity;
+        public readonly int PayloadCapacity;
 
         internal int StaticStateStart;
         internal int StaticStateCapcity;
@@ -118,6 +122,7 @@ namespace Unity.Networking.Transport
         {
             m_stages = new List<INetworkPipelineStage>();
             RegisterPipelineStage(new NullPipelineStage());
+            RegisterPipelineStage(new FragmentationPipelineStage());
             RegisterPipelineStage(new ReliableSequencedPipelineStage());
             RegisterPipelineStage(new UnreliableSequencedPipelineStage());
             RegisterPipelineStage(new SimulatorPipelineStage());
@@ -189,6 +194,17 @@ namespace Unity.Networking.Transport
     {
         public const int Alignment = 8;
         public const int AlignmentMinusOne = Alignment-1;
+
+        public int PayloadCapacity(NetworkPipeline pipeline)
+        {
+            if (pipeline.Id > 0)
+            {
+                var p = m_Pipelines[pipeline.Id - 1];
+                return p.payloadCapacity;
+            }
+            return NetworkParameterConstants.MTU;
+        }
+
         public Concurrent ToConcurrent()
         {
             var concurrent = new Concurrent
@@ -197,6 +213,7 @@ namespace Unity.Networking.Transport
                 m_StaticInstanceBuffer = m_StaticInstanceBuffer,
                 m_Pipelines = m_Pipelines,
                 m_StageList = m_StageList,
+                m_AccumulatedHeaderCapacity = m_AccumulatedHeaderCapacity,
                 m_SendStageNeedsUpdateWrite = m_SendStageNeedsUpdateRead.AsParallelWriter(),
                 sizePerConnection = sizePerConnection,
                 sendBuffer = m_SendBuffer,
@@ -211,6 +228,7 @@ namespace Unity.Networking.Transport
             [ReadOnly] internal NativeArray<byte> m_StaticInstanceBuffer;
             [ReadOnly] internal NativeList<PipelineImpl> m_Pipelines;
             [ReadOnly] internal NativeList<int> m_StageList;
+            [ReadOnly] internal NativeList<int> m_AccumulatedHeaderCapacity;
             internal NativeQueue<UpdatePipeline>.ParallelWriter m_SendStageNeedsUpdateWrite;
             [ReadOnly] internal NativeArray<int> sizePerConnection;
             // TODO: not really read-only, just hacking the safety system
@@ -218,10 +236,19 @@ namespace Unity.Networking.Transport
             [ReadOnly] internal NativeList<byte> sendBuffer;
             [ReadOnly] internal NativeArray<long> m_timestamp;
 
-            public unsafe int SendHeaderCapacity(NetworkPipeline pipeline)
+            public int SendHeaderCapacity(NetworkPipeline pipeline)
             {
                 var p = m_Pipelines[pipeline.Id-1];
                 return p.headerCapacity;
+            }
+            public int PayloadCapacity(NetworkPipeline pipeline)
+            {
+                if (pipeline.Id > 0)
+                {
+                    var p = m_Pipelines[pipeline.Id - 1];
+                    return p.payloadCapacity;
+                }
+                return NetworkParameterConstants.MTU;
             }
             public unsafe int Send(NetworkDriver.Concurrent driver, NetworkPipeline pipeline, NetworkConnection connection, NetworkInterfaceSendHandle sendHandle, int headerSize)
             {
@@ -343,7 +370,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                             if (inboundBuffer.buffer != inboundBuffer.bufferWithHeaders + inboundBuffer.headerPadding ||
                                 inboundBuffer.bufferLength + inboundBuffer.headerPadding > inboundBuffer.bufferWithHeadersLength)
-                                throw new InvalidOperationException("When creating an internal buffer in piplines the buffer must be a subset of the buffer width headers");
+                                throw new InvalidOperationException("When creating an internal buffer in pipelines the buffer must be a subset of the buffer with headers");
 #endif
 
                             // Copy header to new buffer so it is part of the payload
@@ -422,7 +449,9 @@ namespace Unity.Networking.Transport
             private unsafe void ProcessSendStage(int startStage, int internalBufferOffset, int internalSharedBufferOffset,
                 PipelineImpl p, ref NativeList<int> resumeQ, ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
             {
-                var pipelineStage = m_StageCollection[m_StageList[p.FirstStageIndex + startStage]];
+                var stageIndex = p.FirstStageIndex + startStage;
+                var pipelineStage = m_StageCollection[m_StageList[stageIndex]];
+                ctx.accumulatedHeaderCapacity = m_AccumulatedHeaderCapacity[stageIndex];
                 ctx.staticInstanceBuffer = (byte*)m_StaticInstanceBuffer.GetUnsafeReadOnlyPtr() + pipelineStage.StaticStateStart;
                 ctx.staticInstanceBufferLength = pipelineStage.StaticStateCapcity;
                 ctx.internalProcessBuffer = (byte*)sendBuffer.GetUnsafeReadOnlyPtr() + internalBufferOffset;
@@ -440,6 +469,7 @@ namespace Unity.Networking.Transport
         private NativeArray<NetworkPipelineStage> m_StageCollection;
         private NativeArray<byte> m_StaticInstanceBuffer;
         private NativeList<int> m_StageList;
+        private NativeList<int> m_AccumulatedHeaderCapacity;
         private NativeList<PipelineImpl> m_Pipelines;
         private NativeList<byte> m_ReceiveBuffer;
         private NativeList<byte> m_SendBuffer;
@@ -465,6 +495,7 @@ namespace Unity.Networking.Transport
             public int sendBufferOffset;
             public int sharedBufferOffset;
             public int headerCapacity;
+            public int payloadCapacity;
         }
 
         public unsafe NetworkPipelineProcessor(params INetworkParameter[] param)
@@ -496,6 +527,7 @@ namespace Unity.Networking.Transport
             }
 
             m_StageList = new NativeList<int>(16, Allocator.Persistent);
+            m_AccumulatedHeaderCapacity = new NativeList<int>(16, Allocator.Persistent);
             m_Pipelines = new NativeList<PipelineImpl>(16, Allocator.Persistent);
             m_ReceiveBuffer = new NativeList<byte>(config.initialCapacity, Allocator.Persistent);
             m_SendBuffer = new NativeList<byte>(config.initialCapacity, Allocator.Persistent);
@@ -512,6 +544,7 @@ namespace Unity.Networking.Transport
         public void Dispose()
         {
             m_StageList.Dispose();
+            m_AccumulatedHeaderCapacity.Dispose();
             m_ReceiveBuffer.Dispose();
             m_SendBuffer.Dispose();
             m_SharedBuffer.Dispose();
@@ -597,6 +630,7 @@ namespace Unity.Networking.Transport
             var sharedCap = 0;
             var sendCap = 0;
             var headerCap = 0;
+            var payloadCap = 0;
             var pipeline = new PipelineImpl();
             pipeline.FirstStageIndex = m_StageList.Length;
             pipeline.NumStages = stages.Length;
@@ -608,11 +642,25 @@ namespace Unity.Networking.Transport
                     throw new InvalidOperationException("Trying to create pipeline with invalid stage " + stages[i]);
 #endif
                 m_StageList.Add(stageId);
+                m_AccumulatedHeaderCapacity.Add(0);    // Allocate an entry. We will assign its value in the loop below.
                 // Make sure all data buffers are aligned
                 receiveCap += (m_StageCollection[stageId].ReceiveCapacity + AlignmentMinusOne) & (~AlignmentMinusOne);
                 sendCap += (m_StageCollection[stageId].SendCapacity + AlignmentMinusOne) & (~AlignmentMinusOne);
                 headerCap += m_StageCollection[stageId].HeaderCapacity;
                 sharedCap += (m_StageCollection[stageId].SharedStateCapacity + AlignmentMinusOne) & (~AlignmentMinusOne);
+                if (payloadCap == 0)
+                {
+                    payloadCap = m_StageCollection[stageId].PayloadCapacity; // The first non-zero stage determines the pipeline capacity
+                }
+            }
+
+            // For every stage, compute how much header space is used by subsequent stages
+            int accumulatedHeaderCap = 0;
+            for (int i = stages.Length - 1; i >= 0; i--)
+            {
+                var stageId = NetworkPipelineStageCollection.GetStageId(stages[i]).Index;
+                m_AccumulatedHeaderCapacity[pipeline.FirstStageIndex + i] = accumulatedHeaderCap;
+                accumulatedHeaderCap += m_StageCollection[stageId].HeaderCapacity;
             }
 
             pipeline.receiveBufferOffset = sizePerConnection[RecveiveSizeOffset];
@@ -625,6 +673,8 @@ namespace Unity.Networking.Transport
             sizePerConnection[SharedSizeOffset] = sizePerConnection[SharedSizeOffset] + sharedCap;
 
             pipeline.headerCapacity = headerCap;
+            // If no stage explicitly supports more tha MTU the pipeline as a whole does not support more than one MTU
+            pipeline.payloadCapacity = (payloadCap!=0) ? payloadCap : NetworkParameterConstants.MTU;
 
             m_Pipelines.Add(pipeline);
             return new NetworkPipeline {Id = m_Pipelines.Length};

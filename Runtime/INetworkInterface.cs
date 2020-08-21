@@ -50,12 +50,19 @@ namespace Unity.Networking.Transport
         internal NetworkDriver m_Driver;
     }
 
+    [Flags]
+    public enum SendHandleFlags
+    {
+        AllocatedByDriver = 1 << 0
+    }
+
     public struct NetworkInterfaceSendHandle
     {
         public IntPtr data;
         public int capacity;
         public int size;
         public int id;
+        public SendHandleFlags flags;
     }
     public struct NetworkSendQueueHandle
     {
@@ -74,7 +81,7 @@ namespace Unity.Networking.Transport
     }
     public struct NetworkSendInterface
     {
-        public delegate int BeginSendMessageDelegate(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPatyloadSize);
+        public delegate int BeginSendMessageDelegate(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize);
         public delegate int EndSendMessageDelegate(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueue);
         public delegate void AbortSendMessageDelegate(ref NetworkInterfaceSendHandle handle, IntPtr userData);
         public TransportFunctionPointer<BeginSendMessageDelegate> BeginSendMessage;

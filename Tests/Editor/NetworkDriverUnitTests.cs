@@ -139,40 +139,34 @@ namespace Unity.Networking.Transport.Tests
         public unsafe void Assert_GotDataRequest(NetworkEndPoint from, byte[] dataToCompare)
         {
             NetworkInterfaceEndPoint remote = default;
-            network_iovec[] iovecs = new network_iovec[2];
-            iovecs[0].buf = m_LocalData.GetUnsafePtr();
-            iovecs[0].len = sizeof(UdpCHeader);
-            iovecs[1].buf = (byte*)m_LocalData.GetUnsafePtr() + sizeof(UdpCHeader);
-            iovecs[1].len = NetworkParameterConstants.MTU;
+            var headerData = (UdpCHeader*)m_LocalData.GetUnsafePtr();
+            int headerLen = sizeof(UdpCHeader);
+            void* payloadData = (byte*)m_LocalData.GetUnsafePtr() + headerLen;
+            int payloadLen = NetworkParameterConstants.MTU;
             int dataLen = 0;
             Assert.True(EndPoint.IsLoopback || EndPoint.IsAny);
             Assert.True(from.IsLoopback || from.IsAny);
             var localEndPoint = IPCManager.Instance.CreateEndPoint(EndPoint.Port);
             var fromEndPoint = IPCManager.Instance.CreateEndPoint(from.Port);
-            fixed (network_iovec* iovptr = &iovecs[0])
-            {
-                dataLen = IPCManager.Instance.ReceiveMessageEx(localEndPoint, iovptr, 2, ref remote);
-            }
+            dataLen = IPCManager.Instance.ReceiveMessageEx(localEndPoint, ref *headerData, payloadData, payloadLen, ref remote);
 
-            if (dataLen <= 0)
+            payloadLen = dataLen - headerLen;
+            if (payloadLen <= 0)
             {
-                iovecs[0].len = iovecs[1].len = 0;
+                payloadLen = 0;
             }
-
-            Assert.True(iovecs[0].len+iovecs[1].len == dataLen);
-            Assert.True(iovecs[0].len == sizeof(UdpCHeader));
 
             UdpCHeader header = new UdpCHeader();
-            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
+            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, headerLen));
             Assert.True(reader.IsCreated);
-            reader.ReadBytes(header.Data, sizeof(UdpCHeader));
+            reader.ReadBytes(header.Data, headerLen);
             Assert.True(header.Type == (int) UdpCProtocol.Data);
 
             Assert.True(remote == fromEndPoint);
 
-            Assert.True(iovecs[1].len == dataToCompare.Length);
+            Assert.True(payloadLen == dataToCompare.Length);
 
-            reader = new DataStreamReader(m_LocalData.GetSubArray(iovecs[0].len, dataToCompare.Length));
+            reader = new DataStreamReader(m_LocalData.GetSubArray(headerLen, dataToCompare.Length));
             var received = new NativeArray<byte>(dataToCompare.Length, Allocator.Temp);
             reader.ReadBytes(received);
 
@@ -198,11 +192,7 @@ namespace Unity.Networking.Transport.Tests
 
     public class NetworkDriverUnitTests
     {
-#if UNITY_TRANSPORT_ENABLE_BASELIB
-    private const string backend = "baselib";
-#else
-    private const string backend = "transport";
-#endif
+        private const string backend = "baselib";
         [Test]
         public void InitializeAndDestroyDriver()
         {

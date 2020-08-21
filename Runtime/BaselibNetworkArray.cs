@@ -1,7 +1,3 @@
-#if UNITY_2020_1_OR_NEWER
-#define UNITY_TRANSPORT_ENABLE_BASELIB
-#endif
-#if UNITY_TRANSPORT_ENABLE_BASELIB
 using System;
 using Unity.Baselib;
 using Unity.Baselib.LowLevel;
@@ -82,4 +78,3 @@ namespace Unity.Networking.Transport
         }
     }
 }
-#endif

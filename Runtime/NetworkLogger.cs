@@ -5,14 +5,14 @@ namespace Unity.Networking.Transport
 {
     public interface INetworkLogMessage
     {
-        void Print(ref NativeString512 container);
+        void Print(ref FixedString512 container);
     }
 
     public struct NetworkLogger : IDisposable
     {
         internal struct LogMessage
         {
-            public NativeString512 msg;
+            public FixedString512 msg;
             public LogLevel level;
         }
         public enum LogLevel
@@ -78,7 +78,7 @@ namespace Unity.Networking.Transport
             message.Print(ref msg.msg);
             m_PendingLog.Enqueue(msg);
         }
-        public void Log(LogLevel level, NativeString512 str)
+        public void Log(LogLevel level, FixedString512 str)
         {
             if ((int) level > (int) m_Level)
                 return;
@@ -109,7 +109,7 @@ namespace Unity.Networking.Transport
                 message.Print(ref msg.msg);
                 m_PendingLog.Enqueue(msg);
             }
-            public void Log(LogLevel level, NativeString512 str)
+            public void Log(LogLevel level, FixedString512 str)
             {
                 if ((int) level > (int) m_Level)
                     return;

@@ -184,34 +184,158 @@ namespace Unity.Networking.Transport.Tests
             Assert.IsTrue(dataStream.HasFailedWrites);
         }
         [Test]
-        public void ReadWriteString()
+        public void ReadWriteFixedString32()
         {
             var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
 
-            NativeString64 src = new NativeString64("This is a string");
-            dataStream.WriteString(src);
+            var src = new FixedString32("This is a string");
+            dataStream.WriteFixedString32(src);
 
             //Assert.AreEqual(src.LengthInBytes+2, dataStream.Length);
 
             var reader = new DataStreamReader(dataStream.AsNativeArray());
-            var dst = reader.ReadString();
+            var dst = reader.ReadFixedString32();
             Assert.AreEqual(src, dst);
         }
         [Test]
-        public void ReadWritePackedStringDelta()
+        public void ReadWritePackedFixedString32Delta()
         {
             var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
             var compressionModel = new NetworkCompressionModel(Allocator.Temp);
 
-            NativeString64 src = new NativeString64("This is a string");
-            NativeString64 baseline = new NativeString64("This is another string");
-            dataStream.WritePackedStringDelta(src, baseline, compressionModel);
+            var src = new FixedString32("This is a string");
+            var baseline = new FixedString32("This is another string");
+            dataStream.WritePackedFixedString32Delta(src, baseline, compressionModel);
             dataStream.Flush();
 
             //Assert.LessOrEqual(dataStream.Length, src.LengthInBytes+2);
 
             var reader = new DataStreamReader(dataStream.AsNativeArray());
-            var dst = reader.ReadPackedStringDelta(baseline, compressionModel);
+            var dst = reader.ReadPackedFixedString32Delta(baseline, compressionModel);
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWriteFixedString64()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+
+            var src = new FixedString64("This is a string");
+            dataStream.WriteFixedString64(src);
+
+            //Assert.AreEqual(src.LengthInBytes+2, dataStream.Length);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadFixedString64();
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWritePackedFixedString64Delta()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+            var compressionModel = new NetworkCompressionModel(Allocator.Temp);
+
+            var src = new FixedString64("This is a string");
+            var baseline = new FixedString64("This is another string");
+            dataStream.WritePackedFixedString64Delta(src, baseline, compressionModel);
+            dataStream.Flush();
+
+            //Assert.LessOrEqual(dataStream.Length, src.LengthInBytes+2);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadPackedFixedString64Delta(baseline, compressionModel);
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWriteFixedString128()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+
+            var src = new FixedString128("This is a string");
+            dataStream.WriteFixedString128(src);
+
+            //Assert.AreEqual(src.LengthInBytes+2, dataStream.Length);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadFixedString128();
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWritePackedFixedString128Delta()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+            var compressionModel = new NetworkCompressionModel(Allocator.Temp);
+
+            var src = new FixedString128("This is a string");
+            var baseline = new FixedString128("This is another string");
+            dataStream.WritePackedFixedString128Delta(src, baseline, compressionModel);
+            dataStream.Flush();
+
+            //Assert.LessOrEqual(dataStream.Length, src.LengthInBytes+2);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadPackedFixedString128Delta(baseline, compressionModel);
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWriteFixedString512()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+
+            var src = new FixedString512("This is a string");
+            dataStream.WriteFixedString512(src);
+
+            //Assert.AreEqual(src.LengthInBytes+2, dataStream.Length);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadFixedString512();
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWritePackedFixedString512Delta()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+            var compressionModel = new NetworkCompressionModel(Allocator.Temp);
+
+            var src = new FixedString512("This is a string");
+            var baseline = new FixedString512("This is another string");
+            dataStream.WritePackedFixedString512Delta(src, baseline, compressionModel);
+            dataStream.Flush();
+
+            //Assert.LessOrEqual(dataStream.Length, src.LengthInBytes+2);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadPackedFixedString512Delta(baseline, compressionModel);
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWriteFixedString4096()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+
+            var src = new FixedString4096("This is a string");
+            dataStream.WriteFixedString4096(src);
+
+            //Assert.AreEqual(src.LengthInBytes+2, dataStream.Length);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadFixedString4096();
+            Assert.AreEqual(src, dst);
+        }
+        [Test]
+        public void ReadWritePackedFixedString4096Delta()
+        {
+            var dataStream = new DataStreamWriter(300 * 4, Allocator.Temp);
+            var compressionModel = new NetworkCompressionModel(Allocator.Temp);
+
+            var src = new FixedString4096("This is a string");
+            var baseline = new FixedString4096("This is another string");
+            dataStream.WritePackedFixedString4096Delta(src, baseline, compressionModel);
+            dataStream.Flush();
+
+            //Assert.LessOrEqual(dataStream.Length, src.LengthInBytes+2);
+
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            var dst = reader.ReadPackedFixedString4096Delta(baseline, compressionModel);
             Assert.AreEqual(src, dst);
         }
     }

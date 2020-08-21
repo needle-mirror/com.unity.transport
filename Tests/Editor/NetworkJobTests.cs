@@ -1,6 +1,3 @@
-#if UNITY_2020_1_OR_NEWER
-#define UNITY_TRANSPORT_ENABLE_BASELIB
-#endif
 using System;
 using NUnit.Framework;
 using Unity.Burst;
@@ -314,11 +311,7 @@ namespace Unity.Networking.Transport.Tests
                     clientDrivers.Add(TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam));
                     clientPipelines.Add(clientDrivers[i].CreatePipeline(typeof(ReliableSequencedPipelineStage)));
                 }
-#if UNITY_TRANSPORT_ENABLE_BASELIB
                 using (var serverDriver = TestNetworkDriver.Create(new BaselibNetworkParameter {maximumPayloadSize = 64, receiveQueueCapacity = clientDrivers.Count, sendQueueCapacity = clientDrivers.Count }, timeoutParam))
-#else
-                using (var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 17*clientDrivers.Count}, timeoutParam))
-#endif
                 using (serverToClient = new NativeArray<NetworkConnection>(clientDrivers.Count, Allocator.Persistent))
                 {
                     var serverPipeline = serverDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));

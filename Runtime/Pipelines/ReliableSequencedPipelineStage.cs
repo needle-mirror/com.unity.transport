@@ -32,7 +32,8 @@ namespace Unity.Networking.Transport
                 ReceiveCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 SendCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 HeaderCapacity: UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(),
-                SharedStateCapacity: ReliableUtility.SharedCapacityNeeded(param)
+                SharedStateCapacity: ReliableUtility.SharedCapacityNeeded(param),
+                NetworkParameterConstants.MTU
             );
         }
         public int StaticSize => UnsafeUtility.SizeOf<ReliableUtility.Parameters>();

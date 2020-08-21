@@ -3,7 +3,7 @@ using Unity.Collections;
 
 namespace Unity.Networking.Transport
 {
-    public struct NetworkCompressionModel : IDisposable
+    public unsafe struct NetworkCompressionModel : IDisposable
     {
         internal static readonly byte[] k_BucketSizes =
         {
@@ -19,18 +19,18 @@ namespace Unity.Networking.Transport
             0, 0 };  // no contexts
         internal const int k_AlphabetSize = 16;
         internal const int k_MaxHuffmanSymbolLength = 6;
+        internal const int k_MaxContexts = 1;
 
         public void Dispose()
         {
-            encodeTable.Dispose();
-            decodeTable.Dispose();
-            bucketSizes.Dispose();
-            bucketOffsets.Dispose();
         }
         public NetworkCompressionModel(Allocator allocator)
         {
-            bucketSizes = new NativeArray<byte>(k_BucketSizes, allocator);
-            bucketOffsets = new NativeArray<uint>(k_BucketOffsets, allocator);
+            for (int i = 0; i < k_AlphabetSize; ++i)
+            {
+                bucketSizes[i] = k_BucketSizes[i];
+                bucketOffsets[i] = k_BucketOffsets[i];
+            }
             byte[] modelData = k_DefaultModelData;
 
             //int numContexts = NetworkConfig.maxContexts;
@@ -77,9 +77,6 @@ namespace Unity.Networking.Transport
             }
 
             // generate tables
-            encodeTable = new NativeArray<ushort>(numContexts * k_AlphabetSize, allocator);
-            decodeTable = new NativeArray<ushort>(numContexts * (1 << k_MaxHuffmanSymbolLength), allocator);
-
             var tmpSymbolLengths = new byte[k_AlphabetSize];
             var tmpSymbolDecodeTable = new ushort[1 << k_MaxHuffmanSymbolLength];
             var symbolCodes = new byte[k_AlphabetSize];
@@ -176,14 +173,14 @@ namespace Unity.Networking.Transport
                 }
             }
         }
-        [ReadOnly] public NativeArray<ushort> encodeTable;
-        [ReadOnly] public NativeArray<ushort> decodeTable;
-        [ReadOnly] public NativeArray<byte> bucketSizes;
-        [ReadOnly] public NativeArray<uint> bucketOffsets;
+        public fixed ushort encodeTable[k_MaxContexts * k_AlphabetSize];
+        public fixed ushort decodeTable[k_MaxContexts * (1 << k_MaxHuffmanSymbolLength)];
+        public fixed byte bucketSizes[k_AlphabetSize];
+        public fixed uint bucketOffsets[k_AlphabetSize];
         public int CalculateBucket(uint value)
         {
             int bucketIndex = 0;
-            while (bucketIndex + 1 < bucketOffsets.Length && value >= bucketOffsets[bucketIndex + 1]) // TODO: use CountLeadingZeros to do this in constant time
+            while (bucketIndex + 1 < k_AlphabetSize && value >= bucketOffsets[bucketIndex + 1]) // TODO: use CountLeadingZeros to do this in constant time
                 bucketIndex++;
 
             return bucketIndex;

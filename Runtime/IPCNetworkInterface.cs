@@ -105,18 +105,7 @@ namespace Unity.Networking.Transport
                 if (length <= 0)
                     throw new ArgumentException("Can't receive into 0 bytes or less of buffer memory");
 #endif
-                var iov = stackalloc network_iovec[2];
-
-                fixed (byte* ptr = header.Data)
-                {
-                    iov[0].buf = ptr;
-                    iov[0].len = UdpCHeader.Length;
-
-                    iov[1].buf = data;
-                    iov[1].len = length;
-                }
-
-                return ipcManager.ReceiveMessageEx(localEndPoint, iov, 2, ref address);
+                return ipcManager.ReceiveMessageEx(localEndPoint, ref header, data, length, ref address);
             }
         }
 
@@ -167,6 +156,7 @@ namespace Unity.Networking.Transport
             handle.size = 0;
             handle.capacity = requiredPayloadSize;
             handle.data = (IntPtr)UnsafeUtility.Malloc(handle.capacity, 8, Allocator.Temp);
+            handle.flags = default;
             return 0;
         }
 

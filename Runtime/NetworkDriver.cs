@@ -1,6 +1,3 @@
-#if UNITY_2020_1_OR_NEWER
-#define UNITY_TRANSPORT_ENABLE_BASELIB
-#endif
 using System;
 using System.Diagnostics;
 using System.Collections.Generic;
@@ -10,7 +7,6 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Protocols;
 using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
-using UnityEngine.Assertions;
 using Random = System.Random;
 
 namespace Unity.Networking.Transport
@@ -92,6 +88,18 @@ namespace Unity.Networking.Transport
                 return type;
             }
 
+            public int MaxHeaderSize(NetworkPipeline pipe)
+            {
+                var headerSize = UnsafeUtility.SizeOf<UdpCHeader>();
+                if (pipe.Id > 0)
+                {
+                    // All headers plus one byte for pipeline id
+                    headerSize += m_PipelineProcessor.SendHeaderCapacity(pipe) + 1;
+                }
+                var footerSize = 2; // Assume we will need a footer
+
+                return headerSize + footerSize;
+            }
             struct PendingSend
             {
                 public NetworkPipeline Pipeline;
@@ -131,20 +139,27 @@ namespace Unity.Networking.Transport
                     footerSize = 2;
                 }
 
+                int maxPayloadSize = m_PipelineProcessor.PayloadCapacity(pipe);
+
                 // Make sure there is space for headers and footers too
                 if (requiredPayloadSize == 0)
                     requiredPayloadSize = NetworkParameterConstants.MTU;
                 else
                 {
                     requiredPayloadSize += headerSize + footerSize;
-                    if (requiredPayloadSize > NetworkParameterConstants.MTU)
-                        throw new InvalidOperationException("It is not possible to send packages larger than the MTU");
+                    if (requiredPayloadSize > maxPayloadSize)
+                        throw new InvalidOperationException($"It is not possible to send packets larger than {maxPayloadSize} bytes with this pipeline and driver. Trying to send {requiredPayloadSize} bytes.");
                 }
-
 
                 NetworkInterfaceSendHandle sendHandle;
                 if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, requiredPayloadSize) != 0)
-                    return default;
+                {
+                    sendHandle.data = (IntPtr)UnsafeUtility.Malloc(requiredPayloadSize, 8, Allocator.Temp);
+                    sendHandle.capacity = requiredPayloadSize;
+                    sendHandle.id = 0;
+                    sendHandle.size = 0;
+                    sendHandle.flags = SendHandleFlags.AllocatedByDriver;
+                }
                 var header = (UdpCHeader*) sendHandle.data;
                 *header = new UdpCHeader
                 {
@@ -228,6 +243,17 @@ namespace Unity.Networking.Transport
             }
             internal unsafe int CompleteSend(NetworkConnection sendConnection, NetworkInterfaceSendHandle sendHandle)
             {
+                if (0 != (sendHandle.flags & SendHandleFlags.AllocatedByDriver))
+                {
+                    NetworkInterfaceSendHandle originalHandle = sendHandle;
+                    if (m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, originalHandle.size) != 0)
+                    {
+                        return -1;
+                    }
+                    UnsafeUtility.MemCpy((void*) sendHandle.data, (void*) originalHandle.data, originalHandle.size);
+                    sendHandle.size = originalHandle.size;
+                }
+
                 var connection = m_ConnectionList[sendConnection.m_NetworkId];
                 if ((((UdpCHeader*)sendHandle.data)->Flags & UdpCHeader.HeaderFlags.HasConnectToken) != 0)
                 {
@@ -243,7 +269,10 @@ namespace Unity.Networking.Transport
             }
             internal void AbortSend(NetworkInterfaceSendHandle sendHandle)
             {
-                m_NetworkSendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, m_NetworkSendInterface.UserData);
+                if(0 == (sendHandle.flags & SendHandleFlags.AllocatedByDriver))
+                {
+                    m_NetworkSendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, m_NetworkSendInterface.UserData);
+                }
             }
             public NetworkConnection.State GetConnectionState(NetworkConnection id)
             {
@@ -418,15 +447,11 @@ namespace Unity.Networking.Transport
             "Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak",
         };
 
-        [ReadOnly] private NativeArray<NativeString512> m_StringDB;
+        [ReadOnly] private NativeArray<FixedString512> m_StringDB;
 
         public static NetworkDriver Create(params INetworkParameter[] param)
         {
-#if UNITY_TRANSPORT_ENABLE_BASELIB
             return new NetworkDriver(new BaselibNetworkInterface(), param);
-#else
-            return new NetworkDriver(new UDPNetworkInterface(), param);
-#endif
         }
         /// <summary>
         /// Constructor for GenericNetworkDriver.
@@ -459,12 +484,12 @@ namespace Unity.Networking.Transport
             m_PendingBeginSend = new NativeArray<int>(JobsUtility.MaxJobThreadCount * JobsUtility.CacheLineSize/4, Allocator.Persistent);
 #endif
             m_Logger = new NetworkLogger(NetworkLogger.LogLevel.Debug);
-            m_StringDB = new NativeArray<NativeString512>((int)StringType.NumStrings, Allocator.Persistent);
+            m_StringDB = new NativeArray<FixedString512>((int)StringType.NumStrings, Allocator.Persistent);
             if (StringValue.Length != (int)StringType.NumStrings)
                 throw new InvalidOperationException("Bad string database");
             for (int i = 0; i < (int) StringType.NumStrings; ++i)
             {
-                m_StringDB[i] = new NativeString512(StringValue[i]);
+                m_StringDB[i] = new FixedString512(StringValue[i]);
             }
             m_NetworkParams = new Parameters(param);
             m_updateTime = m_NetworkParams.config.fixedFrameTimeMS > 0 ? 1 : Stopwatch.GetTimestamp() / TimeSpan.TicksPerMillisecond;
@@ -555,20 +580,20 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         struct MissingClearMessage : INetworkLogMessage
         {
-            public NativeArray<NativeString512> stringDB;
+            public NativeArray<FixedString512> stringDB;
             public int count;
             public int connection;
             public int listening;
-            public void Print(ref NativeString512 msg)
+            public void Print(ref FixedString512 msg)
             {
                 var str = stringDB[(int) StringType.ResetErrorCount];
-                msg.AppendFrom(str);
+                msg.Append(str);
                 msg.Append(count);
                 str = stringDB[(int) StringType.ResetErrorConnection];
-                msg.AppendFrom(str);
+                msg.Append(str);
                 msg.Append(connection);
                 str = stringDB[(int) StringType.ResetErrorListening];
-                msg.AppendFrom(str);
+                msg.Append(str);
                 msg.Append(listening);
             }
         }
@@ -580,7 +605,7 @@ namespace Unity.Networking.Transport
             public NetworkEventQueue eventQueue;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             public NetworkLogger logger;
-            public NativeArray<NativeString512> stringDB;
+            public NativeArray<FixedString512> stringDB;
             public NativeArray<int> pendingSend;
             [ReadOnly] public NativeList<Connection> connectionList;
             [ReadOnly] public NativeArray<int> internalState;
@@ -658,12 +683,12 @@ namespace Unity.Networking.Transport
 
         struct PipelineOverflowMessage : INetworkLogMessage
         {
-            public NativeArray<NativeString512> stringDB;
+            public NativeArray<FixedString512> stringDB;
             public int count;
-            public void Print(ref NativeString512 msg)
+            public void Print(ref FixedString512 msg)
             {
                 var str = stringDB[(int)StringType.PipelineOverflow];
-                msg.AppendFrom(str);
+                msg.Append(str);
                 msg.Append(count);
             }
         }
@@ -884,6 +909,10 @@ namespace Unity.Networking.Transport
             return s_NetworkInterfaces[m_NetworkInterfaceIndex].GetGenericEndPoint(ep);
         }
 
+        public int MaxHeaderSize(NetworkPipeline pipe)
+        {
+            return ToConcurrentSendOnly().MaxHeaderSize(pipe);
+        }
         public DataStreamWriter BeginSend(NetworkPipeline pipe, NetworkConnection id, int requiredPayloadSize = 0)
         {
             return ToConcurrentSendOnly().BeginSend(pipe, id, requiredPayloadSize);
@@ -1085,12 +1114,12 @@ namespace Unity.Networking.Transport
 
         struct ReceiveErrorMessage : INetworkLogMessage
         {
-            public NativeArray<NativeString512> stringDB;
+            public NativeArray<FixedString512> stringDB;
             public int errorCode;
-            public void Print(ref NativeString512 msg)
+            public void Print(ref FixedString512 msg)
             {
                 var str = stringDB[(int) StringType.ReceiveError];
-                msg.AppendFrom(str);
+                msg.Append(str);
                 msg.Append(errorCode);
             }
         }
@@ -1273,7 +1302,7 @@ namespace Unity.Networking.Transport
 
                         c.State = NetworkConnection.State.Connected;
                         UpdateConnection(c);
-                        Assert.IsTrue(!Listening);
+                        UnityEngine.Assertions.Assert.IsTrue(!Listening);
                         AddConnection(c.Id);
                         count++;
                     }
@@ -1329,6 +1358,7 @@ namespace Unity.Networking.Transport
                     return; // FIXME: how do we signal this error?
 
                 sliceOffset = m_DataStreamSize[0];
+                streamBasePtr = (byte*)m_DataStream.GetUnsafePtr();
                 UnsafeUtility.MemCpy(streamBasePtr + sliceOffset, dataPtr, dataLength);
                 m_DataStreamSize[0] = sliceOffset + dataLength;
             }
