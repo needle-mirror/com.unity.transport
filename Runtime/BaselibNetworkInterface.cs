@@ -9,6 +9,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Networking.Transport.Utilities.LowLevel.Unsafe;
 using Unity.Networking.Transport.Protocols;
+using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 using ErrorCode = Unity.Baselib.LowLevel.Binding.Baselib_ErrorCode;
 
 namespace Unity.Networking.Transport
@@ -118,9 +119,9 @@ namespace Unity.Networking.Transport
             {
                 var error = default(ErrorState);
                 Binding.Baselib_NetworkAddress local;
-                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(m_Baselib[0].m_Socket, &local, error.NativeErrorStatePtr);
+                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(m_Baselib[0].m_Socket, &local, &error);
                 var ep = default(NetworkInterfaceEndPoint);
-                if (error.ErrorCode != ErrorCode.Success)
+                if (error.code != ErrorCode.Success)
                     return ep;
                 ep.dataLength = UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
                 UnsafeUtility.MemCpy(ep.data, &local, ep.dataLength);
@@ -139,9 +140,9 @@ namespace Unity.Networking.Transport
             local = Binding.Baselib_RegisteredNetwork_Endpoint_Create(
                 (Binding.Baselib_NetworkAddress*)&address.rawNetworkAddress,
                 slice,
-                error.NativeErrorStatePtr
+                &error
             );
-            if (error.ErrorCode != ErrorCode.Success)
+            if (error.code != ErrorCode.Success)
                 return default(NetworkInterfaceEndPoint);
 
             var endpoint = default(NetworkInterfaceEndPoint);
@@ -229,15 +230,15 @@ namespace Unity.Networking.Transport
             {
                 var error = default(ErrorState);
                 var pollCount = 0;
-                while(Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, error.NativeErrorStatePtr) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending && pollCount++ < k_defaultTxQueueSize){}
+                while(Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, &error) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending && pollCount++ < k_defaultTxQueueSize){}
                 int count;
                 // InUse is not thread safe, needs to be called in a single threaded flush job
                 var inFlight = Tx.InUse;
                 if (inFlight > 0)
                 {
                     var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[inFlight];
-                    count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, (uint)inFlight, error.NativeErrorStatePtr);
-                    if (error.ErrorCode != ErrorCode.Success)
+                    count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, (uint)inFlight, &error);
+                    if (error.code != ErrorCode.Success)
                     {
                         return;
                     }
@@ -266,15 +267,15 @@ namespace Unity.Networking.Transport
                 if (outstanding > 0)
                 {
                     var pollCount = 0;
-                    while (Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(Baselib[0].m_Socket, error.NativeErrorStatePtr) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending && pollCount++ < k_defaultRxQueueSize) {}
+                    while (Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(Baselib[0].m_Socket, &error) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending && pollCount++ < k_defaultRxQueueSize) {}
 
                     var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[outstanding];
 
                     // Pop Completed Requests off the CompletionQ
-                    count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueRecv(Baselib[0].m_Socket, results, (uint)outstanding, error.NativeErrorStatePtr);
-                    if (error.ErrorCode != ErrorCode.Success)
+                    count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueRecv(Baselib[0].m_Socket, results, (uint)outstanding, &error);
+                    if (error.code != ErrorCode.Success)
                     {
-                        Receiver.ReceiveErrorCode = (int) error.ErrorCode;
+                        Receiver.ReceiveErrorCode = (int) error.code;
                         return;
                     }
 
@@ -345,9 +346,9 @@ namespace Unity.Networking.Transport
                         Baselib[0].m_Socket,
                         requests,
                         (uint)count,
-                        error.NativeErrorStatePtr);
-                    if (error.ErrorCode != ErrorCode.Success)
-                        Receiver.ReceiveErrorCode = (int) error.ErrorCode;
+                        &error);
+                    if (error.code != ErrorCode.Success)
+                        Receiver.ReceiveErrorCode = (int) error.code;
                 }
             }
         }
@@ -399,15 +400,15 @@ namespace Unity.Networking.Transport
             local.slice = slice;
 
             Binding.Baselib_NetworkAddress localAddress;
-            Binding.Baselib_RegisteredNetwork_Endpoint_GetNetworkAddress(local, &localAddress, error.NativeErrorStatePtr);
+            Binding.Baselib_RegisteredNetwork_Endpoint_GetNetworkAddress(local, &localAddress, &error);
 
             baselib.m_Socket = Binding.Baselib_RegisteredNetwork_Socket_UDP_Create(
                 &localAddress,
                 Binding.Baselib_NetworkAddress_AddressReuse.Allow,
                 checked((uint)txQueueSize),
                 checked((uint)rxQueueSize),
-                error.NativeErrorStatePtr);
-            if (error.ErrorCode != ErrorCode.Success)
+                &error);
+            if (error.code != ErrorCode.Success)
             {
                 m_Baselib[0] = baselib;
                 return -1;
@@ -429,7 +430,7 @@ namespace Unity.Networking.Transport
                     baselib.m_Socket,
                     requests,
                     (uint)count,
-                    error.NativeErrorStatePtr);
+                    &error);
             }
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AllSockets.OpenSockets.Add(new SocketList.SocketId
@@ -497,8 +498,8 @@ namespace Unity.Networking.Transport
                 baselib->m_Socket,
                 messagePtr,
                 1u,
-                error.NativeErrorStatePtr);
-            if (error.ErrorCode != ErrorCode.Success)
+                &error);
+            if (error.code != ErrorCode.Success)
             {
                 baselib->m_PayloadsTx.ReleaseHandle(index);
                 return -1;

@@ -956,6 +956,13 @@ namespace Unity.Networking.Transport
                 reader = new DataStreamReader(((NativeArray<byte>)m_DataStream).GetSubArray(offset, size));
             return type;
         }
+        public int GetEventQueueSizeForConnection(NetworkConnection connectionId)
+        {
+            if (connectionId.m_NetworkId < 0 || connectionId.m_NetworkId >= m_ConnectionList.Length ||
+                m_ConnectionList[connectionId.m_NetworkId].Version != connectionId.m_NetworkVersion)
+                return 0;
+            return m_EventQueue.GetCountForConnection(connectionId.m_NetworkId);
+        }
 
         // internal helper functions ::::::::::::::::::::::::::::::::::::::::::
         void AddConnection(int id)

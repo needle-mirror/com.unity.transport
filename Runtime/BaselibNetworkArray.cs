@@ -4,6 +4,7 @@ using Unity.Baselib.LowLevel;
 using Unity.Mathematics;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 using ErrorCode = Unity.Baselib.LowLevel.Binding.Baselib_ErrorCode;
 
 namespace Unity.Networking.Transport
@@ -35,23 +36,24 @@ namespace Unity.Networking.Transport
             }
 
             var error = default(ErrorState);
+            
             var pageAllocation = Binding.Baselib_Memory_AllocatePages(
                 pageInfo->defaultPageSize,
                 pageCount,
                 1,
                 Binding.Baselib_Memory_PageState.ReadWrite,
-                error.NativeErrorStatePtr);
+                &error);
 
-            if (error.ErrorCode != ErrorCode.Success)
+            if (error.code != ErrorCode.Success)
                 throw new Exception();
 
             UnsafeUtility.MemSet((void*)pageAllocation.ptr, 0, (long)(pageAllocation.pageCount * pageAllocation.pageSize));
 
             m_Buffer = (Binding.Baselib_RegisteredNetwork_Buffer*)UnsafeUtility.Malloc(UnsafeUtility.SizeOf<Binding.Baselib_RegisteredNetwork_Buffer>(), UnsafeUtility.AlignOf<Binding.Baselib_RegisteredNetwork_Buffer>(), Allocator.Persistent);
-            *m_Buffer = Binding.Baselib_RegisteredNetwork_Buffer_Register(pageAllocation, error.NativeErrorStatePtr);
-            if (error.ErrorCode != (int) ErrorCode.Success)
+            *m_Buffer = Binding.Baselib_RegisteredNetwork_Buffer_Register(pageAllocation, &error);
+            if (error.code != (int)ErrorCode.Success)
             {
-                Binding.Baselib_Memory_ReleasePages(pageAllocation, error.NativeErrorStatePtr);
+                Binding.Baselib_Memory_ReleasePages(pageAllocation, &error);
                 *m_Buffer = default;
                 throw new Exception();
             }
@@ -62,7 +64,7 @@ namespace Unity.Networking.Transport
             var error = default(ErrorState);
             var pageAllocation = m_Buffer->allocation;
             Binding.Baselib_RegisteredNetwork_Buffer_Deregister(*m_Buffer);
-            Binding.Baselib_Memory_ReleasePages(pageAllocation, error.NativeErrorStatePtr);
+            Binding.Baselib_Memory_ReleasePages(pageAllocation, &error);
             UnsafeUtility.Free(m_Buffer, Allocator.Persistent);
         }
 

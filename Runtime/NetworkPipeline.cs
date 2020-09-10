@@ -713,8 +713,7 @@ namespace Unity.Networking.Transport
             if (stageNotFound)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Could not find stage ID " + stageId +
-                                " make sure the type for this stage ID is added when the pipeline is created.");
+                throw new InvalidOperationException($"Could not find stage ID {stageId} make sure the type for this stage ID is added when the pipeline is created.");
 #else
                 writeProcessingBuffer = default;
                 readProcessingBuffer = default;

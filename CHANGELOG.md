@@ -1,5 +1,15 @@
 # Change log
 
+## [0.4.1] - 2020-09-10
+### New features
+* Added `NetworkDriver.GetEventQueueSizeForConnection` which allows you to check how many pending events a connection has.
+
+### Changes
+### Fixes
+* Fixed a compatibility isue with DOTS Runetime.
+
+### Upgrade guide
+
 ## [0.4.0-preview.3] - 2020-08-21
 ### New features
 * Added a new fragmentation pipeline which allows you to send messages larger than one MTU. If the `FragmentationPipelineStage` is part of the pipeline you are trying to send with the `NetworkDriver` will allow a `requiredPayloadSize` larger than one MTU to be specified and split the message into multiple packages.
@@ -11,6 +21,7 @@
 ### Fixes
 ### Upgrade guide
 The data stream methods for reading and writing strings have changed, they now take `FixedString64` instead of `NativeString64` and the names have changed as follows: `DataStreamReader.ReadString` -> `DataStreamReader.ReadFixedString64`, `DataStreamReader.ReadPackedStringDelta` -> `DataStreamReader.ReadPackedFixedString64Delta`, `DataStreamWriter.WriteString` -> `DataStreamWriter.WriteFixedString64`, `DataStreamWriter.WritePackedStringDelta` -> `DataStreamWriter.WritePackedFixedString64Delta`.
+
 The transport now requires Unity 2020.1.2.
 
 ## [0.3.1-preview.4] - 2020-06-05

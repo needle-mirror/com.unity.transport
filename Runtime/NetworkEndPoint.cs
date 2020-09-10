@@ -5,6 +5,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Baselib;
 using Unity.Baselib.LowLevel;
+using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 
 namespace Unity.Networking.Transport
 {
@@ -141,10 +142,10 @@ namespace Unity.Networking.Transport
                     ToBaselibFamily(family),
                     ipBytesPtr,
                     (ushort) port,
-                    errorState.NativeErrorStatePtr);
+                    &errorState);
             }
 
-            if (errorState.ErrorCode != Binding.Baselib_ErrorCode.Success)
+            if (errorState.code != Binding.Baselib_ErrorCode.Success)
             {
                 return false;
             }
