@@ -149,7 +149,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
-        [MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
+        [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
         private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize)
         {
             handle.id = 0;
@@ -161,7 +161,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
-        [MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
+        [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
         private static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueueHandle)
         {
             var sendQueue = sendQueueHandle.FromHandle();
@@ -173,7 +173,7 @@ namespace Unity.Networking.Transport
             return handle.size;
         }
         [BurstCompile]
-        [MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
+        [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
         {
         }

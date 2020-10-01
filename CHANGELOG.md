@@ -1,5 +1,13 @@
 # Change log
 
+## [0.5.0] - 2020-10-01
+### New features
+### Changes
+### Fixes
+* Fixed display of ipv6 addresses as strings
+
+### Upgrade guide
+
 ## [0.4.1] - 2020-09-10
 ### New features
 * Added `NetworkDriver.GetEventQueueSizeForConnection` which allows you to check how many pending events a connection has.

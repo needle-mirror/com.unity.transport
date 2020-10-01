@@ -222,8 +222,8 @@ namespace Unity.Networking.Transport
                         rawNetworkAddress.data7 | (rawNetworkAddress.data6 << 8),
                         rawNetworkAddress.data9 | (rawNetworkAddress.data8 << 8),
                         rawNetworkAddress.data11 | (rawNetworkAddress.data10 << 8),
-                        rawNetworkAddress.data12 | (rawNetworkAddress.data13 << 8),
-                        rawNetworkAddress.data14 | (rawNetworkAddress.data15 << 8),
+                        rawNetworkAddress.data13 | (rawNetworkAddress.data12 << 8),
+                        rawNetworkAddress.data15 | (rawNetworkAddress.data14 << 8),
                         Port
                     );
                 default:
