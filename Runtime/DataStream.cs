@@ -85,6 +85,12 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         AtomicSafetyHandle m_Safety;
 #endif
+
+        /// <summary>
+        /// Initializes a new instance of the DataStreamWriter struct.
+        /// </summary>
+        /// <param name="length">The length of the buffer.</param>
+        /// <param name="allocator">The <see cref="Allocator"/> used to allocate the memory.</param>
         public DataStreamWriter(int length, Allocator allocator)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -93,6 +99,11 @@ namespace Unity.Networking.Transport
 #endif
             Initialize(out this, new NativeArray<byte>(length, allocator));
         }
+
+        /// <summary>
+        /// Initializes a new instance of the DataStreamWriter struct with a NativeArray<byte>
+        /// </summary>
+        /// <param name="data">The buffer we want to attach to our DataStreamWriter.</param>
         public DataStreamWriter(NativeArray<byte> data)
         {
             Initialize(out this, data);
@@ -338,7 +349,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
-            if (m_Data.length + ((m_Data.bitIndex + encodeEntry&0xff + bits + 7) >> 3) > m_Data.capacity)
+            if (m_Data.length + ((m_Data.bitIndex + (encodeEntry&0xff) + bits + 7) >> 3) > m_Data.capacity)
             {
                 ++m_Data.failedWrites;
                 return false;

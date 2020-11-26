@@ -8,6 +8,7 @@ using Unity.Jobs;
 
 namespace Unity.Networking.Transport.Tests
 {
+
     public class BeginEndSendTests
     {
         private NetworkDriver Driver;
@@ -39,10 +40,38 @@ namespace Unity.Networking.Transport.Tests
             Driver.Dispose();
             RemoteDriver.Dispose();
         }
+
+        [Test]
+        public void GivenBadNetworkId_ReturnsNetworkIdMismatch()
+        {
+            var badCon = default(NetworkConnection);
+            badCon.m_NetworkId = -1;
+            var writer = default(DataStreamWriter);
+
+            Assert.IsTrue(Driver.BeginSend(badCon, out writer) == (int) Error.StatusCode.NetworkIdMismatch);
+        }
+
+        [Test]
+        public void GivenBadNetworkVersion_ReturnsNetworkVersionMismatch()
+        {
+            var badCon = ToRemoteConnection;
+            badCon.m_NetworkVersion--;
+
+            var writer = default(DataStreamWriter);
+            Assert.IsTrue(Driver.BeginSend(badCon, out writer) == (int) Error.StatusCode.NetworkVersionMismatch);
+        }
+
+        [Test]
+        public void GivenToLargePayloadSize_ReturnsNetworkPacketOverflow()
+        {
+            var writer = default(DataStreamWriter);
+            Assert.IsTrue(Driver.BeginSend(ToRemoteConnection, out writer, 1501) == (int) Error.StatusCode.NetworkPacketOverflow);
+        }
+
         [Test]
         public void BeginEndSimple()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0,Driver.BeginSend(ToRemoteConnection, out var writer));
             Assert.AreEqual(NetworkParameterConstants.MTU - UdpCHeader.Length, writer.Capacity);
             writer.WriteInt(42);
             Driver.EndSend(writer);
@@ -56,12 +85,14 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void NestedBeginEndSend()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
-            var writer2 = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
             writer.WriteInt(42);
+            Assert.AreEqual(NetworkParameterConstants.MTU - UdpCHeader.Length, writer.Capacity);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer2));
             writer2.WriteInt(4242);
             Driver.EndSend(writer2);
             Driver.EndSend(writer);
+
             Driver.ScheduleFlushSend(default).Complete();
             RemoteDriver.ScheduleUpdate().Complete();
             var evt = RemoteDriver.PopEventForConnection(ToLocalConnection, out var reader);
@@ -76,12 +107,14 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void OverlappingBeginEndSend()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
-            var writer2 = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer2));
             writer.WriteInt(42);
             writer2.WriteInt(4242);
+
             Driver.EndSend(writer);
             Driver.EndSend(writer2);
+
             Driver.ScheduleFlushSend(default).Complete();
             RemoteDriver.ScheduleUpdate().Complete();
             var evt = RemoteDriver.PopEventForConnection(ToLocalConnection, out var reader);
@@ -96,7 +129,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void MissingEndSend()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
             writer.WriteInt(42);
             LogAssert.Expect(LogType.Error, "Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
             Driver.ScheduleUpdate().Complete();
@@ -104,11 +137,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void DuplicateEndSend()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
             writer.WriteInt(42);
             Driver.EndSend(writer);
             Assert.Throws<InvalidOperationException>(()=>{Driver.EndSend(writer);});
-
             Driver.ScheduleFlushSend(default).Complete();
             RemoteDriver.ScheduleUpdate().Complete();
             var evt = RemoteDriver.PopEventForConnection(ToLocalConnection, out var reader);
@@ -119,7 +151,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void DuplicateAbortSend()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
             writer.WriteInt(42);
             Driver.AbortSend(writer);
             Assert.Throws<InvalidOperationException>(()=>{Driver.AbortSend(writer);});
@@ -132,7 +164,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void AbortBeforeEndSend()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
             writer.WriteInt(42);
             Driver.AbortSend(writer);
             Assert.Throws<InvalidOperationException>(()=>{Driver.EndSend(writer);});
@@ -145,7 +177,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void EndBeforeAbortSend()
         {
-            var writer = Driver.BeginSend(ToRemoteConnection);
+            Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
             writer.WriteInt(42);
             Driver.EndSend(writer);
             Assert.Throws<InvalidOperationException>(()=>{Driver.AbortSend(writer);});
@@ -164,8 +196,10 @@ namespace Unity.Networking.Transport.Tests
             public NetworkConnection ToRemoteConnection;
             public void Execute()
             {
-                writer = Driver.BeginSend(ToRemoteConnection);
-                writer.WriteInt(42);
+                if (Driver.BeginSend(ToRemoteConnection, out var writer) == 0)
+                {
+                    writer.WriteInt(42);
+                }
             }
         }
         [Test]
@@ -187,6 +221,25 @@ namespace Unity.Networking.Transport.Tests
         {
             var writer = new DataStreamWriter(16, Allocator.Temp);
             Assert.Throws<InvalidOperationException>(()=>{Driver.EndSend(writer);});
+        }
+    }
+
+    public class BeginEndExtras
+    {
+
+        [Test]
+        public void GivenStateConnecting_LogsError()
+        {
+            using (var Driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var RemoteDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            {
+                RemoteDriver.Bind(NetworkEndPoint.LoopbackIpv4);
+                RemoteDriver.Listen();
+                var ToRemoteConnection = Driver.Connect(RemoteDriver.LocalEndPoint());
+
+                Assert.AreEqual((int)Error.StatusCode.NetworkStateMismatch, Driver.BeginSend(ToRemoteConnection, out var writer));
+                LogAssert.Expect(LogType.Error, "Cannot send data while connecting");
+            }
         }
     }
 }

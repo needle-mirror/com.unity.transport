@@ -107,7 +107,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             // Request an update to see if a queued packet needs to be resent later or if an ack packet should be sent
             requests = NetworkPipelineStage.Requests.Update;
@@ -129,14 +129,14 @@ namespace Unity.Networking.Transport
                     // We failed to store the packet for possible later resends, abort and report this as a send error
                     inboundBuffer = default;
                     requests |= NetworkPipelineStage.Requests.Error;
-                    return;
+                    return (int)Error.StatusCode.NetworkSendQueueFull;
                 }
                 ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 if (reliable->Resume != ReliableUtility.NullEntry)
                     requests |= NetworkPipelineStage.Requests.Resume;
 
                 reliable->PreviousTimestamp = ctx.timestamp;
-                return;
+                return (int)Error.StatusCode.Success;
             }
 
             if (reliable->Resume != ReliableUtility.NullEntry)
@@ -148,7 +148,7 @@ namespace Unity.Networking.Transport
                 ctx.header.Clear();
                 ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 reliable->PreviousTimestamp = ctx.timestamp;
-                return;
+                return (int)Error.StatusCode.Success;
             }
 
             if (ReliableUtility.ShouldSendAck(ctx))
@@ -163,9 +163,10 @@ namespace Unity.Networking.Transport
                 inboundBuffer.bufferWithHeadersLength = inboundBuffer.headerPadding + 1;
                 inboundBuffer.bufferWithHeaders = (byte*)UnsafeUtility.Malloc(inboundBuffer.bufferWithHeadersLength, 8, Allocator.Temp);
                 inboundBuffer.SetBufferFrombufferWithHeaders();
-                return;
+                return (int)Error.StatusCode.Success;
             }
             reliable->PreviousTimestamp = ctx.timestamp;
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]

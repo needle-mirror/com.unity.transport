@@ -56,6 +56,7 @@ namespace Unity.Networking.Transport
         AllocatedByDriver = 1 << 0
     }
 
+
     public struct NetworkInterfaceSendHandle
     {
         public IntPtr data;
@@ -93,7 +94,7 @@ namespace Unity.Networking.Transport
     {
         NetworkInterfaceEndPoint LocalEndPoint { get; }
 
-        void Initialize(params INetworkParameter[] param);
+        int Initialize(params INetworkParameter[] param);
 
         /// <summary>
         /// Schedule a ReceiveJob. This is used to read data from your supported medium and pass it to the AppendData function
@@ -123,7 +124,7 @@ namespace Unity.Networking.Transport
 
         NetworkSendInterface CreateSendInterface();
 
-        NetworkInterfaceEndPoint CreateInterfaceEndPoint(NetworkEndPoint endPoint);
+        int CreateInterfaceEndPoint(NetworkEndPoint address, out NetworkInterfaceEndPoint endpoint);
         NetworkEndPoint GetGenericEndPoint(NetworkInterfaceEndPoint endpoint);
     }
 }

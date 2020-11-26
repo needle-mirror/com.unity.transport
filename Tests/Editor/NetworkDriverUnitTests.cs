@@ -4,6 +4,7 @@ using System.Text;
 using NUnit.Framework;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Networking.Transport.Error;
 using UnityEngine;
 using Unity.Networking.Transport.Protocols;
 using Unity.Networking.Transport.Utilities;
@@ -348,6 +349,7 @@ namespace Unity.Networking.Transport.Tests
                 NetworkConnection id;
                 NetworkEvent.Type popEvent = NetworkEvent.Type.Empty;
                 DataStreamReader reader;
+                byte reason = 0;
 
                 host.Host();
 
@@ -358,18 +360,81 @@ namespace Unity.Networking.Transport.Tests
                 // Host sends stuff but gets nothing back, until disconnect timeout happens
                 for (int frm = 0; frm < 10; ++frm)
                 {
-                    var stream = host.m_LocalDriver.BeginSend(NetworkPipeline.Null, host.ClientConnections[0]);
-                    for (int i = 0; i < 100; i++)
-                        stream.WriteByte((byte) i);
+                    if (host.m_LocalDriver.BeginSend(NetworkPipeline.Null, host.ClientConnections[0], out var stream) == 0)
+                    {
+                        for (int i = 0; i < 100; i++)
+                            stream.WriteByte((byte) i);
 
-                    host.m_LocalDriver.EndSend(stream);
-                    popEvent = host.m_LocalDriver.PopEvent(out id, out reader);
-                    if (popEvent != NetworkEvent.Type.Empty)
+                        host.m_LocalDriver.EndSend(stream);
+                    }
+                    if ((popEvent = host.m_LocalDriver.PopEvent(out id, out reader)) != NetworkEvent.Type.Empty)
+                    {
+                        reason = (reader.IsCreated && reader.Length > 0) ? reason = reader.ReadByte() : (byte)0;
                         break;
+                    }
                     host.Update();
                 }
-
                 Assert.AreEqual(NetworkEvent.Type.Disconnect, popEvent);
+                Assert.AreEqual((byte)DisconnectReason.Timeout, reason);
+            }
+        }
+
+        [Test]
+        public void DisconnectByRemote()
+        {
+            using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
+            using (var client = new NetworkDriver(new IPCNetworkInterface()))
+            {
+                host.Host();
+                var popEvent = NetworkEvent.Type.Empty;
+                var c = client.Connect(host.EndPoint);
+
+                client.ScheduleUpdate().Complete();
+                host.Assert_GotConnectionRequest(client.LocalEndPoint(), true);
+
+                byte reason = 0;
+                DataStreamReader reader;
+                for (int frm = 0; frm < 10; ++frm)
+                {
+                    if (c.GetState(client) == NetworkConnection.State.Connected) c.Disconnect(client);
+
+                    if ((popEvent = host.m_LocalDriver.PopEvent(out var id, out reader)) != NetworkEvent.Type.Empty)
+                    {
+                        reason = (reader.IsCreated && reader.Length > 0) ? reason = reader.ReadByte() : (byte)0;
+                        break;
+                    }
+                    host.Update();
+                    client.ScheduleUpdate().Complete();
+                }
+                Assert.AreEqual(NetworkEvent.Type.Disconnect, popEvent);
+                Assert.AreEqual((byte)DisconnectReason.ClosedByRemote, reason);
+            }
+        }
+
+        [Test]
+        public void DisconnectByMaxConnectionAttempts()
+        {
+            using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
+            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkConfigParameter {maxConnectAttempts = 1, fixedFrameTimeMS = 10, connectTimeoutMS = 25}))
+            {
+                host.Host();
+                var popEvent = NetworkEvent.Type.Empty;
+                var c = client.Connect(host.EndPoint);
+                client.ScheduleUpdate().Complete();
+
+                byte reason = 0;
+                var reader = default(DataStreamReader);
+                for (int frm = 0; frm < 10; ++frm)
+                {
+                    if ((popEvent = client.PopEvent(out var id, out reader)) != NetworkEvent.Type.Empty)
+                    {
+                        reason = (reader.IsCreated && reader.Length > 0) ? reason = reader.ReadByte() : (byte)0;
+                        break;
+                    }
+                    client.ScheduleUpdate().Complete();
+                }
+                Assert.AreEqual(NetworkEvent.Type.Disconnect, popEvent);
+                Assert.AreEqual((byte)DisconnectReason.MaxConnectionAttempts, reason);
             }
         }
 
@@ -394,10 +459,12 @@ namespace Unity.Networking.Transport.Tests
                 driver.ScheduleUpdate().Complete();
                 Assert.AreEqual(NetworkEvent.Type.Connect, driver.PopEvent(out con, out slice));
 
-                var stream = driver.BeginSend(NetworkPipeline.Null, connectionId);
                 var data = Encoding.ASCII.GetBytes("data to send");
-                stream.WriteBytes(new NativeArray<byte>(data, Allocator.Temp));
-                driver.EndSend(stream);
+                if (driver.BeginSend(NetworkPipeline.Null, connectionId, out var stream) == 0)
+                {
+                    stream.WriteBytes(new NativeArray<byte>(data, Allocator.Temp));
+                    driver.EndSend(stream);
+                }
                 driver.ScheduleUpdate().Complete();
 
                 host.Assert_GotDataRequest(local, data);
@@ -505,9 +572,11 @@ namespace Unity.Networking.Transport.Tests
 
                 for (int i = 0; i < k_PacketCount; ++i)
                 {
-                    var stream = client.BeginSend(NetworkPipeline.Null, connectionId);
-                    stream.WriteBytes(new NativeArray<byte>(dataBlob[i], Allocator.Temp));
-                    client.EndSend(stream);
+                    if (client.BeginSend(NetworkPipeline.Null, connectionId, out var stream) == 0)
+                    {
+                        stream.WriteBytes(new NativeArray<byte>(dataBlob[i], Allocator.Temp));
+                        client.EndSend(stream);
+                    }
                 }
 
                 // Process the pending events
@@ -571,12 +640,15 @@ namespace Unity.Networking.Transport.Tests
                 int testInt = 100;
                 float testFloat = 555.5f;
                 byte[] testByteArray = Encoding.ASCII.GetBytes("Some bytes blablabla 1111111111111111111");
-                var clientSendData = clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId);
-                clientSendData.WriteInt(testInt);
-                clientSendData.WriteFloat(testFloat);
-                clientSendData.WriteInt(testByteArray.Length);
-                clientSendData.WriteBytes(new NativeArray<byte>(testByteArray, Allocator.Temp));
-                var sentBytes = clientDriver.EndSend(clientSendData);
+                var sentBytes = 0;
+                if (clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId, out var clientSendData) == 0)
+                {
+                    clientSendData.WriteInt(testInt);
+                    clientSendData.WriteFloat(testFloat);
+                    clientSendData.WriteInt(testByteArray.Length);
+                    clientSendData.WriteBytes(new NativeArray<byte>(testByteArray, Allocator.Temp));
+                    sentBytes = clientDriver.EndSend(clientSendData);
+                }
 
                 Assert.AreEqual(clientSendData.Length, sentBytes);
 
@@ -626,16 +698,18 @@ namespace Unity.Networking.Transport.Tests
             var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
             Assert.That(eventId == NetworkEvent.Type.Connect, $"expected Connect got {eventId} using {backend}");
 
-
             int testInt = 100;
             float testFloat = 555.5f;
             byte[] testByteArray = Encoding.ASCII.GetBytes("Some bytes blablabla 1111111111111111111");
-            var clientSendData = clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId);
-            clientSendData.WriteInt(testInt);
-            clientSendData.WriteFloat(testFloat);
-            clientSendData.WriteInt(testByteArray.Length);
-            clientSendData.WriteBytes(new NativeArray<byte>(testByteArray, Allocator.Temp));
-            var sentBytes = clientDriver.EndSend(clientSendData);
+            var sentBytes = 0;
+            if (clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId, out var clientSendData) == 0)
+            {
+                clientSendData.WriteInt(testInt);
+                clientSendData.WriteFloat(testFloat);
+                clientSendData.WriteInt(testByteArray.Length);
+                clientSendData.WriteBytes(new NativeArray<byte>(testByteArray, Allocator.Temp));
+                sentBytes = clientDriver.EndSend(clientSendData);
+            }
 
             Assert.AreEqual(clientSendData.Length, sentBytes);
 

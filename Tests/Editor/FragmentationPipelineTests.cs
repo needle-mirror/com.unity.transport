@@ -45,8 +45,9 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -122,9 +123,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt(42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt(42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -156,13 +159,14 @@ namespace Unity.Networking.Transport.Tests
             int intCount = messageSize / sizeof(int);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient, messageSize);
-            for (int i = 0; i < intCount; ++i)
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm, messageSize) == 0)
             {
-                strm.WriteInt(i);
+                for (int i = 0; i < intCount; ++i)
+                {
+                    strm.WriteInt(i);
+                }
+                m_ServerDriver.EndSend(strm);
             }
-
-            m_ServerDriver.EndSend(strm);
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -208,13 +212,15 @@ namespace Unity.Networking.Transport.Tests
                 for (int j = 0; j < messageCount; ++j)
                 {
                     // Send one message
-                    var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient, messageSize);
-                    for (int i = 0; i < intCount; ++i)
+                    if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm, messageSize) == 0)
                     {
-                        strm.WriteInt(i);
-                    }
+                        for (int i = 0; i < intCount; ++i)
+                        {
+                            strm.WriteInt(i);
+                        }
 
-                    m_ServerDriver.EndSend(strm);
+                        m_ServerDriver.EndSend(strm);
+                    }
                 }
 
                 m_ServerDriver.ScheduleUpdate().Complete();

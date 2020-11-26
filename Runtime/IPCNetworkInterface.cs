@@ -15,16 +15,21 @@ namespace Unity.Networking.Transport
 
         public NetworkInterfaceEndPoint LocalEndPoint => m_LocalEndPoint[0];
 
-        public NetworkInterfaceEndPoint CreateInterfaceEndPoint(NetworkEndPoint endPoint)
+        public int CreateInterfaceEndPoint(NetworkEndPoint address, out NetworkInterfaceEndPoint endpoint)
         {
-            if (!endPoint.IsLoopback && !endPoint.IsAny)
+            if (!address.IsLoopback && !address.IsAny)
+            {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException("IPC network driver can only handle loopback addresses");
 #else
-                return default;
+                endpoint = default(NetworkInterfaceEndPoint);
+                endpoint.dataLength = 0;
+                return (int)Error.StatusCode.NetworkArgumentMismatch;
 #endif
-            var endpoint = IPCManager.Instance.CreateEndPoint(endPoint.Port);
-            return endpoint;
+            }
+
+            endpoint = IPCManager.Instance.CreateEndPoint(address.Port);
+            return (int)Error.StatusCode.Success;
         }
 
         public NetworkEndPoint GetGenericEndPoint(NetworkInterfaceEndPoint endpoint)
@@ -34,11 +39,19 @@ namespace Unity.Networking.Transport
             return NetworkEndPoint.LoopbackIpv4.WithPort(port);
         }
 
-        public void Initialize(params INetworkParameter[] param)
+        public int Initialize(params INetworkParameter[] param)
         {
             IPCManager.Instance.AddRef();
             m_LocalEndPoint = new NativeArray<NetworkInterfaceEndPoint>(1, Allocator.Persistent);
-            m_LocalEndPoint[0] = CreateInterfaceEndPoint(NetworkEndPoint.LoopbackIpv4);
+
+            var ep = default(NetworkInterfaceEndPoint);
+            var result = 0;
+
+            if ((result = CreateInterfaceEndPoint(NetworkEndPoint.LoopbackIpv4, out ep)) != (int)Error.StatusCode.Success)
+                return result;
+
+            m_LocalEndPoint[0] = ep;
+            return 0;
         }
 
         public void Dispose()
@@ -117,6 +130,7 @@ namespace Unity.Networking.Transport
             IPCManager.ManagerAccessHandle = dep;
             return dep;
         }
+
         public JobHandle ScheduleSend(NativeQueue<QueuedSendMessage> sendQueue, JobHandle dep)
         {
             var sendJob = new SendUpdate {ipcManager = IPCManager.Instance, ipcQueue = sendQueue, localEndPoint = m_LocalEndPoint};

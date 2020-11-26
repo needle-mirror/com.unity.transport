@@ -163,10 +163,12 @@ namespace Tests
             SetupServerAndClientAndConnectThem(0);
 
             //send data from client
-            DataStreamWriter m_OutStream = client_driver.BeginSend(clientToServerConnection);
-            m_OutStream.Clear();
-            m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
-            client_driver.EndSend(m_OutStream);
+            if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
+            {
+                m_OutStream.Clear();
+                m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
+                client_driver.EndSend(m_OutStream);
+            }
             client_driver.ScheduleFlushSend(default).Complete();
 
             //handle sent data
@@ -188,9 +190,11 @@ namespace Tests
             client_driver.ScheduleUpdate().Complete();
 
             //send data from server
-            m_OutStream = server_driver.BeginSend(connectionToClient);
-            m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.pong, Allocator.Temp));
-            server_driver.EndSend(m_OutStream);
+            if (server_driver.BeginSend(connectionToClient, out m_OutStream) == 0)
+            {
+                m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.pong, Allocator.Temp));
+                server_driver.EndSend(m_OutStream);
+            }
 
             //handle sent data
             server_driver.ScheduleUpdate().Complete();
@@ -221,13 +225,15 @@ namespace Tests
             SetupServerAndClientAndConnectThem(8);
 
             //send data from client
-            DataStreamWriter m_OutStream = client_driver.BeginSend(clientToServerConnection);
-            m_OutStream.Clear();
-            m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
-            client_driver.EndSend(m_OutStream);
+            if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
+            {
+                m_OutStream.Clear();
+                m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
+                client_driver.EndSend(m_OutStream);
+            }
             client_driver.ScheduleFlushSend(default).Complete();
 
-            LogAssert.Expect(LogType.Error, "Error on receive 10040");
+            LogAssert.Expect(LogType.Error, "Error on receive, errorCode = 10040");
 
             //handle sent data
             server_driver.ScheduleUpdate().Complete();
@@ -244,17 +250,19 @@ namespace Tests
         {
             SetupServerAndClientAndConnectThem(0);
 
-            //send data from client
-            DataStreamWriter m_OutStream = client_driver.BeginSend(clientToServerConnection);
             int messageLength = 1400-UdpCHeader.Length;
             var messageToSend = new NativeArray<byte>(messageLength, Allocator.Temp);
             for (int i = 0; i < messageLength; i++)
             {
                 messageToSend[i] = (byte)(33 + (i % 93));
             }
+            //send data from client
+            if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
+            {
+                m_OutStream.WriteBytes(messageToSend);
+                client_driver.EndSend(m_OutStream);
+            }
 
-            m_OutStream.WriteBytes(messageToSend);
-            client_driver.EndSend(m_OutStream);
             client_driver.ScheduleFlushSend(default).Complete();
 
             ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Data);
@@ -273,17 +281,20 @@ namespace Tests
             SetupServerAndClientAndConnectThem(0);
 
             //send data from client
-            DataStreamWriter m_OutStream = client_driver.BeginSend(clientToServerConnection);
-            m_OutStream.Clear();
-            int messageLength = 1401-UdpCHeader.Length;
-            var messageToSend = new NativeArray<byte>(messageLength, Allocator.Temp);
-            for (int i = 0; i < messageLength; i++)
-            {
-                messageToSend[i] = (byte)(33 + (i % 93));
-            }
 
-            Assert.IsFalse(m_OutStream.WriteBytes(messageToSend));
-            Assert.AreEqual(0, client_driver.EndSend(m_OutStream));
+            if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
+            {
+                m_OutStream.Clear();
+                int messageLength = 1401-UdpCHeader.Length;
+                var messageToSend = new NativeArray<byte>(messageLength, Allocator.Temp);
+                for (int i = 0; i < messageLength; i++)
+                {
+                    messageToSend[i] = (byte)(33 + (i % 93));
+                }
+
+                Assert.IsFalse(m_OutStream.WriteBytes(messageToSend));
+                Assert.AreEqual(0, client_driver.EndSend(m_OutStream));
+            }
             client_driver.ScheduleFlushSend(default).Complete();
 
             //handle sent data
@@ -302,9 +313,11 @@ namespace Tests
             SetupServerAndClientAndConnectThem(0);
 
             //send data from client
-            DataStreamWriter m_OutStream = client_driver.BeginSend(clientToServerConnection);
-            m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
-            client_driver.EndSend(m_OutStream);
+            if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
+            {
+                m_OutStream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
+                client_driver.EndSend(m_OutStream);
+            }
             client_driver.ScheduleFlushSend(default).Complete();
 
             server_driver.ScheduleUpdate().Complete();

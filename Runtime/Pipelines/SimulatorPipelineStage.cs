@@ -51,8 +51,9 @@ namespace Unity.Networking.Transport
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -155,7 +156,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             var context = (SimulatorUtility.Context*) ctx.internalSharedProcessBuffer;
             var param = *(SimulatorUtility.Parameters*) ctx.staticInstanceBuffer;
@@ -164,7 +165,7 @@ namespace Unity.Networking.Transport
             if (inboundBuffer.headerPadding+inboundBuffer.bufferLength > param.MaxPacketSize)
             {
                 //UnityEngine.Debug.LogWarning("Incoming packet too large for internal storage buffer. Passing through. [buffer=" + (inboundBuffer.headerPadding+inboundBuffer.buffer.Length) + " packet=" + param.MaxPacketSize + "]");
-                return;
+                return (int) Error.StatusCode.NetworkPacketOverflow;
             }
 
             var timestamp = ctx.timestamp;
@@ -177,7 +178,7 @@ namespace Unity.Networking.Transport
                 {
                     context->PacketDropCount++;
                     inboundBuffer = default;
-                    return;
+                    return (int)Error.StatusCode.Success;
                 }
 
                 if (context->FuzzFactor > 0)
@@ -188,7 +189,7 @@ namespace Unity.Networking.Transport
                 if (context->PacketDelayMs == 0 ||
                     !simulator.DelayPacket(ref ctx, inboundBuffer, ref requests, timestamp))
                 {
-                    return;
+                    return (int)Error.StatusCode.Success;
                 }
             }
 
@@ -196,9 +197,10 @@ namespace Unity.Networking.Transport
             if (simulator.GetDelayedPacket(ref ctx, ref returnPacket, ref requests, timestamp))
             {
                 inboundBuffer = returnPacket;
-                return;
+                return (int)Error.StatusCode.Success;
             }
             inboundBuffer = default;
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]

@@ -8,8 +8,9 @@ namespace Unity.Networking.Transport
     {
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]

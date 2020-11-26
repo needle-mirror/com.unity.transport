@@ -15,6 +15,11 @@ namespace Unity.Networking.Transport
     {
         [NativeDisableUnsafePtrRestriction] Binding.Baselib_RegisteredNetwork_Buffer* m_Buffer;
 
+        /// <summary>
+        /// Initializes a new instance of the UnsafeBaselibNetworkArray struct.
+        /// </summary>
+        /// <param name="capacity"></param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the capacity is less then 0 or if the value exceeds <see cref="int.MaxValue"/> </exception>
         public UnsafeBaselibNetworkArray(int capacity)
         {
             var totalSize = (long)capacity;
@@ -36,7 +41,7 @@ namespace Unity.Networking.Transport
             }
 
             var error = default(ErrorState);
-            
+
             var pageAllocation = Binding.Baselib_Memory_AllocatePages(
                 pageInfo->defaultPageSize,
                 pageCount,
@@ -68,6 +73,10 @@ namespace Unity.Networking.Transport
             UnsafeUtility.Free(m_Buffer, Allocator.Persistent);
         }
 
+        /// <summary>
+        /// Gets a element at the specified index, with the size of <see cref="elementSize">.
+        /// </summary>
+        /// <value>A <see cref="Binding.Baselib_RegisteredNetwork_BufferSlice"> pointing to the index supplied.</value>
         public Binding.Baselib_RegisteredNetwork_BufferSlice AtIndexAsSlice(int index, uint elementSize)
         {
             var offset = elementSize * (uint)index;

@@ -50,9 +50,12 @@ namespace Unity.Networking.Transport.Tests
             var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
-            var strmWriter = clientDriver.BeginSend(clientToServer);
-            strmWriter.WriteInt(42);
-            clientDriver.EndSend(strmWriter);
+
+            if (clientDriver.BeginSend(clientToServer, out var strmWriter) == 0)
+            {
+                strmWriter.WriteInt(42);
+                clientDriver.EndSend(strmWriter);
+            }
             clientDriver.ScheduleUpdate().Complete();
             var serverToClient = serverDriver.Accept();
             serverDriver.ScheduleUpdate().Complete();
@@ -121,9 +124,12 @@ namespace Unity.Networking.Transport.Tests
             var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
-            var strmWriter = clientDriver.BeginSend(clientToServer);
-            strmWriter.WriteInt(42);
-            clientDriver.EndSend(strmWriter);
+
+            if (clientDriver.BeginSend(clientToServer, out var strmWriter) == 0)
+            {
+                strmWriter.WriteInt(42);
+                clientDriver.EndSend(strmWriter);
+            }
             clientDriver.ScheduleUpdate().Complete();
 
             var serverToClient = new NativeArray<NetworkConnection>(1, Allocator.TempJob);
@@ -146,9 +152,11 @@ namespace Unity.Networking.Transport.Tests
             public NetworkConnection connection;
             public void Execute()
             {
-                var strmWriter = driver.BeginSend(connection);
-                strmWriter.WriteInt(42);
-                driver.EndSend(strmWriter);
+                if (driver.BeginSend(connection, out var strmWriter) == 0)
+                {
+                    strmWriter.WriteInt(42);
+                    driver.EndSend(strmWriter);
+                }
             }
         }
         [Test]
@@ -181,9 +189,11 @@ namespace Unity.Networking.Transport.Tests
                 if (driver.PopEventForConnection(connections[i], out strmReader) != NetworkEvent.Type.Data)
                     throw new InvalidOperationException("Expected data: " + i);
                 int result = strmReader.ReadInt();
-                var strmWriter = driver.BeginSend(connections[i]);
-                strmWriter.WriteInt(result + 1);
-                driver.EndSend(strmWriter);
+                if (driver.BeginSend(connections[i], out var strmWriter) == 0)
+                {
+                    strmWriter.WriteInt(result + 1);
+                    driver.EndSend(strmWriter);
+                }
             }
         }
         [Test]
@@ -200,17 +210,25 @@ namespace Unity.Networking.Transport.Tests
                 var clientToServer0 = clientDriver0.Connect(serverDriver.LocalEndPoint());
                 var clientToServer1 = clientDriver1.Connect(serverDriver.LocalEndPoint());
                 WaitForConnected(clientDriver0, serverDriver, clientToServer0);
-                var strmWriter = clientDriver0.BeginSend(clientToServer0);
-                strmWriter.WriteInt(42);
-                serverToClient[0] = serverDriver.Accept();
-                Assert.IsTrue(serverToClient[0].IsCreated);
-                WaitForConnected(clientDriver1, serverDriver, clientToServer1);
-                serverToClient[1] = serverDriver.Accept();
-                Assert.IsTrue(serverToClient[1].IsCreated);
-                clientDriver0.EndSend(strmWriter);
-                var strmWriter2 = clientDriver1.BeginSend(clientToServer1);
-                strmWriter2.WriteBytes(strmWriter.AsNativeArray());
-                clientDriver1.EndSend(strmWriter2);
+
+                if (clientDriver0.BeginSend(clientToServer0, out var strmWriter) == 0)
+                {
+                    strmWriter.WriteInt(42);
+                    serverToClient[0] = serverDriver.Accept();
+                    Assert.IsTrue(serverToClient[0].IsCreated);
+                    WaitForConnected(clientDriver1, serverDriver, clientToServer1);
+                    serverToClient[1] = serverDriver.Accept();
+                    Assert.IsTrue(serverToClient[1].IsCreated);
+
+                    clientDriver0.EndSend(strmWriter);
+                }
+
+                if (clientDriver1.BeginSend(clientToServer1, out var strmWriter2) == 0)
+                {
+                    strmWriter2.WriteBytes(strmWriter.AsNativeArray());
+                    clientDriver1.EndSend(strmWriter2);
+                }
+
                 clientDriver0.ScheduleUpdate().Complete();
                 clientDriver1.ScheduleUpdate().Complete();
 
@@ -236,9 +254,11 @@ namespace Unity.Networking.Transport.Tests
                 if (driver.PopEventForConnection(connections[i], out strmReader) != NetworkEvent.Type.Data)
                     throw new InvalidOperationException("Expected data: " + i);
                 int result = strmReader.ReadInt();
-                var strmWriter = driver.BeginSend(connections[i]);
-                strmWriter.WriteInt(result + 1);
-                driver.EndSend(strmWriter);
+                if (driver.BeginSend(connections[i], out var strmWriter) == 0)
+                {
+                    strmWriter.WriteInt(result + 1);
+                    driver.EndSend(strmWriter);
+                }
             }
         }
         [Test]
@@ -270,12 +290,18 @@ namespace Unity.Networking.Transport.Tests
                 WaitForConnected(clientDriver1, serverDriver, clientToServer1);
                 serverToClient[1] = serverDriver.Accept();
                 Assert.IsTrue(serverToClient[1].IsCreated);
-                var strmWriter0 = clientDriver0.BeginSend(clientToServer0);
-                var strmWriter1 = clientDriver1.BeginSend(clientToServer1);
-                strmWriter0.WriteInt(42);
-                strmWriter1.WriteInt(42);
-                clientDriver0.EndSend(strmWriter0);
-                clientDriver1.EndSend(strmWriter1);
+
+                if (clientDriver0.BeginSend(clientToServer0, out var strmWriter0) == 0)
+                {
+                    strmWriter0.WriteInt(42);
+                    clientDriver0.EndSend(strmWriter0);
+                }
+                if (clientDriver1.BeginSend(clientToServer1, out var strmWriter1) == 0)
+                {
+                    strmWriter1.WriteInt(42);
+                    clientDriver1.EndSend(strmWriter1);
+                }
+
                 clientDriver0.ScheduleUpdate().Complete();
                 clientDriver1.ScheduleUpdate().Complete();
 
@@ -328,9 +354,12 @@ namespace Unity.Networking.Transport.Tests
                     }
                     for (var i = 0; i < clientDrivers.Count; ++i)
                     {
-                        var strmWriter = clientDrivers[i].BeginSend(clientPipelines[i], clientToServer[i]);
-                        strmWriter.WriteInt(42);
-                        clientDrivers[i].EndSend(strmWriter);
+
+                        if (clientDrivers[i].BeginSend(clientPipelines[i], clientToServer[i], out var strmWriter) == 0)
+                        {
+                            strmWriter.WriteInt(42);
+                            clientDrivers[i].EndSend(strmWriter);
+                        }
                         clientDrivers[i].ScheduleFlushSend(default).Complete();
                     }
 
@@ -368,9 +397,12 @@ namespace Unity.Networking.Transport.Tests
                     counter = 0;
                     for (int i = 0; i < serverConnections.Length; ++i)
                     {
-                        var strmWriter = serverDriver.BeginSend(serverConnections[i]);
-                        strmWriter.WriteInt(assertValue);
-                        serverDriver.EndSend(strmWriter);
+
+                        if (serverDriver.BeginSend(serverConnections[i], out var strmWriter) == 0)
+                        {
+                            strmWriter.WriteInt(42);
+                            serverDriver.EndSend(strmWriter);
+                        }
                     }
                 }
             }

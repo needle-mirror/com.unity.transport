@@ -2,6 +2,38 @@ using Unity.Collections;
 
 namespace Unity.Networking.Transport
 {
+    namespace Error
+    {
+        /// <summary>
+        /// DisconnectReason enumerates all disconnect reasons.
+        /// </summary>
+        public enum DisconnectReason : byte
+        {
+            /// <summary>Indicates a normal disconnection as a result of calling Disconnect on the connection.</summary>
+            Default,
+            /// <summary>Indicates the connection timed out.</summary>
+            Timeout,
+            /// <summary>Indicates the connection failed to establish a connection after <see cref="NetworkConfigParameter.maxConnectAttempts"/>.</summary>
+            MaxConnectionAttempts,
+            /// <summary>Indicates the connection was closed remotely.</summary>
+            ClosedByRemote
+        }
+
+        public enum StatusCode
+        {
+            Success                       =  0,
+            NetworkIdMismatch             = -1,
+            NetworkVersionMismatch        = -2,
+            NetworkStateMismatch          = -3,
+            NetworkPacketOverflow         = -4,
+            NetworkSendQueueFull          = -5,
+            NetworkHeaderInvalid          = -6,
+            NetworkDriverParallelForErr   = -7,
+            NetworkSendHandleInvalid      = -8,
+            NetworkArgumentMismatch       = -9,
+        }
+    }
+
     /// <summary>
     /// The NetworkConnection is a struct that hold all information needed by the driver to link it with a virtual
     /// connection. The NetworkConnection is a public representation of a connection.

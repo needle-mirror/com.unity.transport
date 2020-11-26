@@ -100,10 +100,11 @@ namespace Unity.Networking.Transport.Tests
             Driver.ScheduleUpdate().Complete();
             Assert.That(connection.PopEvent(Driver, out reader) == NetworkEvent.Type.Connect);
 
-            // Send to endpoint
-            var Stream = Driver.BeginSend(NetworkPipeline.Null, connection);
-            Stream.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
-            Driver.EndSend(Stream);
+            if (Driver.BeginSend(NetworkPipeline.Null, connection, out var writer) == 0)
+            {
+                writer.WriteBytes(new NativeArray<byte>(SharedConstants.ping, Allocator.Temp));
+                Driver.EndSend(writer);
+            }
             Driver.ScheduleUpdate().Complete();
 
             RemoteDriver.ScheduleUpdate().Complete();

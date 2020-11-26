@@ -1,5 +1,23 @@
 # Change log
 
+## [0.6.0] - 2020-11-26
+### New features
+* An error handling pass has been made and `Error.StatusCode` have been added to indicate more specific errors.
+* `Error.DisconnectReason` has been added, so when NetworkDriver.PopEvent returns a `NetworkEvent.Type.Disconnect` the reader returned contains 1 byte of data indicating the reason.
+
+### Changes
+* The function signature for NetworkDriver.BeginSend has changed. It now returns a `int` value indicating if the function succeeded or not and the DataStreamWriter now instead is returned as a `out` parameter.
+* The function signature for INetworkInterface.Initialize has changed. It now requires you to return a `int` value indicating if the function succeeded or not.
+* The function signature for INetworkInterface.CreateInterfaceEndPoint has changed. It now requires you to return a `int` value indicating if the function succeeded or not, and NetworkInterfaceEndPoint is now returned as a `out` parameter.
+
+### Fixes
+* Fixed a potential crash when receiving a malformated packet.
+* Fixed an issue where the DataStream could sometimes fail writing packet uints before the buffer was full.
+
+### Upgrade guide
+* `NetworkDriver.BeginSend` now returns a `int` indicating a `Error.StatusCode`, and the `DataStreamWriter` is passed as an `out` parameter.
+
+
 ## [0.5.0] - 2020-10-01
 ### New features
 ### Changes

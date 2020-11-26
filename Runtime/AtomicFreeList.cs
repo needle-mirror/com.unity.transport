@@ -20,6 +20,11 @@ namespace Unity.Networking.Transport.Utilities.LowLevel.Unsafe
 
         public bool IsCreated => m_Buffer != null;
 
+        /// <summary>
+        /// Initializes a new instance of the AtomicFreeList struct.
+        /// </summary>
+        /// <param name="capacity">The number of elements the free list can store.</param>
+        /// <param name="allocator">The <see cref="Allocator"/> used to allocate the memory.</param>
         public UnsafeAtomicFreeList(int capacity, Allocator allocator)
         {
             m_Allocator = allocator;
@@ -31,9 +36,14 @@ namespace Unity.Networking.Transport.Utilities.LowLevel.Unsafe
 
         public void Dispose()
         {
-            UnsafeUtility.Free(m_Buffer, m_Allocator);
+            if (IsCreated)
+                UnsafeUtility.Free(m_Buffer, m_Allocator);
         }
 
+        /// <summary>
+        /// Inserts an item on top of the stack.
+        /// </summary>
+        /// <param name="item">The item to push onto the stack.</param>
         public unsafe void Push(int item)
         {
             int* buffer = m_Buffer;
@@ -43,6 +53,11 @@ namespace Unity.Networking.Transport.Utilities.LowLevel.Unsafe
             }
         }
 
+        /// <summary>
+        /// Remove and return a value from the top of the stack
+        /// </summary>
+        /// <remarks>
+        /// <value>The removed value from the top of the stack.</value>
         public unsafe int Pop()
         {
             int* buffer = m_Buffer;

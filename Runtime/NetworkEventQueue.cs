@@ -1,28 +1,31 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Networking.Transport
 {
+    [StructLayout(LayoutKind.Explicit)]
     public struct NetworkEvent
     {
         /// <summary>
         /// NetworkEvent.Type enumerates available network events for this driver.
         /// </summary>
-        public enum Type
+        public enum Type : int
         {
             Empty = 0,
             Data,
             Connect,
             Disconnect
         }
+        [FieldOffset(0)] public Type type;
+        [FieldOffset(4)] public int connectionId;
 
-        public Type type;
+        [FieldOffset(8)]  public int status;
 
-        public int connectionId;
-        public int offset;
-        public int size;
+        [FieldOffset(8)]  public int offset;
+        [FieldOffset(12)] public int size;
     }
 
     public struct NetworkEventQueue : IDisposable
@@ -48,6 +51,7 @@ namespace Unity.Networking.Transport
         }
 
         // The returned stream is valid until PopEvent is called again or until the main driver updates
+
         public NetworkEvent.Type PopEvent(out int id, out int offset, out int size)
         {
             offset = 0;
@@ -77,9 +81,12 @@ namespace Unity.Networking.Transport
 
             if (connectionId < 0 || connectionId >= m_ConnectionEventHeadTail.Length / 2)
                 return NetworkEvent.Type.Empty;
+
             int idx = m_ConnectionEventHeadTail[connectionId * 2];
+
             if (idx >= m_ConnectionEventHeadTail[connectionId * 2 + 1])
                 return NetworkEvent.Type.Empty;
+
             m_ConnectionEventHeadTail[connectionId * 2] = idx + 1;
             NetworkEvent ev = m_ConnectionEventQ[connectionId * MaxEvents + idx];
             if (ev.type == NetworkEvent.Type.Data)
@@ -87,7 +94,10 @@ namespace Unity.Networking.Transport
                 offset = ev.offset;
                 size = ev.size;
             }
-
+            else if (ev.type == NetworkEvent.Type.Disconnect && ev.status != (int)Error.DisconnectReason.Default)
+            {
+                offset = -ev.status;
+            }
             return ev.type;
         }
 
@@ -224,6 +234,10 @@ namespace Unity.Networking.Transport
                 {
                     offset = ev.offset;
                     size = ev.size;
+                }
+                else if (ev.type == NetworkEvent.Type.Disconnect && ev.status != (int)Error.DisconnectReason.Default)
+                {
+                    offset = -ev.status;
                 }
 
                 return ev.type;

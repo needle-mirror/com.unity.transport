@@ -34,7 +34,7 @@ namespace Unity.Networking.Transport
 #endif
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             var fragContext = (FragContext*) ctx.internalProcessBuffer;
             var dataBuffer = ctx.internalProcessBuffer + sizeof(FragContext);
@@ -103,6 +103,7 @@ namespace Unity.Networking.Transport
             ctx.header.WriteByte((byte) '@');
             ctx.header.WriteByte((byte) '@');
 #endif
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]

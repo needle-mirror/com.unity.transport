@@ -39,9 +39,10 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             ctx.header.WriteInt((int) 1);
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -86,9 +87,10 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             ctx.header.WriteInt((int) 2);
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -132,7 +134,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             var len = inboundBuffer.bufferLength;
             for (int i = 0; i < len; ++i)
@@ -142,6 +144,7 @@ namespace Unity.Networking.Transport.Tests
             nextInbound.bufferWithHeadersLength = len + inboundBuffer.headerPadding;
             nextInbound.SetBufferFrombufferWithHeaders();
             inboundBuffer = nextInbound;
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -182,7 +185,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             var len = inboundBuffer.bufferLength;
             for (int i = 0; i < len; ++i)
@@ -192,6 +195,7 @@ namespace Unity.Networking.Transport.Tests
             nextInbound.bufferWithHeadersLength = len + inboundBuffer.headerPadding;
             nextInbound.SetBufferFrombufferWithHeaders();
             inboundBuffer = nextInbound;
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -230,7 +234,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static unsafe void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static unsafe int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             var len = inboundBuffer.bufferLength;
             for (int i = 0; i < len; ++i)
@@ -240,6 +244,7 @@ namespace Unity.Networking.Transport.Tests
             nextInbound.bufferWithHeadersLength = len + inboundBuffer.headerPadding;
             nextInbound.SetBufferFrombufferWithHeaders();
             inboundBuffer = nextInbound;
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -291,7 +296,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             var sendData = (int*)ctx.internalProcessBuffer;
             for (int i = 1; i <= 3; ++i)
@@ -305,6 +310,7 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(*sharedData, i);
                 sharedData++;
             }
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -374,7 +380,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             var sendData = (int*)ctx.internalProcessBuffer;
             for (int i = 1; i <= 3; ++i)
@@ -388,6 +394,7 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(*sharedData, i*10);
                 sharedData++;
             }
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -503,9 +510,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -535,9 +544,12 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -567,9 +579,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -599,9 +613,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -631,9 +647,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -804,15 +822,17 @@ namespace Unity.Networking.Transport.Tests
             // Write 1's for packet 1, 2's for packet 2 and so on and verify they're received in same order
             for (int i = 0; i < packetCount; i++)
             {
-                var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-                var strm2 = m_ServerDriver.BeginSend(serverPipe, serverToClient2);
-                for (int j = 0; j < 16; j++)
+                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0 &&
+                    m_ServerDriver.BeginSend(serverPipe, serverToClient2, out var strm2) == 0)
                 {
-                    strm.WriteInt((int) i + 1);
-                    strm2.WriteInt((int) i + 1);
+                    for (int j = 0; j < 16; j++)
+                    {
+                        strm.WriteInt((int) i + 1);
+                        strm2.WriteInt((int) i + 1);
+                    }
+                    m_ServerDriver.EndSend(strm);
+                    m_ServerDriver.EndSend(strm2);
                 }
-                m_ServerDriver.EndSend(strm);
-                m_ServerDriver.EndSend(strm2);
             }
 
             m_ServerDriver.ScheduleUpdate().Complete();

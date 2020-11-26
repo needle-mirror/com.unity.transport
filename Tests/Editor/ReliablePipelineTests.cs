@@ -44,8 +44,9 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -87,12 +88,13 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static void Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             if (*ctx.staticInstanceBuffer == 0)
             {
                 inboundBuffer = default;
             }
+            return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile]
@@ -1355,9 +1357,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -1385,9 +1389,11 @@ namespace Unity.Networking.Transport.Tests
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, clientToServer, out var clientReceiveBuffer, out var clientSendBuffer, out var clientSharedBuffer);
 
             // First the server sends a packet to the client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Server sent time for the packet with seqId=0 is set
@@ -1411,9 +1417,11 @@ namespace Unity.Networking.Transport.Tests
             m_ClientDriver.ScheduleUpdate().Complete();
 
             // Now client sends packet to the server, this should contain the ackedSeqId=0 for the servers initial packet
-            strm = m_ClientDriver.BeginSend(clientPipe, clientToServer);
-            strm.WriteInt((int) 9000);
-            m_ClientDriver.EndSend(strm);
+            if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
+            {
+                strm.WriteInt((int) 9000);
+                m_ClientDriver.EndSend(strm);
+            }
             m_ClientDriver.ScheduleUpdate().Complete();
 
             // Receive time for the server packet is 0 at this point
@@ -1451,9 +1459,11 @@ namespace Unity.Networking.Transport.Tests
             for (int i = 0; i < 30; ++i)
             {
                 // Send message to client
-                var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-                strm.WriteInt((int) i);
-                m_ServerDriver.EndSend(strm);
+                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+                {
+                    strm.WriteInt((int) i);
+                    m_ServerDriver.EndSend(strm);
+                }
                 m_ServerDriver.ScheduleUpdate().Complete();
 
                 // Receive incoming message from server
@@ -1466,9 +1476,11 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(i, readStrm.ReadInt());
 
                 // Send back a message to server
-                strm = m_ClientDriver.BeginSend(clientPipe, clientToServer);
-                strm.WriteInt((int) i*100);
-                m_ClientDriver.EndSend(strm);
+                if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
+                {
+                    strm.WriteInt((int) i*100);
+                    m_ClientDriver.EndSend(strm);
+                }
                 m_ClientDriver.ScheduleUpdate().Complete();
 
                 // Receive incoming message from client
@@ -1586,9 +1598,13 @@ namespace Unity.Networking.Transport.Tests
             {
                 // Send message to client
                 sendMessageCount++;
-                var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-                strm.WriteInt((int) sendMessageCount);
-                m_ServerDriver.EndSend(strm);
+
+                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+                {
+                    strm.WriteInt((int) sendMessageCount);
+                    m_ServerDriver.EndSend(strm);
+                }
+
                 if (serverReliableCtx->errorCode != 0)
                 {
                     UnityEngine.Debug.Log("Reliability stats\nPacketsDropped: " + serverReliableCtx->stats.PacketsDropped + "\n" +
@@ -1622,9 +1638,11 @@ namespace Unity.Networking.Transport.Tests
                 }
 
                 // Send back a message to server
-                strm = m_ClientDriver.BeginSend(clientPipe, clientToServer);
-                strm.WriteInt((int) sendMessageCount * 100);
-                m_ClientDriver.EndSend(strm);
+                if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
+                {
+                    strm.WriteInt((int) sendMessageCount * 100);
+                    m_ClientDriver.EndSend(strm);
+                }
                 Assert.AreEqual((ReliableUtility.ErrorCodes)0, clientReliableCtx->errorCode);
                 m_ClientDriver.ScheduleUpdate().Complete();
 
@@ -1695,9 +1713,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
             // Send message to client
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 42);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 42);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
 
             // Receive incoming message from server
@@ -1748,9 +1768,11 @@ namespace Unity.Networking.Transport.Tests
             {
                 // Send message to client
                 sendMessageCount++;
-                var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-                strm.WriteInt((int) sendMessageCount);
-                m_ServerDriver.EndSend(strm);
+                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+                {
+                    strm.WriteInt((int) sendMessageCount);
+                    m_ServerDriver.EndSend(strm);
+                }
                 Assert.AreEqual((ReliableUtility.ErrorCodes)0, serverReliableCtx->errorCode);
                 m_ServerDriver.ScheduleUpdate().Complete();
 
@@ -1829,18 +1851,24 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
 
             // Perform ping pong transmision
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 100);
-            Console.WriteLine("Server send");
-            m_ServerDriver.EndSend(strm);
+
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 100);
+                Console.WriteLine("Server send");
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
             Console.WriteLine("Client update");
             m_ClientDriver.ScheduleUpdate().Complete();
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
-            strm = m_ClientDriver.BeginSend(clientPipe, clientToServer);
-            strm.WriteInt((int) 200);
-            Console.WriteLine("Client send");
-            m_ClientDriver.EndSend(strm);
+
+            if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
+            {
+                strm.WriteInt((int) 200);
+                Console.WriteLine("Client send");
+                m_ClientDriver.EndSend(strm);
+            }
             m_ClientDriver.ScheduleUpdate().Complete();
             Console.WriteLine("Server update");
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -1899,9 +1927,11 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
 
             // Server sends one packet, this will be dropped, client has empty event
-            var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-            strm.WriteInt((int) 100);
-            m_ServerDriver.EndSend(strm);
+            if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
+            {
+                strm.WriteInt((int) 100);
+                m_ServerDriver.EndSend(strm);
+            }
             m_ServerDriver.ScheduleUpdate().Complete();
             m_ClientDriver.ScheduleUpdate().Complete();
             Assert.AreEqual(NetworkEvent.Type.Empty, clientToServer.PopEvent(m_ClientDriver, out readStrm));
@@ -1962,8 +1992,7 @@ namespace Unity.Networking.Transport.Tests
                     *TempDisconnectSendPipelineStage.s_StaticInstanceBuffer = 1;
                 }
                 int sendStatus = -1;
-                var strm = m_ServerDriver.BeginSend(serverPipe, serverToClient);
-                if (strm.IsCreated)
+                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
                 {
                     strm.WriteInt((int) frame);
                     sendStatus = m_ServerDriver.EndSend(strm);
