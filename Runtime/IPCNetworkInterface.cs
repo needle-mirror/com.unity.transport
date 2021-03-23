@@ -23,7 +23,6 @@ namespace Unity.Networking.Transport
                 throw new ArgumentException("IPC network driver can only handle loopback addresses");
 #else
                 endpoint = default(NetworkInterfaceEndPoint);
-                endpoint.dataLength = 0;
                 return (int)Error.StatusCode.NetworkArgumentMismatch;
 #endif
             }
@@ -162,7 +161,7 @@ namespace Unity.Networking.Transport
             };
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
         private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize)
         {
@@ -174,7 +173,7 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
         private static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueueHandle)
         {
@@ -186,7 +185,7 @@ namespace Unity.Networking.Transport
             sendQueue.Enqueue(msg);
             return handle.size;
         }
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
         {

@@ -32,7 +32,7 @@ namespace Unity.Networking.Transport
 #else
         const int FragHeaderCapacity = 2;    // 2 bits for First/Last flags, 14 bits sequence number
 #endif
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
@@ -44,7 +44,8 @@ namespace Unity.Networking.Transport
             int headerCapacity = ctx.header.Capacity;
 
             var systemHeaderCapacity = sizeof(UdpCHeader) + 1 + 2;    // Extra byte is for pipeline id, two bytes for footer
-            var maxBlockLength = NetworkParameterConstants.MTU - systemHeaderCapacity - headerCapacity - ctx.accumulatedHeaderCapacity;
+            var maxBlockLength = NetworkParameterConstants.MTU - systemHeaderCapacity - inboundBuffer.headerPadding;
+            var maxBlockLengthFirstPacket = maxBlockLength - ctx.accumulatedHeaderCapacity; // The first packet has the headers for all pipeline stages before this one
 
             if (fragContext->endIndex > fragContext->startIndex)
             {
@@ -66,11 +67,11 @@ namespace Unity.Networking.Transport
                 inboundBuffer.bufferWithHeadersLength = blockLength + inboundBuffer.headerPadding;
                 fragContext->startIndex += blockLength;
             }
-            else if (inboundBuffer.bufferWithHeadersLength > maxBlockLength)
+            else if (inboundBuffer.bufferLength > maxBlockLengthFirstPacket)
             {
                 var payloadCapacity = param->PayloadCapacity;
-                var excessLength = inboundBuffer.bufferLength - maxBlockLength;
-                var excessStart = inboundBuffer.buffer + maxBlockLength;
+                var excessLength = inboundBuffer.bufferLength - maxBlockLengthFirstPacket;
+                var excessStart = inboundBuffer.buffer + maxBlockLengthFirstPacket;
                 if (excessLength + inboundBuffer.headerPadding > payloadCapacity)
                 {
                     throw new InvalidOperationException($"Fragmentation capacity exceeded. Capacity:{payloadCapacity} Payload:{excessLength + inboundBuffer.headerPadding}");
@@ -106,7 +107,7 @@ namespace Unity.Networking.Transport
             return (int)Error.StatusCode.Success;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
@@ -177,7 +178,7 @@ namespace Unity.Networking.Transport
             fragContext->sequence = (foundSequence + 1) & (int)FragFlags.SeqMask;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,

@@ -1,6 +1,8 @@
 using System;
 using NUnit.Framework;
 using Unity.Collections;
+using UnityEngine.TestTools;
+using UnityEngine;
 
 // using FsCheck;
 
@@ -27,7 +29,8 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(byteArray[i], reader.ReadByte());
             }
 
-            Assert.Throws<ArgumentOutOfRangeException>(() => { reader.ReadByte(); });
+            LogAssert.Expect(LogType.Error, "Trying to read 1 bytes from a stream where only 0 are available");
+            Assert.AreEqual(0, reader.ReadByte());
         }
 
         [Test]

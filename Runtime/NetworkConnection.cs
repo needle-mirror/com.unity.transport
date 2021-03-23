@@ -10,13 +10,16 @@ namespace Unity.Networking.Transport
         public enum DisconnectReason : byte
         {
             /// <summary>Indicates a normal disconnection as a result of calling Disconnect on the connection.</summary>
-            Default,
+            Default, // don't assign explicit values
             /// <summary>Indicates the connection timed out.</summary>
             Timeout,
             /// <summary>Indicates the connection failed to establish a connection after <see cref="NetworkConfigParameter.maxConnectAttempts"/>.</summary>
             MaxConnectionAttempts,
             /// <summary>Indicates the connection was closed remotely.</summary>
-            ClosedByRemote
+            ClosedByRemote,
+
+            /// <summary>Used only for count. Keep last and don't assign explicit values</summary>
+            Count
         }
 
         public enum StatusCode
@@ -77,6 +80,11 @@ namespace Unity.Networking.Transport
         public NetworkEvent.Type PopEvent(NetworkDriver driver, out DataStreamReader stream)
         {
             return driver.PopEventForConnection(this, out stream);
+        }
+
+        public NetworkEvent.Type PopEvent(NetworkDriver driver, out DataStreamReader stream, out NetworkPipeline pipeline)
+        {
+            return driver.PopEventForConnection(this, out stream, out pipeline);
         }
 
         /// <summary>

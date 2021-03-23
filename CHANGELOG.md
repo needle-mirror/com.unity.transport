@@ -1,5 +1,31 @@
 # Change log
 
+## [0.8.0] - 2021-03-23
+### New features
+* Added overloads of `PopEvent` and `PopEventForConnection` which return the pipeline used as an out parameter.
+
+### Changes
+
+### Fixes
+* Fixed some compatility issues with tiny.
+* Fixed a crash when sending messages slightly less than one MTU using the fragmentation pipeline.
+* Fixed a bug causing `NetworkDriver.RemoteEndPoint` to return an invalid value when using the default network interface.
+
+### Upgrade guide
+
+## [0.7.0] - 2021-02-05
+### New features
+* Added `DataStreamWriter.WriteRawbits` and `DataStreamWriter.ReadRawBits` for reading and writing raw bits from a data stream.
+
+### Changes
+* Optimized the `NetworkCompressionModel` to find buckets in constant time.
+* Changed the error behavior of `DataStreamReader` to be consistent between the editor and players.
+
+### Fixes
+* Fixed a crash when receiving a packet with an invalid pipeline identifier
+
+### Upgrade guide
+
 ## [0.6.0] - 2020-11-26
 ### New features
 * An error handling pass has been made and `Error.StatusCode` have been added to indicate more specific errors.

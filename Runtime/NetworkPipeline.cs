@@ -448,7 +448,7 @@ namespace Unity.Networking.Transport
                             sendHandle.size = sendSize;
                             if ((retval = driver.CompleteSend(connection, sendHandle)) < 0)
                             {
-                                UnityEngine.Debug.LogWarning($"CompleteSend failed with the following error code: {retval}");
+                                UnityEngine.Debug.LogWarning(FixedString.Format("CompleteSend failed with the following error code: {0}", retval));
                             }
                             sendHandle = default;
                         }
@@ -466,7 +466,7 @@ namespace Unity.Networking.Transport
                                 {
                                     if ((retval = driver.EndSend(writer)) <= 0)
                                     {
-                                        UnityEngine.Debug.Log($"An error occured during EndSend. ErrorCode: {retval}");
+                                        UnityEngine.Debug.Log(FixedString.Format("An error occurred during EndSend. ErrorCode: {0}", retval));
                                     }
                                 }
                             }
@@ -691,7 +691,7 @@ namespace Unity.Networking.Transport
                     throw new InvalidOperationException("Trying to create pipeline with invalid stage " + stages[i]);
 #endif
                 m_StageList.Add(stageId);
-                m_AccumulatedHeaderCapacity.Add(0);    // Allocate an entry. We will assign its value in the loop below.
+                m_AccumulatedHeaderCapacity.Add(headerCap);    // For every stage, compute how much header space has already bee used by other stages when sending
                 // Make sure all data buffers are aligned
                 receiveCap += (m_StageCollection[stageId].ReceiveCapacity + AlignmentMinusOne) & (~AlignmentMinusOne);
                 sendCap += (m_StageCollection[stageId].SendCapacity + AlignmentMinusOne) & (~AlignmentMinusOne);
@@ -701,15 +701,6 @@ namespace Unity.Networking.Transport
                 {
                     payloadCap = m_StageCollection[stageId].PayloadCapacity; // The first non-zero stage determines the pipeline capacity
                 }
-            }
-
-            // For every stage, compute how much header space is used by subsequent stages
-            int accumulatedHeaderCap = 0;
-            for (int i = stages.Length - 1; i >= 0; i--)
-            {
-                var stageId = NetworkPipelineStageCollection.GetStageId(stages[i]).Index;
-                m_AccumulatedHeaderCapacity[pipeline.FirstStageIndex + i] = accumulatedHeaderCap;
-                accumulatedHeaderCap += m_StageCollection[stageId].HeaderCapacity;
             }
 
             pipeline.receiveBufferOffset = sizePerConnection[RecveiveSizeOffset];
@@ -816,7 +807,7 @@ namespace Unity.Networking.Transport
                 var result = ToConcurrent().ProcessPipelineSend(driver, updateItem.stage, updateItem.pipeline, updateItem.connection, default, 0, currentUpdates);
                 if (result < 0)
                 {
-                    UnityEngine.Debug.LogWarning($"ProcessPiplineSend failed with the following error code {result}.");
+                    UnityEngine.Debug.LogWarning(FixedString.Format("ProcessPipelineSend failed with the following error code {0}.", result));
                 }
             }
             for (int i = 0; i < currentUpdates.Length; ++i)
@@ -863,6 +854,11 @@ namespace Unity.Networking.Transport
         public unsafe void Receive(NetworkDriver driver, NetworkConnection connection, NativeArray<byte> buffer)
         {
             byte pipelineId = buffer[0];
+            if (pipelineId == 0 || pipelineId > m_Pipelines.Length)
+            {
+                UnityEngine.Debug.LogError("Received a packet with an invalid pipeline.");
+                return;
+            }
             var p = m_Pipelines[pipelineId-1];
             int startStage = p.NumStages - 1;
 
@@ -938,7 +934,7 @@ namespace Unity.Networking.Transport
                 }
 
                 if (inboundBuffer.bufferLength != 0)
-                    driver.PushDataEvent(connection, inboundBuffer.buffer, inboundBuffer.bufferLength);
+                    driver.PushDataEvent(connection, pipeline.Id, inboundBuffer.buffer, inboundBuffer.bufferLength);
 
                 if (resumeQStart >= resumeQ.Length)
                 {

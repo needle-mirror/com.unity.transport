@@ -1,11 +1,12 @@
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Networking.Transport.Utilities;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Networking.Transport.Protocols;
+using Random = Unity.Mathematics.Random;
 
 namespace Unity.Networking.Transport
 {
@@ -70,12 +71,10 @@ namespace Unity.Networking.Transport
             int id = 0;
             if (port == 0)
             {
-                var rnd = new Random();
                 while (id == 0)
                 {
-                    port = (ushort)rnd.Next(1, 0xffff);
-                    int tmp;
-                    if (!m_IPCChannels.TryGetValue(port, out tmp))
+                    port = RandomHelpers.GetRandomUShort();
+                    if (!m_IPCChannels.TryGetValue(port, out _))
                     {
                         id = m_IPCChannels.Count() + 1;
                         m_IPCChannels.TryAdd(port, id);

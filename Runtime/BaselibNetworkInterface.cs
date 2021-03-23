@@ -170,7 +170,15 @@ namespace Unity.Networking.Transport
         {
             // Set to a valid address so length is set correctly
             var address = NetworkEndPoint.LoopbackIpv4;
-            UnsafeUtility.MemCpy(&address.rawNetworkAddress, endpoint.data, endpoint.dataLength);
+            var error = default(ErrorState);
+            var slice = m_LocalAndTempEndpoint.AtIndexAsSlice(0, (uint)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
+            NetworkEndpoint local;
+            local.slice = slice;
+            local.slice.size = (uint)endpoint.dataLength;
+            UnsafeUtility.MemCpy((void*)local.slice.data, endpoint.data, endpoint.dataLength);
+            Binding.Baselib_RegisteredNetwork_Endpoint_GetNetworkAddress(local, &address.rawNetworkAddress, &error);
+            if (error.code != ErrorCode.Success)
+                return default;
             return address;
         }
 
@@ -333,7 +341,9 @@ namespace Unity.Networking.Transport
                         var remote = packet.remoteEndpoint.slice;
                         address.dataLength = (int)remote.size;
                         UnsafeUtility.MemCpy(address.data, (void*)remote.data, (int)remote.size);
-                        Receiver.ReceiveCount += Receiver.AppendPacket(address, *(UdpCHeader*)packet.payload.data, receivedBytes);
+                        //FIXME: remove when burst 1.5 fix the problem
+                        var temp = (UdpCHeader*)packet.payload.data;
+                        Receiver.ReceiveCount += Receiver.AppendPacket(address, *temp,receivedBytes);
                     }
                     // Reuse the requests after they have been processed.
                     for (int i = 0; i < count; i++)
@@ -475,7 +485,7 @@ namespace Unity.Networking.Transport
             };
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
         private static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize)
         {
@@ -499,7 +509,7 @@ namespace Unity.Networking.Transport
             return (int)Error.StatusCode.Success;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
         private static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueueHandle)
         {
@@ -523,12 +533,12 @@ namespace Unity.Networking.Transport
             if (error.code != ErrorCode.Success)
             {
                 baselib->m_PayloadsTx.ReleaseHandle(index);
-                return -(int)error.code;
+                return (int) error.code == -1 ? -1 : -(int) error.code;
             }
             return handle.size;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static unsafe void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
         {

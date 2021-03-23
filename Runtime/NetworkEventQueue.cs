@@ -12,19 +12,21 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// NetworkEvent.Type enumerates available network events for this driver.
         /// </summary>
-        public enum Type : int
+        public enum Type : short
         {
             Empty = 0,
             Data,
             Connect,
             Disconnect
         }
+
         [FieldOffset(0)] public Type type;
+        [FieldOffset(2)] public short pipelineId;
         [FieldOffset(4)] public int connectionId;
 
-        [FieldOffset(8)]  public int status;
+        [FieldOffset(8)] public int status;
 
-        [FieldOffset(8)]  public int offset;
+        [FieldOffset(8)] public int offset;
         [FieldOffset(12)] public int size;
     }
 
@@ -54,9 +56,15 @@ namespace Unity.Networking.Transport
 
         public NetworkEvent.Type PopEvent(out int id, out int offset, out int size)
         {
+            return PopEvent(out id, out offset, out size, out var _);
+        }
+
+        public NetworkEvent.Type PopEvent(out int id, out int offset, out int size, out int pipelineId)
+        {
             offset = 0;
             size = 0;
             id = -1;
+            pipelineId = 0;
 
             while (true)
             {
@@ -69,15 +77,21 @@ namespace Unity.Networking.Transport
                 if (m_ConnectionEventHeadTail[ev.connection * 2] == ev.idx)
                 {
                     id = ev.connection;
-                    return PopEventForConnection(ev.connection, out offset, out size);
+                    return PopEventForConnection(ev.connection, out offset, out size, out pipelineId);
                 }
             }
         }
 
         public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size)
         {
+            return PopEventForConnection(connectionId, out offset, out size, out var _);
+        }
+
+        public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size, out int pipelineId)
+        {
             offset = 0;
             size = 0;
+            pipelineId = 0;
 
             if (connectionId < 0 || connectionId >= m_ConnectionEventHeadTail.Length / 2)
                 return NetworkEvent.Type.Empty;
@@ -89,6 +103,8 @@ namespace Unity.Networking.Transport
 
             m_ConnectionEventHeadTail[connectionId * 2] = idx + 1;
             NetworkEvent ev = m_ConnectionEventQ[connectionId * MaxEvents + idx];
+            pipelineId = ev.pipelineId;
+
             if (ev.type == NetworkEvent.Type.Data)
             {
                 offset = ev.offset;
@@ -223,13 +239,21 @@ namespace Unity.Networking.Transport
 
             public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size)
             {
+                return PopEventForConnection(connectionId, out offset, out size, out var _);
+            }
+
+            public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size, out int pipelineId)
+            {
                 offset = 0;
                 size = 0;
+                pipelineId = 0;
 
                 int idx = m_ConnectionEventHeadTail.Dequeue(connectionId);
                 if (idx < 0)
                     return NetworkEvent.Type.Empty;
                 NetworkEvent ev = m_ConnectionEventQ[connectionId * MaxEvents + idx];
+                pipelineId = ev.pipelineId;
+
                 if (ev.type == NetworkEvent.Type.Data)
                 {
                     offset = ev.offset;

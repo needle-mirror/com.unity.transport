@@ -6,20 +6,20 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     public unsafe struct NullPipelineStage : INetworkPipelineStage
     {
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
             return (int)Error.StatusCode.Success;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,

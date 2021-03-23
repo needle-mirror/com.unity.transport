@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using System;
+using System.Diagnostics;
 
 namespace Unity.Networking.Transport
 {
@@ -93,10 +94,7 @@ namespace Unity.Networking.Transport
         /// <param name="allocator">The <see cref="Allocator"/> used to allocate the memory.</param>
         public DataStreamWriter(int length, Allocator allocator)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (allocator != Allocator.Temp)
-                throw new InvalidOperationException("DataStreamWriters can only be created with temp memory");
-#endif
+            CheckAllocator(allocator);
             Initialize(out this, new NativeArray<byte>(length, allocator));
         }
 
@@ -169,9 +167,7 @@ namespace Unity.Networking.Transport
         {
             get
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
-#endif
+                CheckRead();
                 return m_Data.capacity;
             }
         }
@@ -183,9 +179,7 @@ namespace Unity.Networking.Transport
         {
             get
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
-#endif
+                CheckRead();
                 SyncBitData();
                 return m_Data.length + ((m_Data.bitIndex + 7) >> 3);
             }
@@ -197,9 +191,7 @@ namespace Unity.Networking.Transport
         {
             get
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
-#endif
+                CheckRead();
                 SyncBitData();
                 return m_Data.length*8 + m_Data.bitIndex;
             }
@@ -210,9 +202,8 @@ namespace Unity.Networking.Transport
             var bitIndex = m_Data.bitIndex;
             if (bitIndex <= 0)
                 return;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
-#endif
+            CheckWrite();
+
             var bitBuffer = m_Data.bitBuffer;
             int offset = 0;
             while (bitIndex > 0)
@@ -237,9 +228,8 @@ namespace Unity.Networking.Transport
 
         public bool WriteBytes(byte* data, int bytes)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
-#endif
+            CheckWrite();
+
             if (m_Data.length + ((m_Data.bitIndex + 7) >> 3) + bytes > m_Data.capacity)
             {
                 ++m_Data.failedWrites;
@@ -329,26 +319,33 @@ namespace Unity.Networking.Transport
         }
         void WriteRawBitsInternal(uint value, int numbits)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (numbits < 0 || numbits > 32)
-                throw new ArgumentOutOfRangeException("Invalid number of bits");
-            if (value >= (1UL << numbits))
-                throw new ArgumentOutOfRangeException("Value does not fit in the specified number of bits");
-#endif
+            CheckBits(value, numbits);
 
             m_Data.bitBuffer |= ((ulong)value << m_Data.bitIndex);
             m_Data.bitIndex += numbits;
         }
+        public bool WriteRawBits(uint value, int numbits)
+        {
+            CheckWrite();
+
+            if (m_Data.length + ((m_Data.bitIndex + numbits + 7) >> 3) > m_Data.capacity)
+            {
+                ++m_Data.failedWrites;
+                return false;
+            }
+            WriteRawBitsInternal(value, numbits);
+            FlushBits();
+            return true;
+        }
 
         public bool WritePackedUInt(uint value, NetworkCompressionModel model)
         {
+            CheckWrite();
             int bucket = model.CalculateBucket(value);
             uint offset = model.bucketOffsets[bucket];
             int bits = model.bucketSizes[bucket];
             ushort encodeEntry = model.encodeTable[bucket];
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
-#endif
+
             if (m_Data.length + ((m_Data.bitIndex + (encodeEntry&0xff) + bits + 7) >> 3) > m_Data.capacity)
             {
                 ++m_Data.failedWrites;
@@ -380,12 +377,10 @@ namespace Unity.Networking.Transport
         }
         public bool WritePackedFloatDelta(float value, float baseline, NetworkCompressionModel model)
         {
+            CheckWrite();
             var bits = 0;
             if (value != baseline)
                 bits = 32;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
-#endif
             if (m_Data.length + ((m_Data.bitIndex + 1 + bits + 7) >> 3) > m_Data.capacity)
             {
                 ++m_Data.failedWrites;
@@ -502,6 +497,38 @@ namespace Unity.Networking.Transport
             m_Data.bitBuffer = 0;
             m_Data.failedWrites = 0;
         }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        void CheckRead()
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
+#endif
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        void CheckWrite()
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
+#endif
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        static void CheckAllocator(Allocator allocator)
+        {
+            if (allocator != Allocator.Temp)
+                throw new InvalidOperationException("DataStreamWriters can only be created with temp memory");
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        static void CheckBits(uint value, int numbits)
+        {
+            if (numbits < 0 || numbits > 32)
+                throw new ArgumentOutOfRangeException("Invalid number of bits");
+            if (value >= (1UL << numbits))
+                throw new ArgumentOutOfRangeException("Value does not fit in the specified number of bits");
+        }
     }
 
     /// <summary>
@@ -586,9 +613,7 @@ namespace Unity.Networking.Transport
         {
             get
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
-#endif
+                CheckRead();
                 return m_Length;
             }
         }
@@ -613,18 +638,15 @@ namespace Unity.Networking.Transport
         /// position.</exception>
         public void ReadBytes(byte* data, int length)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
-#endif
+            CheckRead();
             if (GetBytesRead() + length > m_Length)
             {
                 ++m_Context.m_FailedReads;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new System.ArgumentOutOfRangeException();
-#else
+#if ENABLE_UNITY_COLLECTIONS_CHECKS && !UNITY_DOTSRUNTIME
+                UnityEngine.Debug.LogError($"Trying to read {length} bytes from a stream where only {m_Length - GetBytesRead()} are available");
+#endif
                 UnsafeUtility.MemClear(data, length);
                 return;
-#endif
             }
             // Restore the full bytes moved to the bit buffer but no consumed
             m_Context.m_ReadByteIndex -= (m_Context.m_BitIndex >> 3);
@@ -651,6 +673,20 @@ namespace Unity.Networking.Transport
         public int GetBitsRead()
         {
             return (m_Context.m_ReadByteIndex<<3) - m_Context.m_BitIndex;
+        }
+        public void SeekSet(int pos)
+        {
+            if (pos > m_Length)
+            {
+                ++m_Context.m_FailedReads;
+#if ENABLE_UNITY_COLLECTIONS_CHECKS && !UNITY_DOTSRUNTIME
+                UnityEngine.Debug.LogError($"Trying to seek to {pos} in a stream of length {m_Length}");
+#endif
+                return;
+            }
+            m_Context.m_ReadByteIndex = pos;
+            m_Context.m_BitIndex = 0;
+            m_Context.m_BitBuffer = 0UL;
         }
 
         public byte ReadByte()
@@ -726,9 +762,7 @@ namespace Unity.Networking.Transport
         }
         public uint ReadPackedUInt(NetworkCompressionModel model)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
-#endif
+            CheckRead();
             FillBitBuffer();
             uint peekMask = (1u << NetworkCompressionModel.k_MaxHuffmanSymbolLength) - 1u;
             uint peekBits = (uint)m_Context.m_BitBuffer & peekMask;
@@ -739,11 +773,10 @@ namespace Unity.Networking.Transport
             if (m_Context.m_BitIndex < length)
             {
                 ++m_Context.m_FailedReads;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new System.ArgumentOutOfRangeException();
-#else
-                return 0;
+#if ENABLE_UNITY_COLLECTIONS_CHECKS && !UNITY_DOTSRUNTIME
+                UnityEngine.Debug.LogError($"Trying to read {length} bits from a stream where only {m_Context.m_BitIndex} are available");
 #endif
+                return 0;
             }
 
             // Skip Huffman bits
@@ -764,23 +797,25 @@ namespace Unity.Networking.Transport
         }
         uint ReadRawBitsInternal(int numbits)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (numbits < 0 || numbits > 32)
-                throw new ArgumentOutOfRangeException("Invalid number of bits");
-#endif
+            CheckBits(numbits);
             if (m_Context.m_BitIndex < numbits)
             {
                 ++m_Context.m_FailedReads;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new System.ArgumentOutOfRangeException("Not enough bits to read");
-#else
-                return 0;
+#if ENABLE_UNITY_COLLECTIONS_CHECKS && !UNITY_DOTSRUNTIME
+                UnityEngine.Debug.LogError($"Trying to read {numbits} bits from a stream where only {m_Context.m_BitIndex} are available");
 #endif
+                return 0;
             }
             uint res = (uint)(m_Context.m_BitBuffer & ((1UL << numbits) - 1UL));
             m_Context.m_BitBuffer >>= numbits;
             m_Context.m_BitIndex -= numbits;
             return res;
+        }
+        public uint ReadRawBits(int numbits)
+        {
+            CheckRead();
+            FillBitBuffer();
+            return ReadRawBitsInternal(numbits);
         }
 
         public int ReadPackedInt(NetworkCompressionModel model)
@@ -805,9 +840,7 @@ namespace Unity.Networking.Transport
         }
         public float ReadPackedFloatDelta(float baseline, NetworkCompressionModel model)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
-#endif
+            CheckRead();
             FillBitBuffer();
             if (ReadRawBitsInternal(1) == 0)
                 return baseline;
@@ -857,11 +890,12 @@ namespace Unity.Networking.Transport
         {
             ushort length = ReadUShort();
             if (length > maxLength)
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Invalid string length");
-#else
-                return 0;
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS && !UNITY_DOTSRUNTIME
+                UnityEngine.Debug.LogError($"Trying to read a string of length {length} but max length is {maxLength}");
 #endif
+                return 0;
+            }
             ReadBytes(data, length);
             return length;
         }
@@ -905,11 +939,12 @@ namespace Unity.Networking.Transport
         {
             uint length = ReadPackedUIntDelta(baseLength, model);
             if (length > (uint)maxLength)
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Invalid string length");
-#else
-                return 0;
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS && !UNITY_DOTSRUNTIME
+                UnityEngine.Debug.LogError($"Trying to read a string of length {length} but max length is {maxLength}");
 #endif
+                return 0;
+            }
             if (length <= baseLength)
             {
                 for (int i = 0; i < length; ++i)
@@ -923,6 +958,20 @@ namespace Unity.Networking.Transport
                     data[i] = (byte)ReadPackedUInt(model);
             }
             return (ushort)length;
+        }
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        void CheckRead()
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
+#endif
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        static void CheckBits(int numbits)
+        {
+            if (numbits < 0 || numbits > 32)
+                throw new ArgumentOutOfRangeException("Invalid number of bits");
         }
     }
 }

@@ -32,7 +32,7 @@ namespace Unity.Networking.Transport.Tests
         }
         public int StaticSize => 1;
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
@@ -42,14 +42,14 @@ namespace Unity.Networking.Transport.Tests
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
             return (int)Error.StatusCode.Success;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
@@ -80,13 +80,13 @@ namespace Unity.Networking.Transport.Tests
         }
         public int StaticSize => 1;
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
@@ -97,7 +97,7 @@ namespace Unity.Networking.Transport.Tests
             return (int)Error.StatusCode.Success;
         }
 
-        [BurstCompile]
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,

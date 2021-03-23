@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Unity.Collections;
 
 namespace Unity.Networking.Transport.Utilities
@@ -8,7 +9,7 @@ namespace Unity.Networking.Transport.Utilities
     /// Each bucket has its own first and last item and each bucket can have
     /// items pushed and popped individually.
     /// </summary>
-    public struct NativeMultiQueue<T> : IDisposable where T : struct
+    public struct NativeMultiQueue<T> : IDisposable where T : unmanaged
     {
         private NativeList<T> m_Queue;
         private NativeList<int> m_QueueHeadTail;
@@ -182,16 +183,26 @@ namespace Unity.Networking.Transport.Utilities
             // |-------+-------+-------+--------|
             //  00000000000000000000000000000000
 
-            var bits = sizeof(uint) * 8;
-            var sb = new System.Text.StringBuilder(new string('*', bits));
+            const int bits = 4 * 8;
+            var sb = new char[bits];
 
-            for (int i = bits - 1; i >= 0; i--)
+            for (var i = bits - 1; i >= 0; i--)
             {
                 sb[i] = (mask & 1) != 0 ? '1' : '0';
                 mask >>= 1;
             }
 
-            return sb.ToString();
+            return new string(sb);
+        }
+    }
+
+    public static class RandomHelpers
+    {
+        // returns ushort in [1..ushort.MaxValue - 1] range
+        public static ushort GetRandomUShort()
+        {
+            var rnd = new Unity.Mathematics.Random((uint) Stopwatch.GetTimestamp());
+            return (ushort)rnd.NextUInt(1, 0xffff);
         }
     }
 }

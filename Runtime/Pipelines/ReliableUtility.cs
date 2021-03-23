@@ -2,7 +2,8 @@ using System;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-
+using Unity.Mathematics;
+    
 namespace Unity.Networking.Transport.Utilities
 {
     public struct SequenceBufferContext
@@ -587,7 +588,7 @@ namespace Unity.Networking.Transport.Utilities
                 rttInfo.LastRtt = (int)Math.Max(timerData->ReceiveTime - timerData->SentTime - timerData->ProcessingTime, 1);
                 var delta = rttInfo.LastRtt - rttInfo.SmoothedRtt;
                 rttInfo.SmoothedRtt += delta / 8;
-                rttInfo.SmoothedVariance += (Math.Abs(delta) - rttInfo.SmoothedVariance) / 4;
+                rttInfo.SmoothedVariance += (math.abs(delta) - rttInfo.SmoothedVariance) / 4;
                 rttInfo.ResendTimeout = (int)(rttInfo.SmoothedRtt + 4 * rttInfo.SmoothedVariance);
                 sharedCtx->RttInfo = rttInfo;
             }

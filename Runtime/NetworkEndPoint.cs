@@ -26,7 +26,7 @@ namespace Unity.Networking.Transport
         private const int rawIpv4Length = 4;
         private const int rawIpv6Length = 16;
         private const int rawDataLength = 16;               // Maximum space needed to hold a IPv6 Address
-        private const int rawLength = rawDataLength + 3;    // SizeOf<Baselib_NetworkAddress>
+        private const int rawLength = rawDataLength + 4;    // SizeOf<Baselib_NetworkAddress>
         private static readonly bool IsLittleEndian = true;
 
         internal Binding.Baselib_NetworkAddress rawNetworkAddress;
@@ -131,8 +131,9 @@ namespace Unity.Networking.Transport
             UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
             endpoint = default(NetworkEndPoint);
 
+            var nullTerminator = '\0';
             var errorState = default(ErrorState);
-            var ipBytes = System.Text.Encoding.UTF8.GetBytes(address + char.MinValue);
+            var ipBytes = System.Text.Encoding.UTF8.GetBytes(address + nullTerminator);
 
             fixed (byte* ipBytesPtr = ipBytes)
             fixed (Binding.Baselib_NetworkAddress* rawAddress = &endpoint.rawNetworkAddress)
@@ -244,6 +245,9 @@ namespace Unity.Networking.Transport
 
         static NetworkEndPoint CreateAddress(ushort port, AddressType type = AddressType.Any, NetworkFamily family = NetworkFamily.Ipv4)
         {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            UnityEngine.Debug.Assert(UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>() == rawLength);
+#endif
             if (family == NetworkFamily.Invalid)
                 return default;
 

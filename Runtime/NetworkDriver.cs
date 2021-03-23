@@ -9,7 +9,7 @@ using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Networking.Transport.Error;
-using Random = System.Random;
+using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
@@ -78,13 +78,21 @@ namespace Unity.Networking.Transport
         {
             public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader)
             {
+                return PopEventForConnection(connectionId, out reader, out var _);
+            }
+
+            public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader, out NetworkPipeline pipeline)
+            {
                 int offset, size;
+                pipeline = default(NetworkPipeline);
+
                 reader = default(DataStreamReader);
                 if (connectionId.m_NetworkId < 0 || connectionId.m_NetworkId >= m_ConnectionList.Length ||
                     m_ConnectionList[connectionId.m_NetworkId].Version != connectionId.m_NetworkVersion)
                     return (int) NetworkEvent.Type.Empty;
 
-                var type = m_EventQueue.PopEventForConnection(connectionId.m_NetworkId, out offset, out size);
+                var type = m_EventQueue.PopEventForConnection(connectionId.m_NetworkId, out offset, out size, out var pipelineId);
+                pipeline = new NetworkPipeline { Id = pipelineId };
 
                 if (type == NetworkEvent.Type.Disconnect && offset < 0)
                     reader = new DataStreamReader(((NativeArray<byte>)m_DisconnectReasons).GetSubArray(math.abs(offset), 1));
@@ -526,7 +534,8 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_PendingBeginSend = new NativeArray<int>(JobsUtility.MaxJobThreadCount * JobsUtility.CacheLineSize/4, Allocator.Persistent);
 #endif
-            m_updateTime = m_NetworkParams.config.fixedFrameTimeMS > 0 ? 1 : Stopwatch.GetTimestamp() / TimeSpan.TicksPerMillisecond;
+            var time = Stopwatch.GetTimestamp() / TimeSpan.TicksPerMillisecond;
+            m_updateTime = m_NetworkParams.config.fixedFrameTimeMS > 0 ? 1 : time;
             m_updateTimeAdjustment = 0;
             int initialStreamSize = m_NetworkParams.dataStream.size;
             if (initialStreamSize == 0)
@@ -545,20 +554,16 @@ namespace Unity.Networking.Transport
             m_FreeList = new NativeQueue<int>(Allocator.Persistent);
             m_EventQueue = new NetworkEventQueue(NetworkParameterConstants.InitialEventQueueSize);
 
-            var idx = 0;
-            var reasons = Enum.GetValues(typeof(DisconnectReason));
-            m_DisconnectReasons = new NativeArray<byte>(reasons.Length, Allocator.Persistent);
-            foreach (var reason in reasons)
-            {
-                m_DisconnectReasons[idx++] = (byte) reason;
-            }
+            const int reasons = (int)DisconnectReason.Count;
+            m_DisconnectReasons = new NativeArray<byte>(reasons, Allocator.Persistent);
+            for (var idx = 0; idx < reasons; ++idx)
+                m_DisconnectReasons[idx] = (byte)idx;
 
             m_InternalState = new NativeArray<int>(2, Allocator.Persistent);
             m_PendingFree = new NativeQueue<int>(Allocator.Persistent);
 
             m_ReceiveCount = new NativeArray<int>(1, Allocator.Persistent);
-            m_SessionIdCounter = new NativeArray<ushort>(1, Allocator.Persistent);
-            m_SessionIdCounter[0] = (ushort)(new Random().Next() & 0xFFFF);
+            m_SessionIdCounter = new NativeArray<ushort>(1, Allocator.Persistent) {[0] = RandomHelpers.GetRandomUShort()};
             m_ErrorCodes = new NativeArray<int>((int)ErrorCodeType.NumErrorCodes, Allocator.Persistent);
             ReceiveCount = 0;
             Listening = false;
@@ -702,7 +707,7 @@ namespace Unity.Networking.Transport
             if (updateCount > (m_ConnectionList.Length - m_FreeList.Count) * 64)
             {
                 UnityEngine.Debug.LogWarning(
-                    $"A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {updateCount}");
+                    FixedString.Format("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {0}", updateCount));
             }
 
             m_DefaultHeaderFlags = UdpCHeader.HeaderFlags.HasPipeline;
@@ -710,7 +715,7 @@ namespace Unity.Networking.Transport
             if (updateCount > (m_ConnectionList.Length - m_FreeList.Count) * 64)
             {
                 UnityEngine.Debug.LogWarning(
-                    $"A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {updateCount}");
+                    FixedString.Format("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {0}", updateCount));
             }
 
             m_DefaultHeaderFlags = 0;
@@ -986,10 +991,17 @@ namespace Unity.Networking.Transport
         /// then the DataStreamReader will contain the disconnect reason.<value/>
         public NetworkEvent.Type PopEvent(out NetworkConnection con, out DataStreamReader reader)
         {
+            return PopEvent(out con, out reader, out var _);
+        }
+
+        public NetworkEvent.Type PopEvent(out NetworkConnection con, out DataStreamReader reader, out NetworkPipeline pipeline)
+        {
             int offset, size;
             reader = default(DataStreamReader);
             int id;
-            var type = m_EventQueue.PopEvent(out id, out offset, out size);
+            var type = m_EventQueue.PopEvent(out id, out offset, out size, out var pipelineId);
+            pipeline = new NetworkPipeline { Id = pipelineId };
+
             if (type == NetworkEvent.Type.Disconnect && offset < 0)
                 reader = new DataStreamReader(((NativeArray<byte>)m_DisconnectReasons).GetSubArray(math.abs(offset), 1));
             else if (size > 0)
@@ -1010,12 +1022,20 @@ namespace Unity.Networking.Transport
         /// then the DataStreamReader will contain the disconnect reason.<value/>
         public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader)
         {
+            return PopEventForConnection(connectionId, out reader, out var _);
+        }
+
+        public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader, out NetworkPipeline pipeline)
+        {
             int offset, size;
             reader = default(DataStreamReader);
+            pipeline = default(NetworkPipeline);
+
             if (connectionId.m_NetworkId < 0 || connectionId.m_NetworkId >= m_ConnectionList.Length ||
-                 m_ConnectionList[connectionId.m_NetworkId].Version != connectionId.m_NetworkVersion)
+                m_ConnectionList[connectionId.m_NetworkId].Version != connectionId.m_NetworkVersion)
                 return (int) NetworkEvent.Type.Empty;
-            var type = m_EventQueue.PopEventForConnection(connectionId.m_NetworkId, out offset, out size);
+            var type = m_EventQueue.PopEventForConnection(connectionId.m_NetworkId, out offset, out size, out var pipelineId);
+            pipeline = new NetworkPipeline { Id = pipelineId };
 
             if (type == NetworkEvent.Type.Disconnect && offset < 0)
                 reader = new DataStreamReader(((NativeArray<byte>)m_DisconnectReasons).GetSubArray(math.abs(offset), 1));
@@ -1200,7 +1220,7 @@ namespace Unity.Networking.Transport
             {
                 if (value != 0)
                 {
-                    UnityEngine.Debug.LogError($"Error on receive, errorCode = {value}");
+                    UnityEngine.Debug.LogError(FixedString.Format("Error on receive, errorCode = {0}", value));
                 }
                 m_ErrorCodes[(int)ErrorCodeType.ReceiveError] = value;
             }
@@ -1407,7 +1427,7 @@ namespace Unity.Networking.Transport
         }
 
         // Interface for receiving data from a pipeline
-        internal unsafe void PushDataEvent(NetworkConnection con, byte* dataPtr, int dataLength)
+        internal unsafe void PushDataEvent(NetworkConnection con, int pipelineId, byte* dataPtr, int dataLength)
         {
             byte* streamBasePtr = (byte*)m_DataStream.GetUnsafePtr();
             int sliceOffset = 0;
@@ -1434,6 +1454,7 @@ namespace Unity.Networking.Transport
 
             m_EventQueue.PushEvent(new NetworkEvent
             {
+                pipelineId = (short)pipelineId,
                 connectionId = con.m_NetworkId,
                 type = NetworkEvent.Type.Data,
                 offset = sliceOffset,
