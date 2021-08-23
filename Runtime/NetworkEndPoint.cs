@@ -5,6 +5,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Baselib;
 using Unity.Baselib.LowLevel;
+using Unity.Networking.Transport.Utilities;
 using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 
 namespace Unity.Networking.Transport
@@ -26,22 +27,43 @@ namespace Unity.Networking.Transport
         private const int rawIpv4Length = 4;
         private const int rawIpv6Length = 16;
         private const int rawDataLength = 16;               // Maximum space needed to hold a IPv6 Address
+#if !UNITY_2021_1_OR_NEWER && !UNITY_DOTSRUNTIME
         private const int rawLength = rawDataLength + 4;    // SizeOf<Baselib_NetworkAddress>
+#else
+        private const int rawLength = rawDataLength + 8;    // SizeOf<Baselib_NetworkAddress>
+#endif
         private static readonly bool IsLittleEndian = true;
 
         internal Binding.Baselib_NetworkAddress rawNetworkAddress;
-        public int length;
+
+        public int Length
+        {
+            get
+            {
+                switch (Family)
+                {
+                    case NetworkFamily.Invalid:
+                        return 0;
+                    case NetworkFamily.Ipv4:
+                        return rawIpv4Length;
+                    case NetworkFamily.Ipv6:
+                        return rawIpv6Length;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+        }
 
         static NetworkEndPoint()
         {
             uint test = 1;
-            byte* test_b = (byte*) &test;
+            byte* test_b = (byte*)&test;
             IsLittleEndian = test_b[0] == 1;
         }
 
         public ushort Port
         {
-            get => (ushort) (rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8));
+            get => (ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8));
             set
             {
                 rawNetworkAddress.port0 = (byte)((value >> 8) & 0xff);
@@ -57,19 +79,9 @@ namespace Unity.Networking.Transport
 
         public NativeArray<byte> GetRawAddressBytes()
         {
-            if (Family == NetworkFamily.Ipv4)
-            {
-                var bytes = new NativeArray<byte>(rawIpv4Length, Allocator.Temp);
-                UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref rawNetworkAddress), rawIpv4Length);
-                return bytes;
-            }
-            else if (Family == NetworkFamily.Ipv6)
-            {
-                var bytes = new NativeArray<byte>(rawIpv6Length, Allocator.Temp);
-                UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref rawNetworkAddress), rawIpv6Length);
-                return bytes;
-            }
-            return default;
+            var bytes = new NativeArray<byte>(Length, Allocator.Temp);
+            UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref rawNetworkAddress), Length);
+            return bytes;
         }
 
         public void SetRawAddressBytes(NativeArray<byte> bytes, NetworkFamily family = NetworkFamily.Ipv4)
@@ -96,12 +108,12 @@ namespace Unity.Networking.Transport
         {
             get
             {
-                ushort *port = (ushort*)((byte*) UnsafeUtility.AddressOf(ref rawNetworkAddress) + rawDataLength);
+                ushort *port = (ushort*)((byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress) + rawDataLength);
                 return *port;
             }
             set
             {
-                ushort *port = (ushort*)((byte*) UnsafeUtility.AddressOf(ref rawNetworkAddress) + rawDataLength);
+                ushort *port = (ushort*)((byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress) + rawDataLength);
                 *port = value;
             }
         }
@@ -122,6 +134,7 @@ namespace Unity.Networking.Transport
             ep.Port = port;
             return ep;
         }
+
         public bool IsLoopback => (this == LoopbackIpv4.WithPort(Port)) || (this == LoopbackIpv6.WithPort(Port));
         public bool IsAny => (this == AnyIpv4.WithPort(Port)) || (this == AnyIpv6.WithPort(Port));
 
@@ -129,20 +142,20 @@ namespace Unity.Networking.Transport
         public static bool TryParse(string address, ushort port, out NetworkEndPoint endpoint, NetworkFamily family = NetworkFamily.Ipv4)
         {
             UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
-            endpoint = default(NetworkEndPoint);
+            endpoint = default;
 
             var nullTerminator = '\0';
             var errorState = default(ErrorState);
             var ipBytes = System.Text.Encoding.UTF8.GetBytes(address + nullTerminator);
 
-            fixed (byte* ipBytesPtr = ipBytes)
-            fixed (Binding.Baselib_NetworkAddress* rawAddress = &endpoint.rawNetworkAddress)
+            fixed(byte* ipBytesPtr = ipBytes)
+            fixed(Binding.Baselib_NetworkAddress * rawAddress = &endpoint.rawNetworkAddress)
             {
                 Binding.Baselib_NetworkAddress_Encode(
                     rawAddress,
                     ToBaselibFamily(family),
                     ipBytesPtr,
-                    (ushort) port,
+                    (ushort)port,
                     &errorState);
             }
 
@@ -152,6 +165,7 @@ namespace Unity.Networking.Transport
             }
             return endpoint.IsValid;
         }
+
         // Returns a default address if parsing fails
         public static NetworkEndPoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Ipv4)
         {
@@ -161,24 +175,24 @@ namespace Unity.Networking.Transport
             return default;
         }
 
-        public static bool operator ==(NetworkEndPoint lhs, NetworkEndPoint rhs)
+        public static bool operator==(NetworkEndPoint lhs, NetworkEndPoint rhs)
         {
             return lhs.Compare(rhs);
         }
 
-        public static bool operator !=(NetworkEndPoint lhs, NetworkEndPoint rhs)
+        public static bool operator!=(NetworkEndPoint lhs, NetworkEndPoint rhs)
         {
             return !lhs.Compare(rhs);
         }
 
         public override bool Equals(object other)
         {
-            return this == (NetworkEndPoint) other;
+            return this == (NetworkEndPoint)other;
         }
 
         public override int GetHashCode()
         {
-            var p = (byte*) UnsafeUtility.AddressOf(ref rawNetworkAddress);
+            var p = (byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress);
             unchecked
             {
                 var result = 0;
@@ -194,53 +208,79 @@ namespace Unity.Networking.Transport
 
         bool Compare(NetworkEndPoint other)
         {
-            var p = (byte*) UnsafeUtility.AddressOf(ref rawNetworkAddress);
-            var p1 = (byte*) UnsafeUtility.AddressOf(ref other.rawNetworkAddress);
+            var p = (byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress);
+            var p1 = (byte*)UnsafeUtility.AddressOf(ref other.rawNetworkAddress);
             return UnsafeUtility.MemCmp(p, p1, rawLength) == 0;
+        }
+
+        internal static FixedString128Bytes AddressToString(in Binding.Baselib_NetworkAddress rawNetworkAddress)
+        {
+            FixedString128Bytes str = default;
+            FixedString32Bytes dot = ".";
+            FixedString32Bytes colon = ":";
+            FixedString32Bytes opensqb = "[";
+            FixedString32Bytes closesqb = "]";
+            switch ((Binding.Baselib_NetworkAddress_Family)rawNetworkAddress.family)
+            {
+                case Binding.Baselib_NetworkAddress_Family.IPv4:
+                    // TODO(steve): Update to use ipv4_0 ... 3 when its available.
+                    str.Append(rawNetworkAddress.data0);
+                    str.Append(dot);
+                    str.Append(rawNetworkAddress.data1);
+                    str.Append(dot);
+                    str.Append(rawNetworkAddress.data2);
+                    str.Append(dot);
+                    str.Append(rawNetworkAddress.data3);
+
+                    str.Append(colon);
+                    str.Append((ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8)));
+                    break;
+                case Binding.Baselib_NetworkAddress_Family.IPv6:
+                    // TODO(steve): Include scope and handle leading zeros
+                    // TODO(steve): Update to use ipv6_0 ... 15 when its available.
+                    str.Append(opensqb);
+
+                    str.AppendHex((ushort)(rawNetworkAddress.data1 | (rawNetworkAddress.data0 << 8)));
+                    str.Append(colon);
+                    str.AppendHex((ushort)(rawNetworkAddress.data3 | (rawNetworkAddress.data2 << 8)));
+                    str.Append(colon);
+                    str.AppendHex((ushort)(rawNetworkAddress.data5 | (rawNetworkAddress.data4 << 8)));
+                    str.Append(colon);
+                    str.AppendHex((ushort)(rawNetworkAddress.data7 | (rawNetworkAddress.data6 << 8)));
+                    str.Append(colon);
+                    str.AppendHex((ushort)(rawNetworkAddress.data9 | (rawNetworkAddress.data8 << 8)));
+                    str.Append(colon);
+                    str.AppendHex((ushort)(rawNetworkAddress.data11 | (rawNetworkAddress.data10 << 8)));
+                    str.Append(colon);
+                    str.AppendHex((ushort)(rawNetworkAddress.data13 | (rawNetworkAddress.data12 << 8)));
+                    str.Append(colon);
+                    str.AppendHex((ushort)(rawNetworkAddress.data15 | (rawNetworkAddress.data14 << 8)));
+                    str.Append(colon);
+
+                    str.Append(closesqb);
+                    str.Append(colon);
+                    str.Append((ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8)));
+                    break;
+                default:
+                    // TODO(steve): Throw an exception?
+                    break;
+            }
+            return str;
         }
 
         private string AddressAsString()
         {
-            switch (Family)
-            {
-                case NetworkFamily.Ipv4:
-                    return string.Concat(
-                        // TODO(steve): Update to use ipv4_0 ... 3 when its available.
-                        rawNetworkAddress.data0, ".",
-                        rawNetworkAddress.data1, ".",
-                        rawNetworkAddress.data2, ".",
-                        rawNetworkAddress.data3,
-                        ":", Port
-                    );
-                case NetworkFamily.Ipv6:
-                    const string numberFormat = "[{0:x}:{1:x}:{2:x}:{3:x}:{4:x}:{5:x}:{6:x}:{7:x}]:{8}";
-                    // TODO(steve): Include scope and handle leading zeros
-                    // TODO(steve): Update to use ipv6_0 ... 15 when its available.
-                    return String.Format(numberFormat,
-                        rawNetworkAddress.data1 | (rawNetworkAddress.data0 << 8),
-                        rawNetworkAddress.data3 | (rawNetworkAddress.data2 << 8),
-                        rawNetworkAddress.data5 | (rawNetworkAddress.data4 << 8),
-                        rawNetworkAddress.data7 | (rawNetworkAddress.data6 << 8),
-                        rawNetworkAddress.data9 | (rawNetworkAddress.data8 << 8),
-                        rawNetworkAddress.data11 | (rawNetworkAddress.data10 << 8),
-                        rawNetworkAddress.data13 | (rawNetworkAddress.data12 << 8),
-                        rawNetworkAddress.data15 | (rawNetworkAddress.data14 << 8),
-                        Port
-                    );
-                default:
-                    // TODO(steve): Throw an exception?
-                    return string.Empty;
-            }
+            return AddressToString(rawNetworkAddress).ToString();
         }
 
         private static ushort ByteSwap(ushort val)
         {
-            return (ushort) (((val & 0xff) << 8) | (val >> 8));
+            return (ushort)(((val & 0xff) << 8) | (val >> 8));
         }
 
         private static uint ByteSwap(uint val)
         {
-            return (uint) (((val & 0xff) << 24) | ((val & 0xff00) << 8) | ((val >> 8) & 0xff00) | (val >> 24));
+            return (uint)(((val & 0xff) << 24) | ((val & 0xff00) << 8) | ((val >> 8) & 0xff00) | (val >> 24));
         }
 
         static NetworkEndPoint CreateAddress(ushort port, AddressType type = AddressType.Any, NetworkFamily family = NetworkFamily.Ipv4)
@@ -262,15 +302,14 @@ namespace Unity.Networking.Transport
             var ep = new NetworkEndPoint
             {
                 Family = family,
-                RawPort = port,
-                length = rawLength
+                RawPort = port
             };
 
             if (type == AddressType.Loopback)
             {
                 if (family == NetworkFamily.Ipv4)
                 {
-                    *(uint*) UnsafeUtility.AddressOf(ref ep.rawNetworkAddress) = ipv4Loopback;
+                    *(uint*)UnsafeUtility.AddressOf(ref ep.rawNetworkAddress) = ipv4Loopback;
                 }
                 else if (family == NetworkFamily.Ipv6)
                 {
@@ -288,6 +327,7 @@ namespace Unity.Networking.Transport
                 return NetworkFamily.Ipv6;
             return NetworkFamily.Invalid;
         }
+
         static Binding.Baselib_NetworkAddress_Family ToBaselibFamily(NetworkFamily family)
         {
             if (family == NetworkFamily.Ipv4)
@@ -298,55 +338,95 @@ namespace Unity.Networking.Transport
         }
     }
 
-    public unsafe struct NetworkInterfaceEndPoint
+    public unsafe struct NetworkInterfaceEndPoint : IEquatable<NetworkInterfaceEndPoint>
     {
+        public const int k_MaxLength = 56;
+
         public int dataLength;
-        public fixed byte data[56];
+        public fixed byte data[k_MaxLength];
 
         public bool IsValid => dataLength != 0;
 
-        public static bool operator ==(NetworkInterfaceEndPoint lhs, NetworkInterfaceEndPoint rhs)
+        public static bool operator==(NetworkInterfaceEndPoint lhs, NetworkInterfaceEndPoint rhs)
         {
-            return lhs.Compare(rhs);
+            return lhs.Equals(rhs);
         }
 
-        public static bool operator !=(NetworkInterfaceEndPoint lhs, NetworkInterfaceEndPoint rhs)
+        public static bool operator!=(NetworkInterfaceEndPoint lhs, NetworkInterfaceEndPoint rhs)
         {
-            return !lhs.Compare(rhs);
+            return !lhs.Equals(rhs);
         }
 
         public override bool Equals(object other)
         {
-            return this == (NetworkInterfaceEndPoint) other;
+            return Equals((NetworkInterfaceEndPoint)other);
         }
 
         public override int GetHashCode()
         {
-            fixed (byte* p = data)
-                unchecked
+            fixed(byte* p = data)
+            unchecked
+            {
+                var result = 0;
+
+                for (int i = 0; i < dataLength; i++)
                 {
-                    var result = 0;
-
-                    for (int i = 0; i < dataLength; i++)
-                    {
-                        result = (result * 31) ^ (int)p[i];
-                    }
-
-                    return result;
+                    result = (result * 31) ^ (int)p[i];
                 }
+
+                return result;
+            }
         }
 
-        bool Compare(NetworkInterfaceEndPoint other)
+        public bool Equals(NetworkInterfaceEndPoint other)
         {
             // baselib doesn't return consistent lengths under posix, so lengths can
             // only be used as a shortcut if only one addresses a blank.
             if (dataLength != other.dataLength && (dataLength <= 0 || other.dataLength <= 0))
                 return false;
 
-            fixed (void* p = this.data)
+            fixed(void* p = this.data)
             {
                 return UnsafeUtility.MemCmp(p, other.data, math.min(dataLength, other.dataLength)) == 0;
             }
+        }
+
+        public FixedString64Bytes ToFixedString()
+        {
+            if (IsValid == false)
+                return (FixedString64Bytes)"Not Valid";
+
+            var n = dataLength;
+            var res = new FixedString64Bytes();
+
+            if (n == 4)
+            {
+                res.Append(data[0]);
+                res.Append('.');
+                res.Append(data[1]);
+                res.Append('.');
+                res.Append(data[2]);
+                res.Append('.');
+                res.Append(data[3]);
+
+                return res;
+            }
+
+            res.Append((FixedString32Bytes)"0x");
+            fixed(byte* p = this.data)
+            {
+                for (var i = 0; i < n; i += 2)
+                {
+                    var ushortP = (ushort*)(p + i);
+                    res.AppendHex(*ushortP);
+                }
+            }
+            return res;
+        }
+
+        public override string ToString()
+        {
+            return ToFixedString().ToString();
         }
     }
 }

@@ -25,6 +25,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -41,7 +42,7 @@ namespace Unity.Networking.Transport.Tests
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            ctx.header.WriteInt((int) 1);
+            ctx.header.WriteInt((int)1);
             return (int)Error.StatusCode.Success;
         }
 
@@ -72,6 +73,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -89,7 +91,7 @@ namespace Unity.Networking.Transport.Tests
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
         {
-            ctx.header.WriteInt((int) 2);
+            ctx.header.WriteInt((int)2);
             return (int)Error.StatusCode.Success;
         }
 
@@ -121,6 +123,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -173,6 +176,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -224,6 +228,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -268,12 +273,13 @@ namespace Unity.Networking.Transport.Tests
                 Receive: ReceiveFunctionPointer,
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
-                ReceiveCapacity: 3*UnsafeUtility.SizeOf<int>(),
-                SendCapacity: 3*UnsafeUtility.SizeOf<int>(),
+                ReceiveCapacity: 3 * UnsafeUtility.SizeOf<int>(),
+                SendCapacity: 3 * UnsafeUtility.SizeOf<int>(),
                 HeaderCapacity: 0,
-                SharedStateCapacity: 3*UnsafeUtility.SizeOf<int>()
+                SharedStateCapacity: 3 * UnsafeUtility.SizeOf<int>()
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -331,7 +337,7 @@ namespace Unity.Networking.Transport.Tests
             *receiveData = 5;
             receiveData++;
             *receiveData = 6;
-            var sharedData = (int*) sharedProcessBuffer;
+            var sharedData = (int*)sharedProcessBuffer;
             *sharedData = 7;
             sharedData++;
             *sharedData = 8;
@@ -352,12 +358,13 @@ namespace Unity.Networking.Transport.Tests
                 Receive: ReceiveFunctionPointer,
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
-                ReceiveCapacity: 3*UnsafeUtility.SizeOf<int>(),
-                SendCapacity: 3*UnsafeUtility.SizeOf<int>(),
+                ReceiveCapacity: 3 * UnsafeUtility.SizeOf<int>(),
+                SendCapacity: 3 * UnsafeUtility.SizeOf<int>(),
                 HeaderCapacity: 0,
-                SharedStateCapacity: 3*UnsafeUtility.SizeOf<int>()
+                SharedStateCapacity: 3 * UnsafeUtility.SizeOf<int>()
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -367,13 +374,13 @@ namespace Unity.Networking.Transport.Tests
             var receiveData = (int*)ctx.internalProcessBuffer;
             for (int i = 4; i <= 6; ++i)
             {
-                Assert.AreEqual(*receiveData, i*10);
+                Assert.AreEqual(*receiveData, i * 10);
                 receiveData++;
             }
             var sharedData = (int*)ctx.internalSharedProcessBuffer;
             for (int i = 7; i <= 8; ++i)
             {
-                Assert.AreEqual(*sharedData, i*10);
+                Assert.AreEqual(*sharedData, i * 10);
                 sharedData++;
             }
         }
@@ -385,13 +392,13 @@ namespace Unity.Networking.Transport.Tests
             var sendData = (int*)ctx.internalProcessBuffer;
             for (int i = 1; i <= 3; ++i)
             {
-                Assert.AreEqual(*sendData, i*10);
+                Assert.AreEqual(*sendData, i * 10);
                 sendData++;
             }
             var sharedData = (int*)ctx.internalSharedProcessBuffer;
             for (int i = 7; i <= 8; ++i)
             {
-                Assert.AreEqual(*sharedData, i*10);
+                Assert.AreEqual(*sharedData, i * 10);
                 sharedData++;
             }
             return (int)Error.StatusCode.Success;
@@ -415,7 +422,7 @@ namespace Unity.Networking.Transport.Tests
             *receiveData = 50;
             receiveData++;
             *receiveData = 60;
-            var sharedData = (int*) sharedProcessBuffer;
+            var sharedData = (int*)sharedProcessBuffer;
             *sharedData = 70;
             sharedData++;
             *sharedData = 80;
@@ -456,7 +463,7 @@ namespace Unity.Networking.Transport.Tests
             };
             // NOTE: MaxPacketSize should be 64 for all the tests using simulator except needs to account for header size as well (one test has 2x2B headers)
             var simulatorParams = new SimulatorUtility.Parameters()
-                {MaxPacketSize = 72, MaxPacketCount = 30, PacketDelayMs = 100};
+            {MaxPacketSize = 72, MaxPacketCount = 30, PacketDelayMs = 100};
             TestNetworkPipelineStageCollection.Register();
             m_ServerDriver = TestNetworkDriver.Create(timeoutParam, simulatorParams);
             m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);
@@ -472,6 +479,7 @@ namespace Unity.Networking.Transport.Tests
             m_ClientDriver2.Dispose();
             m_ServerDriver.Dispose();
         }
+
         [Test]
         public void NetworkPipeline_CreatePipelineIsSymetrical()
         {
@@ -479,12 +487,14 @@ namespace Unity.Networking.Transport.Tests
             var serverPipe = m_ServerDriver.CreatePipeline(typeof(TestPipelineStageWithHeader));
             Assert.AreEqual(clientPipe, serverPipe);
         }
+
         [Test]
         public void NetworkPipeline_CreatePipelineAfterConnectFails()
         {
             m_ClientDriver.Connect(m_ServerDriver.LocalEndPoint());
             Assert.Throws<InvalidOperationException>(() => { m_ClientDriver.CreatePipeline(typeof(TestPipelineStageWithHeader)); });
         }
+
         [Test]
         public void NetworkPipeline_CreatePipelineWithInvalidStageFails()
         {
@@ -512,7 +522,7 @@ namespace Unity.Networking.Transport.Tests
             // Send message to client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -525,6 +535,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(4, readStrm.Length);
             Assert.AreEqual(42, readStrm.ReadInt());
         }
+
         [Test]
         public void NetworkPipeline_CanModifyAndRestoreData()
         {
@@ -547,7 +558,7 @@ namespace Unity.Networking.Transport.Tests
 
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -560,6 +571,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(4, readStrm.Length);
             Assert.AreEqual(42, readStrm.ReadInt());
         }
+
         [Test]
         public void NetworkPipeline_CanModifyAndRestoreDataInPlace()
         {
@@ -581,7 +593,7 @@ namespace Unity.Networking.Transport.Tests
             // Send message to client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -594,6 +606,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(4, readStrm.Length);
             Assert.AreEqual(42, readStrm.ReadInt());
         }
+
         [Test]
         public void NetworkPipeline_CanModifyData()
         {
@@ -615,7 +628,7 @@ namespace Unity.Networking.Transport.Tests
             // Send message to client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -626,7 +639,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(NetworkEvent.Type.Data, clientToServer.PopEvent(m_ClientDriver, out readStrm));
             Assert.AreEqual(4, readStrm.Length);
-            Assert.AreEqual(-1^42, readStrm.ReadInt());
+            Assert.AreEqual(-1 ^ 42, readStrm.ReadInt());
         }
 
         [Test]
@@ -649,7 +662,7 @@ namespace Unity.Networking.Transport.Tests
             // Send message to client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -827,8 +840,8 @@ namespace Unity.Networking.Transport.Tests
                 {
                     for (int j = 0; j < 16; j++)
                     {
-                        strm.WriteInt((int) i + 1);
-                        strm2.WriteInt((int) i + 1);
+                        strm.WriteInt((int)i + 1);
+                        strm2.WriteInt((int)i + 1);
                     }
                     m_ServerDriver.EndSend(strm);
                     m_ServerDriver.EndSend(strm2);

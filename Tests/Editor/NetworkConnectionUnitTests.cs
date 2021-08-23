@@ -7,18 +7,18 @@ namespace Unity.Networking.Transport.Tests
     {
         public static byte[] ping =
         {
-            (byte) 'p',
-            (byte) 'i',
-            (byte) 'n',
-            (byte) 'g'
+            (byte)'p',
+            (byte)'i',
+            (byte)'n',
+            (byte)'g'
         };
 
         public static byte[] pong =
         {
-            (byte) 'p',
-            (byte) 'o',
-            (byte) 'n',
-            (byte) 'g'
+            (byte)'p',
+            (byte)'o',
+            (byte)'n',
+            (byte)'g'
         };
     }
 
@@ -58,7 +58,6 @@ namespace Unity.Networking.Transport.Tests
             DataStreamReader reader;
             Assert.That(connection.PopEvent(Driver, out reader) == NetworkEvent.Type.Connect);
         }
-
 
         [Test]
         public void CreateConnectPopAndClose_NetworkConnection_ToRemoteEndPoint()

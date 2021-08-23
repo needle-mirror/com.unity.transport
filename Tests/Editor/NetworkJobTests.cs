@@ -31,6 +31,7 @@ namespace Unity.Networking.Transport.Tests
             updateHandle.Complete();
             driver.Dispose();
         }
+
         [Test]
         public void ScheduleUpdateWithMissingDependencyThrowsException()
         {
@@ -102,6 +103,7 @@ namespace Unity.Networking.Transport.Tests
             clientDriver.Dispose();
             serverDriver.Dispose();
         }
+
         struct ReceiveJob : IJob
         {
             public NetworkDriver driver;
@@ -178,6 +180,7 @@ namespace Unity.Networking.Transport.Tests
             clientDriver.Dispose();
             serverDriver.Dispose();
         }
+
         struct SendReceiveParallelJob : IJobParallelFor
         {
             public NetworkDriver.Concurrent driver;
@@ -241,7 +244,8 @@ namespace Unity.Networking.Transport.Tests
                 AssertDataReceived(serverDriver, serverToClient, clientDriver1, clientToServer1, 43, true);
             }
         }
-        [BurstCompile/*(CompileSynchronously = true)*/] // FIXME: sync compilation makes tests timeout
+
+        [BurstCompile /*(CompileSynchronously = true)*/] // FIXME: sync compilation makes tests timeout
         struct SendReceiveWithPipelineParallelJob : IJobParallelFor
         {
             public NetworkDriver.Concurrent driver;
@@ -306,7 +310,7 @@ namespace Unity.Networking.Transport.Tests
                 clientDriver1.ScheduleUpdate().Complete();
 
                 var sendRecvJob = new SendReceiveWithPipelineParallelJob
-                    {driver = serverDriver.ToConcurrent(), connections = serverToClient, pipeline = serverPipeline};
+                {driver = serverDriver.ToConcurrent(), connections = serverToClient, pipeline = serverPipeline};
                 var jobHandle = serverDriver.ScheduleUpdate();
                 jobHandle = sendRecvJob.Schedule(serverToClient.Length, 1, jobHandle);
                 serverDriver.ScheduleUpdate(jobHandle).Complete();
@@ -354,7 +358,6 @@ namespace Unity.Networking.Transport.Tests
                     }
                     for (var i = 0; i < clientDrivers.Count; ++i)
                     {
-
                         if (clientDrivers[i].BeginSend(clientPipelines[i], clientToServer[i], out var strmWriter) == 0)
                         {
                             strmWriter.WriteInt(42);
@@ -364,7 +367,7 @@ namespace Unity.Networking.Transport.Tests
                     }
 
                     var sendRecvJob = new SendReceiveWithPipelineParallelJob
-                        {driver = serverDriver.ToConcurrent(), connections = serverToClient, pipeline = serverPipeline};
+                    {driver = serverDriver.ToConcurrent(), connections = serverToClient, pipeline = serverPipeline};
                     var jobHandle = serverDriver.ScheduleUpdate();
                     jobHandle = sendRecvJob.Schedule(serverToClient.Length, 1, jobHandle);
                     serverDriver.ScheduleUpdate(jobHandle).Complete();
@@ -379,6 +382,7 @@ namespace Unity.Networking.Transport.Tests
                     drv.Dispose();
             }
         }
+
         void AssertDataReceived(NetworkDriver serverDriver, NativeArray<NetworkConnection> serverConnections, NetworkDriver clientDriver, NetworkConnection clientToServerConnection, int assertValue, bool serverResend)
         {
             DataStreamReader strmReader;
@@ -397,7 +401,6 @@ namespace Unity.Networking.Transport.Tests
                     counter = 0;
                     for (int i = 0; i < serverConnections.Length; ++i)
                     {
-
                         if (serverDriver.BeginSend(serverConnections[i], out var strmWriter) == 0)
                         {
                             strmWriter.WriteInt(42);

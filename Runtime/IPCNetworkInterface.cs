@@ -5,6 +5,7 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Networking.Transport.Protocols;
+using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
@@ -81,50 +82,48 @@ namespace Unity.Networking.Transport
 
             public unsafe void Execute()
             {
-                var header = new UdpCHeader();
-                var stream = receiver.GetDataStream();
-                receiver.ReceiveCount = 0;
                 receiver.ReceiveErrorCode = 0;
 
                 while (true)
                 {
-                    int dataStreamSize = receiver.GetDataStreamSize();
-                    if (receiver.DynamicDataStreamSize())
-                    {
-                        while (dataStreamSize+NetworkParameterConstants.MTU-UdpCHeader.Length >= stream.Length)
-                            stream.ResizeUninitialized(stream.Length*2);
-                    }
-                    else if (dataStreamSize >= stream.Length)
+                    var size = NetworkParameterConstants.MTU;
+                    var ptr = receiver.AllocateMemory(ref size);
+                    if (ptr == IntPtr.Zero)
                         return;
+
                     var endpoint = default(NetworkInterfaceEndPoint);
-                    var result = NativeReceive(ref header, (byte*)stream.GetUnsafePtr() + dataStreamSize,
-                        Math.Min(NetworkParameterConstants.MTU-UdpCHeader.Length, stream.Length - dataStreamSize), ref endpoint);
-                    if (result <= 0)
+                    var resultReceive = NativeReceive((byte*)ptr.ToPointer(), size, ref endpoint);
+                    if (resultReceive <= 0)
                     {
-                        // FIXME: handle error
-                        if (result < 0)
-                            receiver.ReceiveErrorCode = 10040;
+                        if (resultReceive != 0)
+                            receiver.ReceiveErrorCode = -resultReceive;
                         return;
                     }
 
-                    receiver.ReceiveCount += receiver.AppendPacket(endpoint, header, result);
+                    var resultAppend = receiver.AppendPacket(ptr, ref endpoint, resultReceive);
+                    if (resultAppend == false)
+                        return;
                 }
             }
 
-            unsafe int NativeReceive(ref UdpCHeader header, void* data, int length, ref NetworkInterfaceEndPoint address)
+            unsafe int NativeReceive(void* data, int length, ref NetworkInterfaceEndPoint address)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (length <= 0)
                     throw new ArgumentException("Can't receive into 0 bytes or less of buffer memory");
 #endif
-                return ipcManager.ReceiveMessageEx(localEndPoint, ref header, data, length, ref address);
+                return ipcManager.ReceiveMessageEx(localEndPoint, data, length, ref address);
             }
         }
 
         public JobHandle ScheduleReceive(NetworkPacketReceiver receiver, JobHandle dep)
         {
             var job = new ReceiveJob
-                {receiver = receiver, ipcManager = IPCManager.Instance, localEndPoint = LocalEndPoint};
+            {
+                receiver = receiver,
+                ipcManager = IPCManager.Instance,
+                localEndPoint = LocalEndPoint
+            };
             dep = job.Schedule(JobHandle.CombineDependencies(dep, IPCManager.ManagerAccessHandle));
             IPCManager.ManagerAccessHandle = dep;
             return dep;
@@ -145,6 +144,11 @@ namespace Unity.Networking.Transport
                 throw new InvalidOperationException();
 #endif
             m_LocalEndPoint[0] = endpoint;
+            return 0;
+        }
+
+        public int Listen()
+        {
             return 0;
         }
 
@@ -185,6 +189,7 @@ namespace Unity.Networking.Transport
             sendQueue.Enqueue(msg);
             return handle.size;
         }
+
         [BurstCompile(DisableDirectCall = true)]
         [AOT.MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)

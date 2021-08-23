@@ -1,4 +1,3 @@
-
 namespace Unity.Networking.Transport.Utilities
 {
     public struct FragmentationUtility

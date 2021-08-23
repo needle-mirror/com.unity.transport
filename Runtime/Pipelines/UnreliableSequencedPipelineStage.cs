@@ -24,6 +24,7 @@ namespace Unity.Networking.Transport
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -36,7 +37,7 @@ namespace Unity.Networking.Transport
             NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref inboundArray, safetyHandle);
 #endif
             var reader = new DataStreamReader(inboundArray);
-            var oldSequenceId = (int*) ctx.internalProcessBuffer;
+            var oldSequenceId = (int*)ctx.internalProcessBuffer;
             ushort sequenceId = reader.ReadUShort();
 
             if (SequenceHelpers.GreaterThan16(sequenceId, (ushort)*oldSequenceId))
@@ -53,7 +54,7 @@ namespace Unity.Networking.Transport
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
-            var sequenceId = (int*) ctx.internalProcessBuffer;
+            var sequenceId = (int*)ctx.internalProcessBuffer;
             ctx.header.WriteUShort((ushort)*sequenceId);
             *sequenceId = (ushort)(*sequenceId + 1);
             return (int)Error.StatusCode.Success;
@@ -68,7 +69,7 @@ namespace Unity.Networking.Transport
             if (recvProcessBufferLength > 0)
             {
                 // The receive processing buffer contains the current sequence ID, initialize it to -1 as it will be incremented when used.
-                *(int*) recvProcessBuffer = -1;
+                *(int*)recvProcessBuffer = -1;
             }
         }
     }

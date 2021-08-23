@@ -30,6 +30,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 1;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -78,6 +79,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 1;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -154,7 +156,7 @@ namespace Unity.Networking.Transport.Tests
             var ep1Buffer = new NativeArray<byte>(ep1Owner.StaticSize, Allocator.Persistent);
             var ep2Buffer = new NativeArray<byte>(ep2Owner.StaticSize, Allocator.Persistent);
 
-            var paramList = new INetworkParameter[]{parameters};
+            var paramList = new INetworkParameter[] {parameters};
             var ep1 = ep1Owner.StaticInitialize((byte*)ep1Buffer.GetUnsafePtr(), ep1Buffer.Length, paramList);
             var ep2 = ep1Owner.StaticInitialize((byte*)ep2Buffer.GetUnsafePtr(), ep2Buffer.Length, paramList);
             ep1.InitializeConnection.Ptr.Invoke((byte*)ep1Buffer.GetUnsafePtr(), ep1Buffer.Length,
@@ -164,11 +166,11 @@ namespace Unity.Networking.Transport.Tests
                 (byte*)ep2SendBuffer.GetUnsafePtr(), ep2SendBuffer.Length, (byte*)ep2RecvBuffer.GetUnsafePtr(), ep2RecvBuffer.Length,
                 (byte*)ep2SharedBuffer.GetUnsafePtr(), ep2SharedBuffer.Length);
 
-            var ep1sendContext = (ReliableUtility.Context*) ep1SendBuffer.GetUnsafePtr();
+            var ep1sendContext = (ReliableUtility.Context*)ep1SendBuffer.GetUnsafePtr();
             //var ep1recvContext = (ReliableUtility.Context*) ep1RecvBuffer.GetUnsafePtr();
             //var ep1sharedContext = (ReliableUtility.SharedContext*) ep1SharedBuffer.GetUnsafePtr();
 
-            var ep2recvContext = (ReliableUtility.Context*) ep2RecvBuffer.GetUnsafePtr();
+            var ep2recvContext = (ReliableUtility.Context*)ep2RecvBuffer.GetUnsafePtr();
             //var ep2sendContext = (ReliableUtility.Context*) ep2SendBuffer.GetUnsafePtr();
             //var ep2sharedContext = (ReliableUtility.SharedContext*) ep2SharedBuffer.GetUnsafePtr();
 
@@ -198,7 +200,7 @@ namespace Unity.Networking.Transport.Tests
                 output = inboundSend;
                 ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest);
                 Assert.True(output.buffer[0] == packet[0]);
-                Assert.True((stageRequest&NetworkPipelineStage.Requests.Resume)==0);
+                Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
             }
             {
                 var info = ReliableUtility.GetPacketInformation((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), currentId);
@@ -222,7 +224,7 @@ namespace Unity.Networking.Transport.Tests
                 if (slice.bufferLength > 0)
                     Assert.True(slice.buffer[0] == packet[0]);
             }
-            Assert.True((stageRequest&NetworkPipelineStage.Requests.Resume)==0);
+            Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
             Assert.True(ep2recvContext->Delivered == currentId);
 
             // Scenario: Receive a Packet Newer then expected [0, 1, Lost, 3]
@@ -230,7 +232,7 @@ namespace Unity.Networking.Transport.Tests
             // Start by "sending" 1, 2, 3;
             for (int seq = currentId + 1; seq < 4; seq++)
             {
-                packet[0] = (byte) (100 + seq);
+                packet[0] = (byte)(100 + seq);
 
                 header.Clear();
                 var ctx = new NetworkPipelineContext
@@ -246,7 +248,7 @@ namespace Unity.Networking.Transport.Tests
                 output = inboundSend;
                 ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest);
 
-                Assert.True((stageRequest&NetworkPipelineStage.Requests.Resume)==0);
+                Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
                 Assert.True(output.buffer[0] == packet[0]);
             }
 
@@ -295,7 +297,7 @@ namespace Unity.Networking.Transport.Tests
                     var seq = 2;
                     var info = ReliableUtility.GetPacketInformation((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
                     var offset = ep1sendContext->DataPtrOffset +
-                                 ((seq % ep1sendContext->Capacity) * ep1sendContext->DataStride);
+                        ((seq % ep1sendContext->Capacity) * ep1sendContext->DataStride);
                     var inspectPacket = ReliableUtility.GetPacket((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
 
                     data.buffer = (byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr() + offset;
@@ -319,7 +321,8 @@ namespace Unity.Networking.Transport.Tests
                 {
                     Assert.True(slice.buffer[0] == ep2recvContext->Delivered + 100);
                 }
-            } while ((stageRequest&NetworkPipelineStage.Requests.Resume)!=0);
+            }
+            while ((stageRequest & NetworkPipelineStage.Requests.Resume) != 0);
 
 
             packet.Dispose();
@@ -332,7 +335,6 @@ namespace Unity.Networking.Transport.Tests
             ep1Buffer.Dispose();
             ep2Buffer.Dispose();
         }
-
 
         [Test]
         public unsafe void ReliableUtility_Validation()
@@ -406,35 +408,37 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000
+            };
 
             // Sending seqId 3, last received ID 0 (1 is not yet acked, 2 was dropped)
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 0;    // Last sent is initialized to what you are sending next
             sharedContext->SentPackets.Acked = -1;
             sharedContext->SentPackets.AckMask = 0x1;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
                 // Add buffers in resend queue
-                stream.WriteInt((int) 10);
+                stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 65535, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 65535)->SendTime = 980;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 65535, 980);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 65535, 990, 16);
                 stream.Clear();
-                stream.WriteInt((int) 11);
+                stream.WriteInt((int)11);
                 ReliableUtility.SetPacket(sendBufferPtr, 0, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 0)->SendTime = 990;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 0, 990);
 
                 ReliableUtility.ReleaseOrResumePackets(pipelineContext);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, 65535 should be released, 0 should still be there
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation(sendBufferPtr, 65535)->SequenceId);
@@ -465,36 +469,38 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000
+            };
 
             // Sending seqId 3, last received ID 2 (same as last sent packet)
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3;
             sharedContext->SentPackets.Acked = 2;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
                 // Add buffers in resend queue
-                stream.WriteInt((int) 10);
+                stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 1, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 1)->SendTime = 980;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 1, 980);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 1, 990, 16);
                 stream.Clear();
-                stream.WriteInt((int) 11);
+                stream.WriteInt((int)11);
                 ReliableUtility.SetPacket(sendBufferPtr, 2, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 2)->SendTime = 990;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 2, 990);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 2, 1000, 16);
 
                 ReliableUtility.ReleaseOrResumePackets(pipelineContext);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, both packets should be released
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation(sendBufferPtr, 1)->SequenceId);
@@ -525,30 +531,32 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length
+            };
 
             // Sending seqId 3, last received ID 65535 (same as last sent)
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 0;
             sharedContext->SentPackets.Acked = 65535;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
                 // Add buffers in resend queue
-                stream.WriteInt((int) 10);
+                stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 65535, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 65535)->SendTime = 980;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 65535, 980);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 65535, 990, 16);
 
                 ReliableUtility.ReleaseOrResumePackets(pipelineContext);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, 65535 should be released
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation(sendBufferPtr, 65535)->SequenceId);
@@ -578,27 +586,29 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length
+            };
 
             // Sending seqId 3, last received ID 0 (1 is not yet acked, 2 was dropped)
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 17;
             sharedContext->SentPackets.Acked = 16;
             sharedContext->SentPackets.AckMask = 0xFFFFDBB7;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
                 // Add buffers in resend queue
-                stream.WriteInt((int) 10);
+                stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 16, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 ReliableUtility.ReleaseOrResumePackets(pipelineContext);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, packet 16 should be released
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation(sendBufferPtr, 16)->SequenceId);
@@ -628,30 +638,32 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length
+            };
 
             // Sending seqId 3, last received ID 0 (1 is not yet acked, 2 was dropped)
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 1;
             sharedContext->SentPackets.Acked = 0;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
                 // Add buffers in resend queue
-                stream.WriteInt((int) 10);
+                stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 0, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 11);
+                stream.WriteInt((int)11);
                 ReliableUtility.SetPacket(sendBufferPtr, 65535, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 ReliableUtility.ReleaseOrResumePackets(pipelineContext);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, slot with seqId 0 and 65535 should have been released
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation(sendBufferPtr, 0)->SequenceId);
@@ -682,37 +694,39 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000
+            };
 
             // Sending seqId 3, last received ID 0 (1 is not yet acked, 2 was dropped)
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 4;
             sharedContext->SentPackets.Acked = 3;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFD;    // bit 0 = seqId 3 (1), bit 1 = seqId 2 (0)
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
                 // Add buffers in resend queue
                 // SeqId 3 is received and ready to be released
-                stream.WriteInt((int) 10);
+                stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 3, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 3)->SendTime = 990;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 3, 980);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 3, 990, 16);
                 stream.Clear();
                 // SeqId 2 is not yet received so it should stick around
-                stream.WriteInt((int) 11);
+                stream.WriteInt((int)11);
                 ReliableUtility.SetPacket(sendBufferPtr, 2, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 2)->SendTime = 1000;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 2, 1000);
 
                 ReliableUtility.ReleaseOrResumePackets(pipelineContext);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, packet 3 should be released (has been acked), 2 should stick around
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation(sendBufferPtr, 3)->SequenceId);
@@ -743,36 +757,38 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000
+            };
 
             // Sending seqId 3, last received ID 0 (1 is not yet acked, 2 was dropped)
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 5;
             sharedContext->SentPackets.Acked = 4;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFD;    // bit 0 = seqId 4 (1), bit 1 = seqId 3 (0)
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
                 // Add buffers in resend queue
                 // SeqId 4 is received and ready to be released
-                stream.WriteInt((int) 10);
+                stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 4, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 4)->SendTime = 980;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 4, 980);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 4, 990, 16);
                 stream.Clear();
-                stream.WriteInt((int) 11);
+                stream.WriteInt((int)11);
                 ReliableUtility.SetPacket(sendBufferPtr, 3, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 3)->SendTime = 1000;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 3, 1000);
 
                 ReliableUtility.ReleaseOrResumePackets(pipelineContext);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, packet 3 should be released (has been acked), 2 should stick around
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation(sendBufferPtr, 4)->SequenceId);
@@ -835,7 +851,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(910, timerData->SentTime);
             Assert.AreEqual(920, timerData->ReceiveTime);
 
-            var ep2SharedCtx = (ReliableUtility.SharedContext*) ep2SharedBuffer.GetUnsafePtr();
+            var ep2SharedCtx = (ReliableUtility.SharedContext*)ep2SharedBuffer.GetUnsafePtr();
             Debug.Log("LastRtt=" + ep2SharedCtx->RttInfo.LastRtt);
             Debug.Log("SmoothedRTT=" + ep2SharedCtx->RttInfo.SmoothedRtt);
             Debug.Log("ResendTimeout=" + ep2SharedCtx->RttInfo.ResendTimeout);
@@ -869,16 +885,18 @@ namespace Unity.Networking.Transport.Tests
                 (byte*)sendBuffer.GetUnsafePtr(), sendBuffer.Length, recvBufferPtr, recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = recvBufferPtr, internalProcessBufferLength = recvBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length};
+            {
+                internalProcessBuffer = recvBufferPtr, internalProcessBufferLength = recvBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length
+            };
 
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3; // what was last sent doesn't matter here
             sharedContext->SentPackets.Acked = 2;
             sharedContext->SentPackets.AckMask = 0xFFFFFFF7;    // bit 0,1,2 maps to seqId 2,1,0 all delivered, bit 3 is seqId 65535 which is not yet delivered
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 65534;    // latest in sequence delivered packet, one less than what unclogs the packet jam
 
             var reliablePipelineStage = new ReliableSequencedPipelineStage();
@@ -892,13 +910,13 @@ namespace Unity.Networking.Transport.Tests
             {
                 // Add buffers to receive queue, packets which should be resume received after packet jam is unclogged
                 stream.Clear();
-                stream.WriteInt((int) 100);
+                stream.WriteInt((int)100);
                 ReliableUtility.SetPacket(recvBufferPtr, 0, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 200);
+                stream.WriteInt((int)200);
                 ReliableUtility.SetPacket(recvBufferPtr, 1, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 300);
+                stream.WriteInt((int)300);
                 ReliableUtility.SetPacket(recvBufferPtr, 2, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 // Generate the packet which will be handled in receive
@@ -908,27 +926,27 @@ namespace Unity.Networking.Transport.Tests
                 // Process 65535, 0 should then be next in line on the resume field
                 var stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(0, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 0, after that 1 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(1, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 1, after that 2 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(2, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 2, and we are done
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
-                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
             }
             recvBuffer.Dispose();
             sendBuffer.Dispose();
@@ -952,19 +970,21 @@ namespace Unity.Networking.Transport.Tests
             var recvBufferPtr = (byte*)recvBuffer.GetUnsafePtr();
 
             ReliableUtility.InitializeContext((byte*)sharedBuffer.GetUnsafePtr(), sharedBuffer.Length,
-            (byte*)sendBuffer.GetUnsafePtr(), sendBuffer.Length, recvBufferPtr, recvBuffer.Length, parameters);
+                (byte*)sendBuffer.GetUnsafePtr(), sendBuffer.Length, recvBufferPtr, recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = recvBufferPtr, internalProcessBufferLength = recvBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length};
+            {
+                internalProcessBuffer = recvBufferPtr, internalProcessBufferLength = recvBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length
+            };
 
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 2; // what was last sent doesn't matter here
             sharedContext->SentPackets.Acked = 1;
             sharedContext->SentPackets.AckMask = 0xFFFFFFF7;    // bit 0,1,2 maps to seqId 1,0,65535 all delivered, bit 3 is seqId 65534 which is not yet delivered
             sharedContext->ReceivedPackets.Sequence = 1;
             sharedContext->ReceivedPackets.AckMask = 0xFFFFFFF7;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 65533;    // latest in sequence delivered packet, one less than what unclogs the packet jam
 
             var reliablePipelineStage = new ReliableSequencedPipelineStage();
@@ -977,13 +997,13 @@ namespace Unity.Networking.Transport.Tests
             {
                 // Add buffers to receive queue, packets which should be resume received after packet jam is unclogged
                 stream.Clear();
-                stream.WriteInt((int) 100);
+                stream.WriteInt((int)100);
                 ReliableUtility.SetPacket(recvBufferPtr, 65535, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 200);
+                stream.WriteInt((int)200);
                 ReliableUtility.SetPacket(recvBufferPtr, 0, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 300);
+                stream.WriteInt((int)300);
                 ReliableUtility.SetPacket(recvBufferPtr, 1, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 // Generate the packet which will be handled in receive
@@ -993,27 +1013,27 @@ namespace Unity.Networking.Transport.Tests
                 // Process 65534, 65535 should then be next in line on the resume field
                 var stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(65535, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 65535, after that 0 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(0, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 0, after that 1 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(1, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 1, and we are done
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
-                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
             }
             recvBuffer.Dispose();
             sendBuffer.Dispose();
@@ -1037,19 +1057,21 @@ namespace Unity.Networking.Transport.Tests
             var recvBufferPtr = (byte*)recvBuffer.GetUnsafePtr();
 
             ReliableUtility.InitializeContext((byte*)sharedBuffer.GetUnsafePtr(), sharedBuffer.Length,
-            (byte*)sendBuffer.GetUnsafePtr(), sendBuffer.Length, recvBufferPtr, recvBuffer.Length, parameters);
+                (byte*)sendBuffer.GetUnsafePtr(), sendBuffer.Length, recvBufferPtr, recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = recvBufferPtr, internalProcessBufferLength = recvBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length};
+            {
+                internalProcessBuffer = recvBufferPtr, internalProcessBufferLength = recvBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length
+            };
 
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 99;           // what was last sent doesn't matter here
             sharedContext->SentPackets.Acked = 97;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = 98;
             sharedContext->ReceivedPackets.AckMask = 0xFFFFFFF7;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 94;    // latest in sequence delivered packet, one less than what unclogs the packet jam
 
             var reliablePipelineStage = new ReliableSequencedPipelineStage();
@@ -1062,13 +1084,13 @@ namespace Unity.Networking.Transport.Tests
             {
                 // Add buffers to receive queue, packets which should be resume received after packet jam is unclogged
                 stream.Clear();
-                stream.WriteInt((int) 200);
+                stream.WriteInt((int)200);
                 ReliableUtility.SetPacket(recvBufferPtr, 96, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 300);
+                stream.WriteInt((int)300);
                 ReliableUtility.SetPacket(recvBufferPtr, 97, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 300);
+                stream.WriteInt((int)300);
                 ReliableUtility.SetPacket(recvBufferPtr, 98, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 InboundRecvBuffer packet = default;
@@ -1077,38 +1099,38 @@ namespace Unity.Networking.Transport.Tests
                 // Receive 99, it's out of order so should be queued for later (waiting for 95)
                 var stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
-                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
 
                 GeneratePacket(10000, 98, 0xFFFFFFFF, 95, ref sendBuffer, out packet);
 
                 // First 95 is received and then receive resume runs up to 99
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(96, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(97, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(98, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(99, receiveContext->Resume);
-                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, sharedContext->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
-                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest&NetworkPipelineStage.Requests.Resume);
+                Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
 
                 // Verify that the ReceivePackets state is correct, 99 should be latest received and ackmask 0xFFFFF
                 Assert.AreEqual(99, sharedContext->ReceivedPackets.Sequence);
@@ -1139,16 +1161,18 @@ namespace Unity.Networking.Transport.Tests
                 sendBufferPtr, sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = recvBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length};
+            {
+                internalProcessBuffer = sendBufferPtr, internalProcessBufferLength = recvBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length
+            };
 
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3;
             sharedContext->SentPackets.Acked = 2;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = 2;
             sharedContext->ReceivedPackets.AckMask = 0xFFFFFFFF;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 1;
 
             var reliablePipelineStage = new ReliableSequencedPipelineStage();
@@ -1162,18 +1186,18 @@ namespace Unity.Networking.Transport.Tests
             {
                 // Fill window capacity, next send should then clear everything
                 stream.Clear();
-                stream.WriteInt((int) 100);
+                stream.WriteInt((int)100);
                 ReliableUtility.SetPacket(sendBufferPtr, 0, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 200);
+                stream.WriteInt((int)200);
                 ReliableUtility.SetPacket(sendBufferPtr, 1, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 300);
+                stream.WriteInt((int)300);
                 ReliableUtility.SetPacket(sendBufferPtr, 2, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 // Set input buffer and send, this will be seqId 3
                 stream.Clear();
-                stream.WriteInt((int) 9000);
+                stream.WriteInt((int)9000);
                 var inboundBuffer = new InboundSendBuffer();
                 inboundBuffer.bufferWithHeaders = (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr();
                 inboundBuffer.bufferWithHeadersLength = stream.Length;
@@ -1220,20 +1244,22 @@ namespace Unity.Networking.Transport.Tests
                 (byte*)sendBuffer.GetUnsafePtr(), sendBuffer.Length, (byte*)recvBuffer.GetUnsafePtr(), recvBuffer.Length, parameters);
 
             var pipelineContext = new NetworkPipelineContext
-                {internalProcessBuffer = (byte*)sendBuffer.GetUnsafePtr(), internalProcessBufferLength = sendBuffer.Length,
-                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000};
+            {
+                internalProcessBuffer = (byte*)sendBuffer.GetUnsafePtr(), internalProcessBufferLength = sendBuffer.Length,
+                internalSharedProcessBuffer = (byte*)sharedBuffer.GetUnsafePtr(), internalSharedProcessBufferLength = sharedBuffer.Length, timestamp = 1000
+            };
 
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3;
             sharedContext->SentPackets.Acked = 2;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = 2;
             sharedContext->ReceivedPackets.AckMask = 0xFFFFFFFF;
-            var receiveContext = (ReliableUtility.Context*) recvBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 1;
 
             // Set last send time to something a long time ago so the ack state is sent in Send
-            var sendContext = (ReliableUtility.Context*) sendBuffer.GetUnsafePtr();
+            var sendContext = (ReliableUtility.Context*)sendBuffer.GetUnsafePtr();
             sendContext->LastSentTime = 500;
             sendContext->PreviousTimestamp = 980;    // 20 ms ago
 
@@ -1248,13 +1274,13 @@ namespace Unity.Networking.Transport.Tests
             {
                 // Fill window capacity, next send should then clear everything
                 stream.Clear();
-                stream.WriteInt((int) 100);
+                stream.WriteInt((int)100);
                 ReliableUtility.SetPacket((byte*)sendBuffer.GetUnsafePtr(), 0, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 200);
+                stream.WriteInt((int)200);
                 ReliableUtility.SetPacket((byte*)sendBuffer.GetUnsafePtr(), 1, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
                 stream.Clear();
-                stream.WriteInt((int) 300);
+                stream.WriteInt((int)300);
                 ReliableUtility.SetPacket((byte*)sendBuffer.GetUnsafePtr(), 2, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 var inboundBuffer = new InboundSendBuffer();
@@ -1277,7 +1303,7 @@ namespace Unity.Networking.Transport.Tests
         {
             DataStreamWriter inboundStream = new DataStreamWriter(4, Allocator.Temp);
 
-            inboundStream.WriteInt((int) payload);
+            inboundStream.WriteInt((int)payload);
             InboundSendBuffer data = default;
             data.bufferWithHeaders = (byte*)inboundStream.AsNativeArray().GetUnsafePtr();
             data.bufferWithHeadersLength = inboundStream.Length;
@@ -1291,7 +1317,7 @@ namespace Unity.Networking.Transport.Tests
             ReliableUtility.SetHeaderAndPacket((byte*)sendBuffer.GetUnsafePtr(), headerSeqId, header, data, 1000);
 
             // Extract raw packet from the send buffer so it can be passed directly to receive
-            var sendCtx = (ReliableUtility.Context*) sendBuffer.GetUnsafePtr();
+            var sendCtx = (ReliableUtility.Context*)sendBuffer.GetUnsafePtr();
             var index = headerSeqId % sendCtx->Capacity;
             var offset = sendCtx->DataPtrOffset + (index * sendCtx->DataStride);
             packet.buffer = (byte*)sendBuffer.GetUnsafeReadOnlyPtr() + offset;
@@ -1359,7 +1385,7 @@ namespace Unity.Networking.Transport.Tests
             // Send message to client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -1384,14 +1410,14 @@ namespace Unity.Networking.Transport.Tests
             var serverToClient = m_ServerDriver.Accept();
 
             m_ServerDriver.GetPipelineBuffers(serverPipe, m_ReliableStageId, serverToClient, out var serverReceiveBuffer, out var serverSendBuffer, out var serverSharedBuffer);
-            var sharedContext = (ReliableUtility.SharedContext*) serverSharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)serverSharedBuffer.GetUnsafePtr();
 
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, clientToServer, out var clientReceiveBuffer, out var clientSendBuffer, out var clientSharedBuffer);
 
             // First the server sends a packet to the client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -1419,7 +1445,7 @@ namespace Unity.Networking.Transport.Tests
             // Now client sends packet to the server, this should contain the ackedSeqId=0 for the servers initial packet
             if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
             {
-                strm.WriteInt((int) 9000);
+                strm.WriteInt((int)9000);
                 m_ClientDriver.EndSend(strm);
             }
             m_ClientDriver.ScheduleUpdate().Complete();
@@ -1461,7 +1487,7 @@ namespace Unity.Networking.Transport.Tests
                 // Send message to client
                 if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
                 {
-                    strm.WriteInt((int) i);
+                    strm.WriteInt((int)i);
                     m_ServerDriver.EndSend(strm);
                 }
                 m_ServerDriver.ScheduleUpdate().Complete();
@@ -1478,7 +1504,7 @@ namespace Unity.Networking.Transport.Tests
                 // Send back a message to server
                 if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
                 {
-                    strm.WriteInt((int) i*100);
+                    strm.WriteInt((int)i * 100);
                     m_ClientDriver.EndSend(strm);
                 }
                 m_ClientDriver.ScheduleUpdate().Complete();
@@ -1494,7 +1520,7 @@ namespace Unity.Networking.Transport.Tests
                 }
                 Assert.AreEqual(NetworkEvent.Type.Data, result);
                 Assert.AreEqual(4, readStrm.Length);
-                Assert.AreEqual(i*100, readStrm.ReadInt());
+                Assert.AreEqual(i * 100, readStrm.ReadInt());
             }
         }
 
@@ -1513,13 +1539,13 @@ namespace Unity.Networking.Transport.Tests
             // Set sequence ID to a value just below wrapping over 0, also need to set last received seqId value to one
             // less or the first packet will be considered out of order and stored for later use
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, clientToServer, out var receiveBuffer, out var sendBuffer, out var sharedBuffer);
-            var sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = ushort.MaxValue - 1;
             sharedContext->SentPackets.Acked = ushort.MaxValue - 2;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            var receiveContext = (ReliableUtility.Context*) receiveBuffer.GetUnsafePtr();
+            var receiveContext = (ReliableUtility.Context*)receiveBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             // Handle incoming connection from client
@@ -1532,13 +1558,13 @@ namespace Unity.Networking.Transport.Tests
             ReliableUtility.SetMinimumResendTime(4, m_ServerDriver, serverPipe, serverToClient);
 
             m_ServerDriver.GetPipelineBuffers(serverPipe, m_ReliableStageId, serverToClient, out receiveBuffer, out sendBuffer, out sharedBuffer);
-            sharedContext = (ReliableUtility.SharedContext*) sharedBuffer.GetUnsafePtr();
+            sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = ushort.MaxValue - 1;
             sharedContext->SentPackets.Acked = ushort.MaxValue - 2;
             sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
             sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
-            receiveContext = (ReliableUtility.Context*) receiveBuffer.GetUnsafePtr();
+            receiveContext = (ReliableUtility.Context*)receiveBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
             // Receive incoming message from server
@@ -1588,11 +1614,11 @@ namespace Unity.Networking.Transport.Tests
             var lastServerReceivedNumber = 0;
             int frame = 0;
             m_ServerDriver.GetPipelineBuffers(serverPipe, m_ReliableStageId, serverToClient, out var tmpReceiveBuffer, out var tmpSendBuffer, out var serverReliableBuffer);
-            var serverReliableCtx = (ReliableUtility.SharedContext*) serverReliableBuffer.GetUnsafePtr();
+            var serverReliableCtx = (ReliableUtility.SharedContext*)serverReliableBuffer.GetUnsafePtr();
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, clientToServer, out tmpReceiveBuffer, out tmpSendBuffer, out var clientReliableBuffer);
-            var clientReliableCtx = (ReliableUtility.SharedContext*) clientReliableBuffer.GetUnsafePtr();
+            var clientReliableCtx = (ReliableUtility.SharedContext*)clientReliableBuffer.GetUnsafePtr();
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_SimulatorStageId, clientToServer, out tmpReceiveBuffer, out tmpSendBuffer, out var clientSimulatorBuffer);
-            var clientSimulatorCtx = (SimulatorUtility.Context*) clientSimulatorBuffer.GetUnsafePtr();
+            var clientSimulatorCtx = (SimulatorUtility.Context*)clientSimulatorBuffer.GetUnsafePtr();
             // Client is the one dropping packets, so wait for that count to reach total, server receive count will be higher
             while (lastClientReceivedNumber < totalMessageCount)
             {
@@ -1601,20 +1627,20 @@ namespace Unity.Networking.Transport.Tests
 
                 if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
                 {
-                    strm.WriteInt((int) sendMessageCount);
+                    strm.WriteInt((int)sendMessageCount);
                     m_ServerDriver.EndSend(strm);
                 }
 
                 if (serverReliableCtx->errorCode != 0)
                 {
                     UnityEngine.Debug.Log("Reliability stats\nPacketsDropped: " + serverReliableCtx->stats.PacketsDropped + "\n" +
-                                          "PacketsDuplicated: " + serverReliableCtx->stats.PacketsDuplicated + "\n" +
-                                          "PacketsOutOfOrder: " + serverReliableCtx->stats.PacketsOutOfOrder + "\n" +
-                                          "PacketsReceived: " + serverReliableCtx->stats.PacketsReceived + "\n" +
-                                          "PacketsResent: " + serverReliableCtx->stats.PacketsResent + "\n" +
-                                          "PacketsSent: " + serverReliableCtx->stats.PacketsSent + "\n" +
-                                          "PacketsStale: " + serverReliableCtx->stats.PacketsStale + "\n");
-                    Assert.AreEqual((ReliableUtility.ErrorCodes)0, serverReliableCtx->errorCode);
+                        "PacketsDuplicated: " + serverReliableCtx->stats.PacketsDuplicated + "\n" +
+                        "PacketsOutOfOrder: " + serverReliableCtx->stats.PacketsOutOfOrder + "\n" +
+                        "PacketsReceived: " + serverReliableCtx->stats.PacketsReceived + "\n" +
+                        "PacketsResent: " + serverReliableCtx->stats.PacketsResent + "\n" +
+                        "PacketsSent: " + serverReliableCtx->stats.PacketsSent + "\n" +
+                        "PacketsStale: " + serverReliableCtx->stats.PacketsStale + "\n");
+                    Assert.AreEqual((ReliableUtility.ErrorCodes) 0, serverReliableCtx->errorCode);
                 }
                 m_ServerDriver.ScheduleUpdate().Complete();
 
@@ -1624,7 +1650,7 @@ namespace Unity.Networking.Transport.Tests
                 m_ClientDriver.ScheduleUpdate().Complete();
                 result = clientToServer.PopEvent(m_ClientDriver, out readStrm);
                 Assert.AreEqual(m_ClientDriver.ReceiveErrorCode, 0);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, clientReliableCtx->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, clientReliableCtx->errorCode);
                 while (result != NetworkEvent.Type.Empty)
                 {
                     Assert.AreEqual(4, readStrm.Length);
@@ -1634,23 +1660,23 @@ namespace Unity.Networking.Transport.Tests
                     lastClientReceivedNumber = read;
                     // Pop all events which might be pending (in case of dropped packet it should contain all the other packets already up to latest)
                     result = clientToServer.PopEvent(m_ClientDriver, out readStrm);
-                    Assert.AreEqual((ReliableUtility.ErrorCodes)0, clientReliableCtx->errorCode);
+                    Assert.AreEqual((ReliableUtility.ErrorCodes) 0, clientReliableCtx->errorCode);
                 }
 
                 // Send back a message to server
                 if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
                 {
-                    strm.WriteInt((int) sendMessageCount * 100);
+                    strm.WriteInt((int)sendMessageCount * 100);
                     m_ClientDriver.EndSend(strm);
                 }
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, clientReliableCtx->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, clientReliableCtx->errorCode);
                 m_ClientDriver.ScheduleUpdate().Complete();
 
                 // Receive incoming message from client
                 m_ServerDriver.ScheduleUpdate().Complete();
                 result = serverToClient.PopEvent(m_ServerDriver, out readStrm);
                 Assert.AreEqual(m_ServerDriver.ReceiveErrorCode, 0);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, serverReliableCtx->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, serverReliableCtx->errorCode);
                 while (result != NetworkEvent.Type.Empty)
                 {
                     Assert.AreEqual(4, readStrm.Length);
@@ -1658,7 +1684,7 @@ namespace Unity.Networking.Transport.Tests
                     Assert.AreEqual(lastServerReceivedNumber + 100, read);
                     lastServerReceivedNumber = read;
                     result = clientToServer.PopEvent(m_ClientDriver, out readStrm);
-                    Assert.AreEqual((ReliableUtility.ErrorCodes)0, serverReliableCtx->errorCode);
+                    Assert.AreEqual((ReliableUtility.ErrorCodes) 0, serverReliableCtx->errorCode);
                 }
 
                 //Assert.AreEqual(0, serverReliableCtx->stats.PacketsDuplicated);
@@ -1677,22 +1703,22 @@ namespace Unity.Networking.Transport.Tests
             //Assert.AreEqual(stats.PacketsDuplicated, 0);
             Assert.AreEqual(stats.PacketsStale, 0);
             UnityEngine.Debug.Log("Server Reliability stats\nPacketsDropped: " + serverReliableCtx->stats.PacketsDropped + "\n" +
-                                  "PacketsDuplicated: " + serverReliableCtx->stats.PacketsDuplicated + "\n" +
-                                  "PacketsOutOfOrder: " + serverReliableCtx->stats.PacketsOutOfOrder + "\n" +
-                                  "PacketsReceived: " + serverReliableCtx->stats.PacketsReceived + "\n" +
-                                  "PacketsResent: " + serverReliableCtx->stats.PacketsResent + "\n" +
-                                  "PacketsSent: " + serverReliableCtx->stats.PacketsSent + "\n" +
-                                  "PacketsStale: " + serverReliableCtx->stats.PacketsStale + "\n");
+                "PacketsDuplicated: " + serverReliableCtx->stats.PacketsDuplicated + "\n" +
+                "PacketsOutOfOrder: " + serverReliableCtx->stats.PacketsOutOfOrder + "\n" +
+                "PacketsReceived: " + serverReliableCtx->stats.PacketsReceived + "\n" +
+                "PacketsResent: " + serverReliableCtx->stats.PacketsResent + "\n" +
+                "PacketsSent: " + serverReliableCtx->stats.PacketsSent + "\n" +
+                "PacketsStale: " + serverReliableCtx->stats.PacketsStale + "\n");
             UnityEngine.Debug.Log("Client Reliability stats\nPacketsDropped: " + clientReliableCtx->stats.PacketsDropped + "\n" +
-                                  "PacketsDuplicated: " + clientReliableCtx->stats.PacketsDuplicated + "\n" +
-                                  "PacketsOutOfOrder: " + clientReliableCtx->stats.PacketsOutOfOrder + "\n" +
-                                  "PacketsReceived: " + clientReliableCtx->stats.PacketsReceived + "\n" +
-                                  "PacketsResent: " + clientReliableCtx->stats.PacketsResent + "\n" +
-                                  "PacketsSent: " + clientReliableCtx->stats.PacketsSent + "\n" +
-                                  "PacketsStale: " + clientReliableCtx->stats.PacketsStale + "\n");
+                "PacketsDuplicated: " + clientReliableCtx->stats.PacketsDuplicated + "\n" +
+                "PacketsOutOfOrder: " + clientReliableCtx->stats.PacketsOutOfOrder + "\n" +
+                "PacketsReceived: " + clientReliableCtx->stats.PacketsReceived + "\n" +
+                "PacketsResent: " + clientReliableCtx->stats.PacketsResent + "\n" +
+                "PacketsSent: " + clientReliableCtx->stats.PacketsSent + "\n" +
+                "PacketsStale: " + clientReliableCtx->stats.PacketsStale + "\n");
             UnityEngine.Debug.Log("Client Simulator stats\n" +
-                                  "PacketDropCount: " + clientSimulatorCtx->PacketDropCount + "\n" +
-                                  "PacketCount: " + clientSimulatorCtx->PacketCount);
+                "PacketDropCount: " + clientSimulatorCtx->PacketDropCount + "\n" +
+                "PacketCount: " + clientSimulatorCtx->PacketCount);
         }
 
         [Test]
@@ -1715,7 +1741,7 @@ namespace Unity.Networking.Transport.Tests
             // Send message to client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 42);
+                strm.WriteInt((int)42);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -1759,9 +1785,9 @@ namespace Unity.Networking.Transport.Tests
             int frame = 0;
 
             m_ServerDriver.GetPipelineBuffers(serverPipe, m_ReliableStageId, serverToClient, out var tmpReceiveBuffer, out var tmpSendBuffer, out var serverReliableBuffer);
-            var serverReliableCtx = (ReliableUtility.SharedContext*) serverReliableBuffer.GetUnsafePtr();
+            var serverReliableCtx = (ReliableUtility.SharedContext*)serverReliableBuffer.GetUnsafePtr();
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, clientToServer, out tmpReceiveBuffer, out tmpSendBuffer, out var clientReliableBuffer);
-            var clientReliableCtx = (ReliableUtility.SharedContext*) clientReliableBuffer.GetUnsafePtr();
+            var clientReliableCtx = (ReliableUtility.SharedContext*)clientReliableBuffer.GetUnsafePtr();
 
             // Finish when client has received all messages from server without errors
             while (lastClientReceivedNumber < totalMessageCount)
@@ -1770,10 +1796,10 @@ namespace Unity.Networking.Transport.Tests
                 sendMessageCount++;
                 if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
                 {
-                    strm.WriteInt((int) sendMessageCount);
+                    strm.WriteInt((int)sendMessageCount);
                     m_ServerDriver.EndSend(strm);
                 }
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, serverReliableCtx->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, serverReliableCtx->errorCode);
                 m_ServerDriver.ScheduleUpdate().Complete();
 
                 NetworkEvent.Type result;
@@ -1781,7 +1807,7 @@ namespace Unity.Networking.Transport.Tests
                 m_ClientDriver.ScheduleUpdate().Complete();
                 result = clientToServer.PopEvent(m_ClientDriver, out readStrm);
                 Assert.AreEqual(m_ClientDriver.ReceiveErrorCode, 0);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, clientReliableCtx->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, clientReliableCtx->errorCode);
                 while (result != NetworkEvent.Type.Empty)
                 {
                     Assert.AreEqual(4, readStrm.Length);
@@ -1791,7 +1817,7 @@ namespace Unity.Networking.Transport.Tests
                     lastClientReceivedNumber = read;
                     // Pop all events which might be pending (in case of dropped packet it should contain all the other packets already up to latest)
                     result = clientToServer.PopEvent(m_ClientDriver, out readStrm);
-                    Assert.AreEqual((ReliableUtility.ErrorCodes)0, clientReliableCtx->errorCode);
+                    Assert.AreEqual((ReliableUtility.ErrorCodes) 0, clientReliableCtx->errorCode);
                 }
 
                 // no-op
@@ -1801,7 +1827,7 @@ namespace Unity.Networking.Transport.Tests
                 m_ServerDriver.ScheduleUpdate().Complete();
                 Assert.AreEqual(serverToClient.PopEvent(m_ServerDriver, out readStrm), NetworkEvent.Type.Empty);
                 Assert.AreEqual(m_ServerDriver.ReceiveErrorCode, 0);
-                Assert.AreEqual((ReliableUtility.ErrorCodes)0, serverReliableCtx->errorCode);
+                Assert.AreEqual((ReliableUtility.ErrorCodes) 0, serverReliableCtx->errorCode);
 
                 if (frame > 100)
                     Assert.Fail("Test timeout, didn't receive all messages (" + totalMessageCount + ")");
@@ -1828,14 +1854,14 @@ namespace Unity.Networking.Transport.Tests
             };
             m_ServerDriver =
                 TestNetworkDriver.Create(new NetworkDataStreamParameter
-                        {size = 0}, timeoutParam,
+                    {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32},
                     new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropPercentage = 0});
             m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             m_ServerDriver.Listen();
             m_ClientDriver =
                 TestNetworkDriver.Create(new NetworkDataStreamParameter
-                        {size = 0}, timeoutParam,
+                    {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32},
                     new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropPercentage = 0});
 
@@ -1854,7 +1880,7 @@ namespace Unity.Networking.Transport.Tests
 
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 100);
+                strm.WriteInt((int)100);
                 Console.WriteLine("Server send");
                 m_ServerDriver.EndSend(strm);
             }
@@ -1865,7 +1891,7 @@ namespace Unity.Networking.Transport.Tests
 
             if (m_ClientDriver.BeginSend(clientPipe, clientToServer, out strm) == 0)
             {
-                strm.WriteInt((int) 200);
+                strm.WriteInt((int)200);
                 Console.WriteLine("Client send");
                 m_ClientDriver.EndSend(strm);
             }
@@ -1876,7 +1902,7 @@ namespace Unity.Networking.Transport.Tests
 
             // Check how many packets have been sent so far
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_SimulatorStageId, clientToServer, out var tmpReceiveBuffer, out var tmpSendBuffer, out var simulatorBuffer);
-            var simulatorCtx = (SimulatorUtility.Context*) simulatorBuffer.GetUnsafePtr();
+            var simulatorCtx = (SimulatorUtility.Context*)simulatorBuffer.GetUnsafePtr();
 
             // Do a loop and make sure nothing is being sent between client and server - 100 frames at 16ms = 1600ms
             for (int iter = 0; iter < 100; ++iter)
@@ -1893,7 +1919,7 @@ namespace Unity.Networking.Transport.Tests
 
             // Check server side as well, server only has one packet as the client included it's ack in the pong packet it sent
             m_ServerDriver.GetPipelineBuffers(serverPipe, m_SimulatorStageId, serverToClient, out tmpReceiveBuffer, out tmpSendBuffer, out simulatorBuffer);
-            simulatorCtx = (SimulatorUtility.Context*) simulatorBuffer.GetUnsafePtr();
+            simulatorCtx = (SimulatorUtility.Context*)simulatorBuffer.GetUnsafePtr();
             Assert.AreEqual(1, simulatorCtx->PacketCount);
         }
 
@@ -1911,7 +1937,7 @@ namespace Unity.Networking.Transport.Tests
             };
             m_ClientDriver =
                 TestNetworkDriver.Create(new NetworkDataStreamParameter
-                        {size = 0}, timeoutParam,
+                    {size = 0}, timeoutParam,
                     new ReliableUtility.Parameters { WindowSize = 32},
                     new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropInterval = 10});
 
@@ -1929,7 +1955,7 @@ namespace Unity.Networking.Transport.Tests
             // Server sends one packet, this will be dropped, client has empty event
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
             {
-                strm.WriteInt((int) 100);
+                strm.WriteInt((int)100);
                 m_ServerDriver.EndSend(strm);
             }
             m_ServerDriver.ScheduleUpdate().Complete();
@@ -1951,7 +1977,7 @@ namespace Unity.Networking.Transport.Tests
 
             // Verify exactly one packet has been dropped
             m_ClientDriver.GetPipelineBuffers(clientPipe, m_SimulatorStageId, clientToServer, out var tmpReceiveBuffer, out var tmpSendBuffer, out var simulatorBuffer);
-            var simulatorCtx = (SimulatorUtility.Context*) simulatorBuffer.GetUnsafePtr();
+            var simulatorCtx = (SimulatorUtility.Context*)simulatorBuffer.GetUnsafePtr();
             Assert.AreEqual(simulatorCtx->PacketDropCount, 1);
         }
 
@@ -1994,7 +2020,7 @@ namespace Unity.Networking.Transport.Tests
                 int sendStatus = -1;
                 if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
                 {
-                    strm.WriteInt((int) frame);
+                    strm.WriteInt((int)frame);
                     sendStatus = m_ServerDriver.EndSend(strm);
                 }
                 if (sendStatus != 4)
@@ -2016,7 +2042,7 @@ namespace Unity.Networking.Transport.Tests
                             nextRecv += numFailed;
                         var recv = readStrm.ReadInt();
                         Assert.AreEqual(nextRecv, recv);
-                        nextRecv = recv+1;
+                        nextRecv = recv + 1;
                     }
                     else
                         gotData = false;

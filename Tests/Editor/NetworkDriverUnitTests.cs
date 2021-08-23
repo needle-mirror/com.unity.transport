@@ -8,6 +8,7 @@ using Unity.Networking.Transport.Error;
 using UnityEngine;
 using Unity.Networking.Transport.Protocols;
 using Unity.Networking.Transport.Utilities;
+using UnityEngine.TestTools;
 using Random = UnityEngine.Random;
 
 namespace Unity.Networking.Transport.Tests.Utilities
@@ -103,7 +104,7 @@ namespace Unity.Networking.Transport.Tests
             var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
             Assert.True(reader.IsCreated);
             reader.ReadBytes(header.Data, sizeof(UdpCHeader));
-            Assert.True(header.Type == (int) UdpCProtocol.ConnectionRequest);
+            Assert.AreEqual((int)UdpCProtocol.ConnectionRequest, header.Type);
 
             Assert.True(remote == fromEndPoint);
 
@@ -132,7 +133,7 @@ namespace Unity.Networking.Transport.Tests
             var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
             Assert.True(reader.IsCreated);
             reader.ReadBytes(header.Data, sizeof(UdpCHeader));
-            Assert.True(header.Type == (int) UdpCProtocol.Disconnect);
+            Assert.True(header.Type == (int)UdpCProtocol.Disconnect);
 
             Assert.True(remote == fromEndPoint);
         }
@@ -140,16 +141,15 @@ namespace Unity.Networking.Transport.Tests
         public unsafe void Assert_GotDataRequest(NetworkEndPoint from, byte[] dataToCompare)
         {
             NetworkInterfaceEndPoint remote = default;
-            var headerData = (UdpCHeader*)m_LocalData.GetUnsafePtr();
             int headerLen = sizeof(UdpCHeader);
-            void* payloadData = (byte*)m_LocalData.GetUnsafePtr() + headerLen;
+            void* packetData = (byte*)m_LocalData.GetUnsafePtr();
             int payloadLen = NetworkParameterConstants.MTU;
             int dataLen = 0;
             Assert.True(EndPoint.IsLoopback || EndPoint.IsAny);
             Assert.True(from.IsLoopback || from.IsAny);
             var localEndPoint = IPCManager.Instance.CreateEndPoint(EndPoint.Port);
             var fromEndPoint = IPCManager.Instance.CreateEndPoint(from.Port);
-            dataLen = IPCManager.Instance.ReceiveMessageEx(localEndPoint, ref *headerData, payloadData, payloadLen, ref remote);
+            dataLen = IPCManager.Instance.ReceiveMessageEx(localEndPoint, packetData, payloadLen, ref remote);
 
             payloadLen = dataLen - headerLen;
             if (payloadLen <= 0)
@@ -161,7 +161,7 @@ namespace Unity.Networking.Transport.Tests
             var reader = new DataStreamReader(m_LocalData.GetSubArray(0, headerLen));
             Assert.True(reader.IsCreated);
             reader.ReadBytes(header.Data, headerLen);
-            Assert.True(header.Type == (int) UdpCProtocol.Data);
+            Assert.True(header.Type == (int)UdpCProtocol.Data);
 
             Assert.True(remote == fromEndPoint);
 
@@ -247,9 +247,9 @@ namespace Unity.Networking.Transport.Tests
         public void ConnectToARemoteEndPoint()
         {
             using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
+            using (var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
             {
                 host.Host();
-                var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
 
                 NetworkConnection connectionId = driver.Connect(host.EndPoint);
                 Assert.True(connectionId != default(NetworkConnection));
@@ -257,8 +257,16 @@ namespace Unity.Networking.Transport.Tests
 
                 var local = driver.LocalEndPoint();
                 host.Assert_GotConnectionRequest(local);
+            }
+        }
 
-                driver.Dispose();
+        [Test]
+        public void GetNotValidConnectionState()
+        {
+            using (var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            {
+                Assert.AreEqual(NetworkConnection.State.Disconnected, driver.GetConnectionState(new NetworkConnection() {m_NetworkId = Int16.MaxValue}));
+                Assert.AreEqual(NetworkConnection.State.Disconnected, driver.GetConnectionState(new NetworkConnection() {m_NetworkId = -1}));
             }
         }
 
@@ -313,9 +321,9 @@ namespace Unity.Networking.Transport.Tests
         public void DisconnectFromARemoteEndPoint()
         {
             using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
+            using (var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
             {
                 host.Host();
-                var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
 
                 // Need to be connected in order to be able to send a disconnect packet.
                 NetworkConnection connectionId = driver.Connect(host.EndPoint);
@@ -334,8 +342,6 @@ namespace Unity.Networking.Transport.Tests
                 driver.ScheduleUpdate().Complete();
 
                 host.Assert_GotDisconnectionRequest(local);
-
-                driver.Dispose();
             }
         }
 
@@ -363,7 +369,7 @@ namespace Unity.Networking.Transport.Tests
                     if (host.m_LocalDriver.BeginSend(NetworkPipeline.Null, host.ClientConnections[0], out var stream) == 0)
                     {
                         for (int i = 0; i < 100; i++)
-                            stream.WriteByte((byte) i);
+                            stream.WriteByte((byte)i);
 
                         host.m_LocalDriver.EndSend(stream);
                     }
@@ -536,11 +542,100 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        public void DiscardEventsForNotAcceptedConnections()
+        {
+            using (var host = new LocalDriverHelper(default))
+            using (var client0 = new LocalDriverHelper(default))
+            {
+                host.Host();
+                client0.Connect(host.EndPoint);
+
+                NetworkConnection clientsideConnection;
+                NetworkConnection serversideNetworkConnection;
+
+                host.Assert_PopEvent(out serversideNetworkConnection, NetworkEvent.Type.Empty);
+                Assert.AreEqual(default(NetworkConnection), serversideNetworkConnection);
+
+                host.Update();
+                client0.Update();
+                client0.Assert_PopEvent(out clientsideConnection, NetworkEvent.Type.Connect);
+                Assert.AreEqual(client0.Connection, clientsideConnection);
+                Assert.AreEqual(true, clientsideConnection.IsCreated);
+                Assert.AreEqual(NetworkConnection.State.Connected, clientsideConnection.GetState(client0.m_LocalDriver));
+
+                //Client has a connection from its perspective, host has sent back Connection Accept packet, but user-level code on host hasn't technically Accept()ed it yet
+                byte[] testBytesDiscarded = Encoding.ASCII.GetBytes("this DataRequest event should be dropped");
+                if (client0.m_LocalDriver.BeginSend(NetworkPipeline.Null, clientsideConnection, out var writer) == 0)
+                {
+                    writer.WriteBytes(new NativeArray<byte>(testBytesDiscarded, Allocator.Temp));
+                    client0.m_LocalDriver.EndSend(writer);
+                }
+
+                client0.Update();
+                host.Update();
+
+                //Host hasn't Accepted connection yet, PopEvent should discard ALL events from non-accepted connections
+                //in this scenario, this yields an empty event
+
+                //Temporarily making a handle that'd be identical to what the first call to Accept() WOULD yield
+                var fakeFirstNetworkConnectionToBeAccepted = new NetworkConnection
+                {
+                    m_NetworkId = 0,
+                    m_NetworkVersion = 1
+                };
+
+                //Internal serverside queue has the 1 Data event sitting in its queue
+                Assert.AreEqual(1, host.m_LocalDriver.GetEventQueueSizeForConnection(fakeFirstNetworkConnectionToBeAccepted));
+                Assert.AreEqual(0, host.m_LocalDriver.GetEventQueueSizeForConnection(default(NetworkConnection)));
+
+                //PopEvent discards that and moves onto the next item; in this case, it was the only item, so it's empty
+                host.Assert_PopEvent(out serversideNetworkConnection, NetworkEvent.Type.Empty);
+
+                //Internal queue is now size=0
+                Assert.AreEqual(0, host.m_LocalDriver.GetEventQueueSizeForConnection(fakeFirstNetworkConnectionToBeAccepted));
+                Assert.AreEqual(0, host.m_LocalDriver.GetEventQueueSizeForConnection(default(NetworkConnection)));
+
+                //The actual NetworkConnection handle returned by PopEvent is still the default invalid handle
+                Assert.AreEqual(default(NetworkConnection), serversideNetworkConnection);
+
+                //Write more data
+                byte[] testBytes = Encoding.ASCII.GetBytes("this DataRequest event should be processed");
+                if (client0.m_LocalDriver.BeginSend(NetworkPipeline.Null, clientsideConnection, out writer) == 0)
+                {
+                    writer.WriteBytes(new NativeArray<byte>(testBytes, Allocator.Temp));
+                    client0.m_LocalDriver.EndSend(writer);
+                }
+                client0.Update();
+
+                //Finally have the host accept
+                //Verify our earlier fake networkConnection would be equivalent to what the PopEvent method returns
+                Assert.AreEqual(fakeFirstNetworkConnectionToBeAccepted, host.Accept());
+                host.Update();
+
+                Assert.AreEqual(1, host.m_LocalDriver.GetEventQueueSizeForConnection(fakeFirstNetworkConnectionToBeAccepted));
+                Assert.AreEqual(0, host.m_LocalDriver.GetEventQueueSizeForConnection(default(NetworkConnection)));
+
+                //Host should see the second data request now, the non-discarded one that was added prior to the Accept() call
+                //This illustrates that discarding Data events on non-Accepted connections happens at PopEvent time, not at push time
+                host.Assert_PopEvent(out serversideNetworkConnection, NetworkEvent.Type.Data);
+
+                Assert.AreEqual(0, host.m_LocalDriver.GetEventQueueSizeForConnection(fakeFirstNetworkConnectionToBeAccepted));
+                Assert.AreEqual(0, host.m_LocalDriver.GetEventQueueSizeForConnection(serversideNetworkConnection));
+                Assert.AreEqual(0, host.m_LocalDriver.GetEventQueueSizeForConnection(default(NetworkConnection)));
+
+                //Verify our earlier fake networkConnection was equivalent to what the PopEvent method returns
+                Assert.AreEqual(fakeFirstNetworkConnectionToBeAccepted, serversideNetworkConnection);
+            }
+        }
+
+        [Test]
         public void FillInternalBitStreamBuffer()
         {
             const int k_InternalBufferSize = 1000;
             const int k_PacketCount = 21; // Exactly enough to fill the receive buffer + 1 too much
             const int k_PacketSize = 50;
+            const int k_PacketHeaderSize = 4; // The header also goes to the buffer
+            const int k_PayloadSize = k_PacketSize - k_PacketHeaderSize;
 
             using (var host = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = k_InternalBufferSize}))
             using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
@@ -567,7 +662,7 @@ namespace Unity.Networking.Transport.Tests
                 for (int i = 0; i < k_PacketCount; ++i)
                 {
                     // Scramble each packet contents so you can't match reading the same data twice as success
-                    dataBlob.Add(i, Encoding.ASCII.GetBytes(Utilities.Random.String(k_PacketSize)));
+                    dataBlob.Add(i, Encoding.ASCII.GetBytes(Utilities.Random.String(k_PayloadSize)));
                 }
 
                 for (int i = 0; i < k_PacketCount; ++i)
@@ -595,10 +690,10 @@ namespace Unity.Networking.Transport.Tests
                         retval = host.PopEvent(out poppedId, out reader);
                     }
 
-                    Assert.AreEqual(retval, NetworkEvent.Type.Data);
-                    Assert.AreEqual(k_PacketSize, reader.Length);
+                    Assert.AreEqual(NetworkEvent.Type.Data, retval);
+                    Assert.AreEqual(reader.Length, k_PayloadSize);
 
-                    for (int j = 0; j < k_PacketSize; ++j)
+                    for (int j = 0; j < k_PayloadSize; ++j)
                     {
                         Assert.AreEqual(dataBlob[i][j], reader.ReadByte());
                     }
@@ -606,97 +701,33 @@ namespace Unity.Networking.Transport.Tests
             }
         }
 
-        [Test]
-        public void SendAndReceiveMessage_RealNetwork()
-        {
-            using (var serverDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
-            using (var clientDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
-            {
-                DataStreamReader stream;
-
-                var serverEndpoint = NetworkEndPoint.Parse("127.0.0.1", (ushort)Random.Range(2000, 65000));
-                serverDriver.Bind(serverEndpoint);
-                serverDriver.Listen();
-
-                var clientToServerId = clientDriver.Connect(serverEndpoint);
-                clientDriver.ScheduleFlushSend(default).Complete();
-
-                NetworkConnection serverToClientId = default(NetworkConnection);
-                // Retry a few times since the network might need some time to process
-                for (int i = 0; i < 10 && serverToClientId == default(NetworkConnection); ++i)
-                {
-                    serverDriver.ScheduleUpdate().Complete();
-
-                    serverToClientId = serverDriver.Accept();
-                }
-
-                Assert.That(serverToClientId != default(NetworkConnection));
-
-                clientDriver.ScheduleUpdate().Complete();
-
-                var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
-                Assert.That(eventId == NetworkEvent.Type.Connect, $"Expected Connect but got {eventId} using {backend}");
-
-                int testInt = 100;
-                float testFloat = 555.5f;
-                byte[] testByteArray = Encoding.ASCII.GetBytes("Some bytes blablabla 1111111111111111111");
-                var sentBytes = 0;
-                if (clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId, out var clientSendData) == 0)
-                {
-                    clientSendData.WriteInt(testInt);
-                    clientSendData.WriteFloat(testFloat);
-                    clientSendData.WriteInt(testByteArray.Length);
-                    clientSendData.WriteBytes(new NativeArray<byte>(testByteArray, Allocator.Temp));
-                    sentBytes = clientDriver.EndSend(clientSendData);
-                }
-
-                Assert.AreEqual(clientSendData.Length, sentBytes);
-
-                clientDriver.ScheduleUpdate().Complete();
-                serverDriver.ScheduleUpdate().Complete();
-
-                DataStreamReader serverReceiveStream;
-                eventId = serverDriver.PopEventForConnection(serverToClientId, out serverReceiveStream);
-
-                Assert.True(eventId == NetworkEvent.Type.Data);
-                var receivedInt = serverReceiveStream.ReadInt();
-                var receivedFloat = serverReceiveStream.ReadFloat();
-                var byteArrayLength = serverReceiveStream.ReadInt();
-                var receivedBytes = new NativeArray<byte>(byteArrayLength, Allocator.Temp);
-                serverReceiveStream.ReadBytes(receivedBytes);
-
-                Assert.True(testInt == receivedInt);
-                Assert.That(Mathf.Approximately(testFloat, receivedFloat));
-                Assert.AreEqual(testByteArray, receivedBytes);
-            }
-        }
-
-        [Test]
-        public void SendAndReceiveMessage()
+        static void SendAndReceiveMessage(NetworkDriver serverDriver, NetworkDriver clientDriver)
         {
             DataStreamReader stream;
 
-            var serverDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
-            var serverEndpoint = NetworkEndPoint.LoopbackIpv4.WithPort(1);
+            var serverEndpoint = NetworkEndPoint.Parse("127.0.0.1", (ushort)Random.Range(2000, 65000));
             serverDriver.Bind(serverEndpoint);
-
             serverDriver.Listen();
 
-            var clientDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
-            clientDriver.Bind(NetworkEndPoint.LoopbackIpv4);
-
             var clientToServerId = clientDriver.Connect(serverEndpoint);
-            clientDriver.ScheduleUpdate().Complete();
+            clientDriver.ScheduleFlushSend(default).Complete();
 
-            serverDriver.ScheduleUpdate().Complete();
+            NetworkConnection serverToClientId = default(NetworkConnection);
+            // Retry a few times since the network might need some time to process
+            for (int i = 0; i < 10 && serverToClientId == default(NetworkConnection); ++i)
+            {
+                clientDriver.ScheduleUpdate().Complete();
+                serverDriver.ScheduleUpdate().Complete();
 
-            NetworkConnection serverToClientId = serverDriver.Accept();
+                serverToClientId = serverDriver.Accept();
+            }
+
             Assert.That(serverToClientId != default(NetworkConnection));
 
             clientDriver.ScheduleUpdate().Complete();
 
             var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
-            Assert.That(eventId == NetworkEvent.Type.Connect, $"expected Connect got {eventId} using {backend}");
+            Assert.That(eventId == NetworkEvent.Type.Connect, $"Expected Connect but got {eventId} using {backend}");
 
             int testInt = 100;
             float testFloat = 555.5f;
@@ -729,9 +760,26 @@ namespace Unity.Networking.Transport.Tests
             Assert.True(testInt == receivedInt);
             Assert.That(Mathf.Approximately(testFloat, receivedFloat));
             Assert.AreEqual(testByteArray, receivedBytes);
+        }
 
-            clientDriver.Dispose();
-            serverDriver.Dispose();
+        [Test]
+        public void SendAndReceiveMessage_RealNetwork()
+        {
+            using (var serverDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var clientDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            {
+                SendAndReceiveMessage(serverDriver, clientDriver);
+            }
+        }
+
+        [Test]
+        public void SendAndReceiveMessage()
+        {
+            using (var serverDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
+            using (var clientDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
+            {
+                SendAndReceiveMessage(serverDriver, clientDriver);
+            }
         }
     }
 }

@@ -110,7 +110,7 @@ namespace Unity.Networking.Transport.Utilities
         public static unsafe void InitializeContext(Parameters param, byte* sharedProcessBuffer)
         {
             // Store parameters in the shared buffer space
-            Context* ctx = (Context*) sharedProcessBuffer;
+            Context* ctx = (Context*)sharedProcessBuffer;
             ctx->MaxPacketCount = param.MaxPacketCount;
             ctx->MaxPacketSize = param.MaxPacketSize;
             ctx->PacketDelayMs = param.PacketDelayMs;
@@ -140,7 +140,7 @@ namespace Unity.Networking.Transport.Utilities
             for (int i = 0; i < m_PacketCount; i++)
             {
                 packetDataOffset = dataSize * i;
-                DelayedPacket* packetData = (DelayedPacket*) (processBufferPtr + packetDataOffset);
+                DelayedPacket* packetData = (DelayedPacket*)(processBufferPtr + packetDataOffset);
 
                 // Check if this slot is empty
                 if (packetData->delayUntil == 0)
@@ -160,16 +160,16 @@ namespace Unity.Networking.Transport.Utilities
             requests = NetworkPipelineStage.Requests.None;
 
             var dataSize = UnsafeUtility.SizeOf<DelayedPacket>();
-            byte* processBufferPtr = (byte*) ctx.internalProcessBuffer;
-            var simCtx = (Context*) ctx.internalSharedProcessBuffer;
+            byte* processBufferPtr = (byte*)ctx.internalProcessBuffer;
+            var simCtx = (Context*)ctx.internalSharedProcessBuffer;
             int oldestPacketIndex = -1;
             long oldestTime = long.MaxValue;
             int readyPackets = 0;
             int packetsInQueue = 0;
             for (int i = 0; i < m_PacketCount; i++)
             {
-                DelayedPacket* packet = (DelayedPacket*) (processBufferPtr + dataSize * i);
-                if ((int) packet->delayUntil == 0) continue;
+                DelayedPacket* packet = (DelayedPacket*)(processBufferPtr + dataSize * i);
+                if ((int)packet->delayUntil == 0) continue;
                 packetsInQueue++;
 
                 if (packet->delayUntil > currentTimestamp) continue;
@@ -199,7 +199,7 @@ namespace Unity.Networking.Transport.Utilities
 
             if (oldestPacketIndex >= 0)
             {
-                DelayedPacket* packet = (DelayedPacket*) (processBufferPtr + dataSize * oldestPacketIndex);
+                DelayedPacket* packet = (DelayedPacket*)(processBufferPtr + dataSize * oldestPacketIndex);
                 packet->delayUntil = 0;
 
                 delayedPacket.bufferWithHeaders = ctx.internalProcessBuffer + packet->processBufferOffset;
@@ -240,7 +240,7 @@ namespace Unity.Networking.Transport.Utilities
             // Find empty slot in bookkeeping data space to track this packet
             int packetPayloadOffset = 0;
             int packetDataOffset = 0;
-            var processBufferPtr = (byte*) ctx.internalProcessBuffer;
+            var processBufferPtr = (byte*)ctx.internalProcessBuffer;
             bool foundSlot = GetEmptyDataSlot(processBufferPtr, ref packetPayloadOffset, ref packetDataOffset);
 
             if (!foundSlot)
@@ -251,14 +251,14 @@ namespace Unity.Networking.Transport.Utilities
 
             UnsafeUtility.MemCpy(ctx.internalProcessBuffer + packetPayloadOffset + inboundBuffer.headerPadding, inboundBuffer.buffer, inboundBuffer.bufferLength);
 
-            var param = (SimulatorUtility.Context*) ctx.internalSharedProcessBuffer;
+            var param = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
             // Add tracking for this packet so we can resurrect later
             DelayedPacket packet;
-            packet.delayUntil = timestamp + m_PacketDelayMs + param->Random.NextInt(m_PacketJitterMs*2) - m_PacketJitterMs;
+            packet.delayUntil = timestamp + m_PacketDelayMs + param->Random.NextInt(m_PacketJitterMs * 2) - m_PacketJitterMs;
             packet.processBufferOffset = packetPayloadOffset;
             packet.packetSize = (ushort)(inboundBuffer.headerPadding + inboundBuffer.bufferLength);
             packet.packetHeaderPadding = (ushort)inboundBuffer.headerPadding;
-            byte* packetPtr = (byte*) &packet;
+            byte* packetPtr = (byte*)&packet;
             UnsafeUtility.MemCpy(processBufferPtr + packetDataOffset, packetPtr, UnsafeUtility.SizeOf<DelayedPacket>());
 
             // Schedule an update call so packet can be resurrected later

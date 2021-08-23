@@ -35,9 +35,9 @@ namespace Unity.Networking.Transport
             var defaultPageSize = (ulong)pageInfo->defaultPageSize;
 
             var pageCount = (ulong)1;
-            if ((ulong) totalSize > defaultPageSize)
+            if ((ulong)totalSize > defaultPageSize)
             {
-                pageCount = (ulong)math.ceil(totalSize / (double) defaultPageSize);
+                pageCount = (ulong)math.ceil(totalSize / (double)defaultPageSize);
             }
 
             var error = default(ErrorState);
@@ -74,15 +74,15 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Gets a element at the specified index, with the size of <see cref="elementSize">.
+        /// Gets a element at the specified index, with the size of <see cref="elementSize" />.
         /// </summary>
-        /// <value>A <see cref="Binding.Baselib_RegisteredNetwork_BufferSlice"> pointing to the index supplied.</value>
+        /// <value>A <see cref="Binding.Baselib_RegisteredNetwork_BufferSlice" /> pointing to the index supplied.</value>
         public Binding.Baselib_RegisteredNetwork_BufferSlice AtIndexAsSlice(int index, uint elementSize)
         {
             var offset = elementSize * (uint)index;
             Binding.Baselib_RegisteredNetwork_BufferSlice slice;
             slice.id = m_Buffer->id;
-            slice.data = (IntPtr)((byte*) m_Buffer->allocation.ptr + offset);
+            slice.data = (IntPtr)((byte*)m_Buffer->allocation.ptr + offset);
             slice.offset = offset;
             slice.size = elementSize;
             return slice;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using Unity.Collections;
 using NUnit.Framework;
@@ -5,9 +6,11 @@ using UnityEngine.TestTools;
 using UnityEngine;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Protocols;
+using Unity.Burst;
 
 namespace Tests
 {
+    [TestFixture]
     public class ServerAndClientTests
     {
         NetworkDriver server_driver;
@@ -21,7 +24,7 @@ namespace Tests
 
         private const string backend = "baselib";
 
-        NetworkEvent.Type PollDriverAndFindDataEvent(ref NetworkDriver driver, NetworkConnection connection, NetworkEvent.Type eventType, int maxRetryCount=10)
+        NetworkEvent.Type PollDriverAndFindDataEvent(ref NetworkDriver driver, NetworkConnection connection, NetworkEvent.Type eventType, int maxRetryCount = 10)
         {
             for (int retry = 0; retry < maxRetryCount; ++retry)
             {
@@ -35,11 +38,11 @@ namespace Tests
             return NetworkEvent.Type.Empty;
         }
 
-        public void SetupServerAndClientAndConnectThem(int bufferSize)
+        public void SetupServerAndClientAndConnectThem(NetworkEndPoint nep, int bufferSize)
         {
             //setup server
             server_driver = NetworkDriver.Create(new NetworkDataStreamParameter { size = bufferSize });
-            NetworkEndPoint server_endpoint = NetworkEndPoint.LoopbackIpv4;
+            NetworkEndPoint server_endpoint = nep;
             server_endpoint.Port = 1337;
             var ret = server_driver.Bind(server_endpoint);
             int maxRetry = 10;
@@ -47,12 +50,14 @@ namespace Tests
             {
                 server_endpoint.Port += 17;
                 ret = server_driver.Bind(server_endpoint);
-            };
+            }
+            ;
             Assert.AreEqual(ret, 0, "Failed to bind the socket");
             server_driver.Listen();
 
             //setup client
-            client_driver = NetworkDriver.Create(new NetworkDataStreamParameter { size = bufferSize });
+            client_driver = NetworkDriver.Create(
+                new NetworkDataStreamParameter { size = bufferSize });
             clientToServerConnection = client_driver.Connect(server_endpoint);
 
             //update drivers
@@ -88,16 +93,33 @@ namespace Tests
             client_driver.Dispose();
         }
 
-        [UnityTest]
-        public IEnumerator ServerAndClient_Connect_Successfully()
+        [Test]
+        public void ServerAndClient_Connect_Successfull_IPv6()
         {
-            SetupServerAndClientAndConnectThem(0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv6, 0);
             DisconnectAndCleanup();
-            yield return null;
         }
 
-        [UnityTest]
-        public IEnumerator ServerAnd5Clients_Connect_Successfully()
+        [Test]
+        public void ServerAndClient_Connect_Successfully_IPv4()
+        {
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
+            DisconnectAndCleanup();
+        }
+
+        [Test]
+        public void ServerAnd5Clients_Connect_Successfully_IPv6()
+        {
+            ServerAnd5Clients_Connect_Successfully(NetworkEndPoint.LoopbackIpv6);
+        }
+
+        [Test]
+        public void ServerAnd5Clients_Connect_Successfully_IPv4()
+        {
+            ServerAnd5Clients_Connect_Successfully(NetworkEndPoint.LoopbackIpv4);
+        }
+
+        public void ServerAnd5Clients_Connect_Successfully(NetworkEndPoint nep)
         {
             int numberOfClients = 5;
             NativeArray<NetworkConnection> connectionToClientArray;
@@ -107,7 +129,7 @@ namespace Tests
             //setup server
             connectionToClientArray = new NativeArray<NetworkConnection>(numberOfClients, Allocator.Persistent);
             server_driver = NetworkDriver.Create(new NetworkDataStreamParameter { size = 0 });
-            NetworkEndPoint server_endpoint = NetworkEndPoint.LoopbackIpv4;
+            NetworkEndPoint server_endpoint = nep;
             server_endpoint.Port = 1337;
             server_driver.Bind(server_endpoint);
             server_driver.Listen();
@@ -153,14 +175,23 @@ namespace Tests
             }
             connectionToClientArray.Dispose();
             clientToServerConnectionsArray.Dispose();
-
-            yield return null;
         }
 
-        [UnityTest]
-        public IEnumerator ServerAndClient_PingPong_Successfully()
+        [Test]
+        public void ServerAndClient_PingPong_Successfully_IPv6()
         {
-            SetupServerAndClientAndConnectThem(0);
+            ServerAndClient_PingPong_Successfully(NetworkEndPoint.LoopbackIpv6);
+        }
+
+        [Test]
+        public void ServerAndClient_PingPong_Successfully_IPv4()
+        {
+            ServerAndClient_PingPong_Successfully(NetworkEndPoint.LoopbackIpv4);
+        }
+
+        public void ServerAndClient_PingPong_Successfully(NetworkEndPoint nep)
+        {
+            SetupServerAndClientAndConnectThem(nep, 0);
 
             //send data from client
             if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
@@ -215,14 +246,13 @@ namespace Tests
             }
 
             DisconnectAndCleanup();
-            yield return null;
         }
 
         //test for buffer overflow
-        [UnityTest, UnityPlatform (RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
+        [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
         public IEnumerator ServerAndClient_SendBigMessage_OverflowsIncomingDriverBuffer()
         {
-            SetupServerAndClientAndConnectThem(8);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 8);
 
             //send data from client
             if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
@@ -245,12 +275,12 @@ namespace Tests
             yield return null;
         }
 
-        [UnityTest]
-        public IEnumerator ServerAndClient_SendMessageWithMaxLength_SentAndReceivedWithoutErrors()
+        [Test]
+        public void ServerAndClient_SendMessageWithMaxLength_SentAndReceivedWithoutErrors()
         {
-            SetupServerAndClientAndConnectThem(0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
 
-            int messageLength = 1400-UdpCHeader.Length;
+            int messageLength = 1400 - UdpCHeader.Length;
             var messageToSend = new NativeArray<byte>(messageLength, Allocator.Temp);
             for (int i = 0; i < messageLength; i++)
             {
@@ -272,20 +302,19 @@ namespace Tests
             Assert.IsTrue(msg.Length == messageLength, "Lenghts of sent and received messages are different");
 
             DisconnectAndCleanup();
-            yield return null;
         }
 
-        [UnityTest, UnityPlatform (RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
+        [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
         public IEnumerator ServerAndClient_SendMessageWithMoreThenMaxLength_OverflowsIncomingDriverBuffer()
         {
-            SetupServerAndClientAndConnectThem(0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
 
             //send data from client
 
             if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
             {
                 m_OutStream.Clear();
-                int messageLength = 1401-UdpCHeader.Length;
+                int messageLength = 1401 - UdpCHeader.Length;
                 var messageToSend = new NativeArray<byte>(messageLength, Allocator.Temp);
                 for (int i = 0; i < messageLength; i++)
                 {
@@ -307,10 +336,10 @@ namespace Tests
             yield return null;
         }
 
-        [UnityTest, UnityPlatform (RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
+        [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
         public IEnumerator ServerAndClient_SendMessageWithoutReadingIt_GivesErrorOnDriverUpdate()
         {
-            SetupServerAndClientAndConnectThem(0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
 
             //send data from client
             if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
@@ -334,7 +363,8 @@ namespace Tests
 
 public class SharedConstants
 {
-    public static byte[] ping = {
+    public static byte[] ping =
+    {
         (byte)'f',
         (byte)'r',
         (byte)'o',
@@ -347,7 +377,8 @@ public class SharedConstants
         (byte)'r'
     };
 
-    public static byte[] pong = {
+    public static byte[] pong =
+    {
         (byte)'c',
         (byte)'l',
         (byte)'i',

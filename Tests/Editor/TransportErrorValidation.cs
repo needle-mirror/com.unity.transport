@@ -56,12 +56,13 @@ namespace Unity.Networking.Transport.ErrorValidation
         [Test]
         public void Given_BaselibReceiveParametersOutsideSpecifiedRange_LogsWarning()
         {
-            var param = new BaselibNetworkParameter() {receiveQueueCapacity = -1,sendQueueCapacity = 1};
+            var param = new BaselibNetworkParameter() {receiveQueueCapacity = -1, sendQueueCapacity = 1};
             using (var driver = new NetworkDriver(new BaselibNetworkInterface(), param))
             {
                 LogAssert.Expect(LogType.Warning, "Value for receiveQueueCapacity must be larger then zero.");
             }
         }
+
         [Test]
         public void Given_BaselibSendParametersOutsideSpecifiedRange_LogsWarning()
         {

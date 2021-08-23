@@ -14,14 +14,15 @@ namespace Unity.Networking.Transport.Tests
 
             Assert.True(256 == endpoint.RawPort);
         }
-        
+
         [Test]
         public unsafe void NetworkAddress_ParseAddress_CompareToBaselibParse()
         {
             // 19 ==  SizeOf<Binding.Baselib_NetworkAddress>
             //Assert.True(19 == UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>());
-            
-            string[] addresses = {
+
+            string[] addresses =
+            {
                 "127.0.0.1",
                 "192.168.1.134",
                 "53BF:009C:0000:0000:120A:09D5:000D:CD29",

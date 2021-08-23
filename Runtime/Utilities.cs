@@ -49,8 +49,8 @@ namespace Unity.Networking.Transport.Utilities
             if (bucket >= m_QueueHeadTail.Length / 2)
             {
                 int oldSize = m_QueueHeadTail.Length;
-                m_QueueHeadTail.ResizeUninitialized((bucket+1)*2);
-                for (;oldSize < m_QueueHeadTail.Length; ++oldSize)
+                m_QueueHeadTail.ResizeUninitialized((bucket + 1) * 2);
+                for (; oldSize < m_QueueHeadTail.Length; ++oldSize)
                     m_QueueHeadTail[oldSize] = 0;
                 m_Queue.ResizeUninitialized((m_QueueHeadTail.Length / 2) * m_MaxItems[0]);
             }
@@ -60,12 +60,12 @@ namespace Unity.Networking.Transport.Utilities
                 // Grow number of items per bucket
                 int oldMax = m_MaxItems[0];
                 while (idx >= m_MaxItems[0])
-                    m_MaxItems[0] = m_MaxItems[0]*2;
+                    m_MaxItems[0] = m_MaxItems[0] * 2;
                 int maxBuckets = m_QueueHeadTail.Length / 2;
                 m_Queue.ResizeUninitialized(maxBuckets * m_MaxItems[0]);
-                for (int b = maxBuckets-1; b >= 0; --b)
+                for (int b = maxBuckets - 1; b >= 0; --b)
                 {
-                    for (int i = m_QueueHeadTail[b*2+1]-1; i >= m_QueueHeadTail[b * 2]; --i)
+                    for (int i = m_QueueHeadTail[b * 2 + 1] - 1; i >= m_QueueHeadTail[b * 2]; --i)
                     {
                         m_Queue[b * m_MaxItems[0] + i] = m_Queue[b * oldMax + i];
                     }
@@ -83,14 +83,14 @@ namespace Unity.Networking.Transport.Utilities
         {
             if (bucket < 0 || bucket >= m_QueueHeadTail.Length / 2)
             {
-                value = default(T);
+                value = default;
                 return false;
             }
             int idx = m_QueueHeadTail[bucket * 2];
             if (idx >= m_QueueHeadTail[bucket * 2 + 1])
             {
                 m_QueueHeadTail[bucket * 2] = m_QueueHeadTail[bucket * 2 + 1] = 0;
-                value = default(T);
+                value = default;
                 return false;
             }
             else if (idx + 1 == m_QueueHeadTail[bucket * 2 + 1])
@@ -114,13 +114,13 @@ namespace Unity.Networking.Transport.Utilities
         {
             if (bucket < 0 || bucket >= m_QueueHeadTail.Length / 2)
             {
-                value = default(T);
+                value = default;
                 return false;
             }
             int idx = m_QueueHeadTail[bucket * 2];
             if (idx >= m_QueueHeadTail[bucket * 2 + 1])
             {
-                value = default(T);
+                value = default;
                 return false;
             }
 
@@ -141,7 +141,7 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    public struct SequenceHelpers
+    public static class SequenceHelpers
     {
         // Calculate difference between the sequence IDs taking into account wrapping, so when you go from 65535 to 0 the distance is 1
         public static int AbsDistance(ushort lhs, ushort rhs)
@@ -163,8 +163,8 @@ namespace Unity.Networking.Transport.Utilities
         public static bool GreaterThan16(ushort lhs, ushort rhs)
         {
             const uint max_sequence_divide_2 = 0x7FFF;
-            return lhs > rhs && lhs - rhs <= (ushort) max_sequence_divide_2 ||
-                   lhs < rhs && rhs - lhs > (ushort) max_sequence_divide_2;
+            return lhs > rhs && lhs - rhs <= (ushort)max_sequence_divide_2 ||
+                lhs < rhs && rhs - lhs > (ushort)max_sequence_divide_2;
         }
 
         public static bool LessThan16(ushort lhs, ushort rhs)
@@ -174,7 +174,7 @@ namespace Unity.Networking.Transport.Utilities
 
         public static bool StalePacket(ushort sequence, ushort oldSequence, ushort windowSize)
         {
-            return LessThan16(sequence, (ushort) (oldSequence - windowSize));
+            return LessThan16(sequence, (ushort)(oldSequence - windowSize));
         }
 
         public static string BitMaskToString(uint mask)
@@ -196,12 +196,67 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
+    public static class FixedStringHexExt
+    {
+        public static FormatError AppendHex<T>(ref this T str, ushort val) where T : struct, INativeList<byte>, IUTF8Bytes
+        {
+            int shamt = 12;
+            // Find the first non-zero nibble
+            while (shamt > 0)
+            {
+                if (((val >> shamt) & 0xf) != 0)
+                    break;
+                shamt -= 4;
+            }
+            var err = FormatError.None;
+            while (shamt >= 0)
+            {
+                var nibble = (val >> shamt) & 0xf;
+                if (nibble >= 10)
+                    err |= str.AppendRawByte((byte)('a' + nibble - 10));
+                else
+                    err |= str.AppendRawByte((byte)('0' + nibble));
+                shamt -= 4;
+            }
+            return err != FormatError.None ? FormatError.Overflow : FormatError.None;
+        }
+    }
+
+    public static class NativeListExt
+    {
+        /// <summary>
+        /// This function will make sure that <see cref="sizeToFit"/> can fit into <see cref="list"/>.
+        /// If <see cref="sizeToFit"/> >= <see cref="list"/>'s Length then <see cref="list"/> will be ResizeUninitialized to a new length.
+        /// New Length will be the next highest power of 2 of <see cref="sizeToFit"/>
+        /// </summary>
+        /// <param name="list">List that should be resized if sizeToFit >= its size</param>
+        /// <param name="sizeToFit">Requested size that should fit into list</param>
+        public static void ResizeUninitializedTillPowerOf2<T>(this NativeList<T> list, int sizeToFit) where T : unmanaged
+        {
+            var n = list.Length;
+
+            if (sizeToFit >= n)
+            {
+                // https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+                sizeToFit |= sizeToFit >> 1;
+                sizeToFit |= sizeToFit >> 2;
+                sizeToFit |= sizeToFit >> 4;
+                sizeToFit |= sizeToFit >> 8;
+                sizeToFit |= sizeToFit >> 16;
+                sizeToFit++;
+                //sizeToFit is now next power of 2 of initial sizeToFit
+
+                list.ResizeUninitialized(sizeToFit);
+            }
+        }
+    }
+
     public static class RandomHelpers
     {
         // returns ushort in [1..ushort.MaxValue - 1] range
         public static ushort GetRandomUShort()
         {
-            var rnd = new Unity.Mathematics.Random((uint) Stopwatch.GetTimestamp());
+            var rnd = new Unity.Mathematics.Random((uint)Stopwatch.GetTimestamp());
             return (ushort)rnd.NextUInt(1, 0xffff);
         }
     }

@@ -32,8 +32,9 @@ namespace Unity.Networking.Transport
 
     public struct NetworkEventQueue : IDisposable
     {
-        private int MaxEvents {
-            get { return m_ConnectionEventQ.Length / (m_ConnectionEventHeadTail.Length/2); }
+        private int MaxEvents
+        {
+            get { return m_ConnectionEventQ.Length / (m_ConnectionEventHeadTail.Length / 2); }
         }
         public NetworkEventQueue(int queueSizePerConnection)
         {
@@ -133,8 +134,8 @@ namespace Unity.Networking.Transport
             {
                 // Connection id out of range, grow the number of connections in the queue
                 int oldSize = m_ConnectionEventHeadTail.Length;
-                m_ConnectionEventHeadTail.ResizeUninitialized((ev.connectionId + 1)*2);
-                for (;oldSize < m_ConnectionEventHeadTail.Length; ++oldSize)
+                m_ConnectionEventHeadTail.ResizeUninitialized((ev.connectionId + 1) * 2);
+                for (; oldSize < m_ConnectionEventHeadTail.Length; ++oldSize)
                     m_ConnectionEventHeadTail[oldSize] = 0;
                 m_ConnectionEventQ.ResizeUninitialized((m_ConnectionEventHeadTail.Length / 2) * curMaxEvents);
             }
@@ -147,9 +148,9 @@ namespace Unity.Networking.Transport
                     curMaxEvents *= 2;
                 int maxConnections = m_ConnectionEventHeadTail.Length / 2;
                 m_ConnectionEventQ.ResizeUninitialized(maxConnections * curMaxEvents);
-                for (int con = maxConnections-1; con >= 0; --con)
+                for (int con = maxConnections - 1; con >= 0; --con)
                 {
-                    for (int i = m_ConnectionEventHeadTail[con*2+1]-1; i >= m_ConnectionEventHeadTail[con * 2]; --i)
+                    for (int i = m_ConnectionEventHeadTail[con * 2 + 1] - 1; i >= m_ConnectionEventHeadTail[con * 2]; --i)
                     {
                         m_ConnectionEventQ[con * curMaxEvents + i] = m_ConnectionEventQ[con * oldMax + i];
                     }
@@ -188,6 +189,7 @@ namespace Unity.Networking.Transport
             concurrent.m_ConnectionEventHeadTail = new Concurrent.ConcurrentConnectionQueue(m_ConnectionEventHeadTail);
             return concurrent;
         }
+
         public struct Concurrent
         {
             [NativeContainer]
@@ -204,7 +206,7 @@ namespace Unity.Networking.Transport
                     m_Safety = NativeListUnsafeUtility.GetAtomicSafetyHandle(ref queue);
                     AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
-                    m_ConnectionEventHeadTail = (UnsafeList*) NativeListUnsafeUtility.GetInternalListDataPtrUnchecked(ref queue);
+                    m_ConnectionEventHeadTail = (UnsafeList*)NativeListUnsafeUtility.GetInternalListDataPtrUnchecked(ref queue);
                 }
 
                 public int Length
@@ -226,15 +228,16 @@ namespace Unity.Networking.Transport
                         if (idx >= ((int*)m_ConnectionEventHeadTail->Ptr)[connectionId * 2 + 1])
                             return -1;
                         if (Interlocked.CompareExchange(ref ((int*)m_ConnectionEventHeadTail->Ptr)[connectionId * 2], idx + 1,
-                                idx) != idx)
+                            idx) != idx)
                             idx = -1;
                     }
 
                     return idx;
                 }
             }
-            private int MaxEvents {
-                get { return m_ConnectionEventQ.Length / (m_ConnectionEventHeadTail.Length/2); }
+            private int MaxEvents
+            {
+                get { return m_ConnectionEventQ.Length / (m_ConnectionEventHeadTail.Length / 2); }
             }
 
             public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size)

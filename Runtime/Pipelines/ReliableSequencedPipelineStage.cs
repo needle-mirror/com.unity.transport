@@ -21,7 +21,7 @@ namespace Unity.Networking.Transport
                     param = (ReliableUtility.Parameters)netParam;
             }
             if (param.WindowSize == 0)
-                param = new ReliableUtility.Parameters{WindowSize = ReliableUtility.ParameterConstants.WindowSize};
+                param = new ReliableUtility.Parameters {WindowSize = ReliableUtility.ParameterConstants.WindowSize};
             if (param.WindowSize <= 0 || param.WindowSize > 32)
                 throw new System.ArgumentOutOfRangeException("The reliability pipeline does not support negative WindowSize nor WindowSizes larger than 32");
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
@@ -36,6 +36,7 @@ namespace Unity.Networking.Transport
                 NetworkParameterConstants.MTU
             );
         }
+
         public int StaticSize => UnsafeUtility.SizeOf<ReliableUtility.Parameters>();
 
         [BurstCompile(DisableDirectCall = true)]
@@ -48,8 +49,8 @@ namespace Unity.Networking.Transport
 
             var header = default(ReliableUtility.PacketHeader);
             var slice = default(InboundRecvBuffer);
-            ReliableUtility.Context* reliable = (ReliableUtility.Context*) ctx.internalProcessBuffer;
-            ReliableUtility.SharedContext* shared = (ReliableUtility.SharedContext*) ctx.internalSharedProcessBuffer;
+            ReliableUtility.Context* reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
+            ReliableUtility.SharedContext* shared = (ReliableUtility.SharedContext*)ctx.internalSharedProcessBuffer;
             shared->errorCode = 0;
             if (reliable->Resume == ReliableUtility.NullEntry)
             {
@@ -77,14 +78,13 @@ namespace Unity.Networking.Transport
 
                 if (result >= 0)
                 {
-                    var nextExpectedSequenceId = (ushort) (reliable->Delivered + 1);
+                    var nextExpectedSequenceId = (ushort)(reliable->Delivered + 1);
                     if (result == nextExpectedSequenceId)
                     {
                         reliable->Delivered = result;
                         slice = inboundBuffer.Slice(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
 
-                        if (needsResume = SequenceHelpers.GreaterThan16((ushort) shared->ReceivedPackets.Sequence,
-                            (ushort) result))
+                        if (needsResume = SequenceHelpers.GreaterThan16((ushort)shared->ReceivedPackets.Sequence, (ushort)result))
                         {
                             reliable->Resume = (ushort)(result + 1);
                         }
@@ -114,7 +114,7 @@ namespace Unity.Networking.Transport
             bool needsResume = false;
 
             var header = new ReliableUtility.PacketHeader();
-            var reliable = (ReliableUtility.Context*) ctx.internalProcessBuffer;
+            var reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
 
             needsResume = ReliableUtility.ReleaseOrResumePackets(ctx);
             if (needsResume)

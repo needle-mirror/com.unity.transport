@@ -1,5 +1,38 @@
 # Change log
 
+## [1.0.0-pre.2] - 2021-08-23
+### New features
+* Upgraded collections to 1.0.0-pre.5
+* Added support for Secure Protocol while using Unity Relay
+
+### Changes 
+### Fixes
+### Upgrade guide
+
+## [1.0.0-pre.1] - 2021-07-29
+### New features
+* Moving into pre-release
+* Added Secure Protocol support (TLS/DTLS) to allow for encrypted and secure connections. 
+* Unity Transport package now supports connecting to the Unity Relay Service. See [Unity Relay](https://unity.com/products/relay) for more information.
+* Upgraded burst to 1.5.5
+
+### Changes
+### Fixes
+### Upgrade guide
+
+## [0.9.0] - 2021-05-10
+### New features
+* Added support for long serialization and delta compression.
+* Upgraded collections to 1.0.0-pre.1
+* Added a new network interface for WebSockets, can be used in both native and web builds.
+
+### Changes
+* Minimum required Unity version has changed to 2020.3.0f1.
+* The transport package can be compiled with the tiny c# profile and for WebGL, but WebGL builds only support IPC - not sockets.
+
+### Fixes
+### Upgrade guide
+
 ## [0.8.0] - 2021-03-23
 ### New features
 * Added overloads of `PopEvent` and `PopEventForConnection` which return the pipeline used as an out parameter.
@@ -22,7 +55,7 @@
 * Changed the error behavior of `DataStreamReader` to be consistent between the editor and players.
 
 ### Fixes
-* Fixed a crash when receiving a packet with an invalid pipeline identifier
+* Fixed a crash when receiving a packet with an invalid pipeline identifier.
 
 ### Upgrade guide
 
@@ -32,16 +65,16 @@
 * `Error.DisconnectReason` has been added, so when NetworkDriver.PopEvent returns a `NetworkEvent.Type.Disconnect` the reader returned contains 1 byte of data indicating the reason.
 
 ### Changes
-* The function signature for NetworkDriver.BeginSend has changed. It now returns a `int` value indicating if the function succeeded or not and the DataStreamWriter now instead is returned as a `out` parameter.
-* The function signature for INetworkInterface.Initialize has changed. It now requires you to return a `int` value indicating if the function succeeded or not.
-* The function signature for INetworkInterface.CreateInterfaceEndPoint has changed. It now requires you to return a `int` value indicating if the function succeeded or not, and NetworkInterfaceEndPoint is now returned as a `out` parameter.
+* The function signature for NetworkDriver.BeginSend has changed. It now returns an `int` value indicating if the function succeeded or not and the DataStreamWriter now instead is returned as a `out` parameter.
+* The function signature for INetworkInterface.Initialize has changed. It now requires you to return an `int` value indicating if the function succeeded or not.
+* The function signature for INetworkInterface.CreateInterfaceEndPoint has changed. It now requires you to return an `int` value indicating if the function succeeded or not, and NetworkInterfaceEndPoint is now returned as a `out` parameter.
 
 ### Fixes
 * Fixed a potential crash when receiving a malformated packet.
 * Fixed an issue where the DataStream could sometimes fail writing packet uints before the buffer was full.
 
 ### Upgrade guide
-* `NetworkDriver.BeginSend` now returns a `int` indicating a `Error.StatusCode`, and the `DataStreamWriter` is passed as an `out` parameter.
+* `NetworkDriver.BeginSend` now returns an `int` indicating a `Error.StatusCode`, and the `DataStreamWriter` is passed as an `out` parameter.
 
 
 ## [0.5.0] - 2020-10-01
@@ -58,7 +91,7 @@
 
 ### Changes
 ### Fixes
-* Fixed a compatibility isue with DOTS Runetime.
+* Fixed a compatibility isue with DOTS Runtime.
 
 ### Upgrade guide
 
@@ -68,11 +101,16 @@
 
 ### Changes
 * The methods to read and write strings in the `DataStreamReader`/`DataStreamWriter` have been changed to use `FixedString<N>` instead of `NativeString<N>`. The name of the methods have also changed from `ReadString` to `ReadFixedString64` - and similar changes for write and the packed version of the calls. The calls support `FixedString32`, `FixedString64`, `FixedString128`, `FixedString512` and `FixedString4096`.
-* Minimum required unity version has changed to 2020.1.2.
+* Minimum required Unity version has changed to 2020.1.2.
 
 ### Fixes
 ### Upgrade guide
-The data stream methods for reading and writing strings have changed, they now take `FixedString64` instead of `NativeString64` and the names have changed as follows: `DataStreamReader.ReadString` -> `DataStreamReader.ReadFixedString64`, `DataStreamReader.ReadPackedStringDelta` -> `DataStreamReader.ReadPackedFixedString64Delta`, `DataStreamWriter.WriteString` -> `DataStreamWriter.WriteFixedString64`, `DataStreamWriter.WritePackedStringDelta` -> `DataStreamWriter.WritePackedFixedString64Delta`.
+The data stream methods for reading and writing strings have changed, they now take `FixedString64` instead of `NativeString64` and the names have changed as follows:
+
+* `DataStreamReader.ReadString` -> `DataStreamReader.ReadFixedString64`
+* `DataStreamReader.ReadPackedStringDelta` -> `DataStreamReader.ReadPackedFixedString64Delta`
+* `DataStreamWriter.WriteString` -> `DataStreamWriter.WriteFixedString64`
+* `DataStreamWriter.WritePackedStringDelta` -> `DataStreamWriter.WritePackedFixedString64Delta`
 
 The transport now requires Unity 2020.1.2.
 
@@ -87,7 +125,7 @@ The transport now requires Unity 2020.1.2.
 ### Fixes
 * Fixed an issue in the reliable pipeline which would cause it to not recover if one end did not receive packages for a while.
 * Fixed `NetworkInterfaceEndPoint` and `NetworkEndPoint` `GetHashCode` implementation.
-* Fixed invalid use of strings when specifying the size of socket buffers in the native bindings
+* Fixed invalid use of strings when specifying the size of socket buffers in the native bindings.
 
 ### Upgrade guide
 
@@ -155,7 +193,7 @@ The interface for network interfaces has been changed.
 ### New features
 ### Changes
 ### Fixes
-* Added missing bindings for Linux and Android
+* Added missing bindings for Linux and Android.
 
 ### Upgrade guide
 
@@ -171,31 +209,31 @@ The interface for network interfaces has been changed.
 * Added `LengthInBits` to the `DataStreamWriter`.
 
 ### Fixes
-* Do not push data events to disconnected connections. Fixes an error about resetting the queue with pending messages
+* Do not push data events to disconnected connections. Fixes an error about resetting the queue with pending messages.
 * Made the endian checks in `DataStream` compatible with latest version of burst.
 
 ### Upgrade guide
 
 ## [0.1.2-preview.1] - 2019-07-17
 ### New features
-* Added a new *Ping-Multiplay* sample based on the *Ping* sample
-    * Created to be the main sample for demonstrating Multiplay compatibility and best practices (SQP usage, IP binding, etc.)
-    * Contains both client and server code.  Additional details in readme in `/Assets/Samples/Ping-Multiplay/`.
-* **DedicatedServerConfig**: added arguments for `-fps` and `-timeout`
+* Added a new *Ping-Multiplay* sample based on the *Ping* sample.
+    * Created to be the main sample for demonstrating Multiplay compatibility and best practices (SQP usage, IP binding, etc.).
+    * Contains both client and server code. Additional details in readme in `/Assets/Samples/Ping-Multiplay/`.
+* **DedicatedServerConfig**: Added arguments for `-fps` and `-timeout`.
 * **NetworkEndPoint**: Added a `TryParse()` method which returns false if parsing fails
-    * Note: The `Parse()` method returns a default IP / Endpoint if parsing fails, but a method that could report failure was needed for the Multiplay sample
+    * Note: The `Parse()` method returns a default IP / Endpoint if parsing fails, but a method that could report failure was needed for the Multiplay sample.
 * **CommandLine**:
-    * Added a `HasArgument()` method which returns true if an argument is present
-    * Added a `PrintArgsToLog()` method which is a simple way to print launch args to logs
-    * Added a `TryUpdateVariableWithArgValue()` method which updates a ref var only if an arg was found and successfully parsed
+    * Added a `HasArgument()` method which returns true if an argument is present.
+    * Added a `PrintArgsToLog()` method which is a simple way to print launch args to logs.
+    * Added a `TryUpdateVariableWithArgValue()` method which updates a ref var only if an arg was found and successfully parsed.
 
 ### Changes
-* Deleted existing SQP code and added reference to SQP Package (now in staging)
-* Removed SQP server usage from basic *Ping* sample
-    * Note: The SQP server was only needed for Multiplay compatibility, so the addition of *Ping-Multiplay* allowed us to remove SQP from *Ping*
+* Deleted existing SQP code and added reference to SQP Package (now in staging).
+* Removed SQP server usage from basic *Ping* sample.
+    * Note: The SQP server was only needed for Multiplay compatibility, so the addition of *Ping-Multiplay* allowed us to remove SQP from *Ping*.
 
 ### Fixes
-* **DedicatedServerConfig**: Vsync is now disabled programmatically if requesting an FPS different from the current screen refresh rate
+* **DedicatedServerConfig**: Vsync is now disabled programmatically if requesting an FPS different from the current screen refresh rate.
 
 ### Upgrade guide
 
@@ -210,23 +248,23 @@ The interface for network interfaces has been changed.
 
 ## [0.1.0-preview.1] - 2019-04-16
 ### New features
-* Added network pipelines to enable processing of outgoing and incomming packets. The available pipeline stages are `ReliableSequencedPipelineStage` for reliable UDP messages and `SimulatorPipelineStage` for emulating network conditions such as high latency and packet loss. See [the pipeline documentation](com.unity.transport/Documentation~/pipelines-usage.md) for more information.
+* Added network pipelines to enable processing of outgoing and incomming packets. The available pipeline stages are `ReliableSequencedPipelineStage` for reliable UDP messages and `SimulatorPipelineStage` for emulating network conditions such as high latency and packet loss. See [the pipeline documentation](Documentation~/pipelines-usage.md) for more information.
 * Added reading and writing of packed signed and unsigned integers to `DataStream`. These new methods use huffman encoding to reduce the size of transfered data for small numbers.
 
 ### Changes
-* Enable Burst compilation for most jobs
-* Made it possible to get the remote endpoint for a connection
-* Replacing EndPoint parsing with custom code to avoid having a dependency on System.Net
-* Change the ping sample command-line parameters for server to -port and -query_port
-* For matchmaking - use an Assignment object containing the ConnectionString, the Roster, and an AssignmentError string instead of just the ConnectionString.
+* Enable Burst compilation for most jobs.
+* Made it possible to get the remote endpoint for a connection.
+* Replacing EndPoint parsing with custom code to avoid having a dependency on `System.Net`.
+* Change the ping sample command-line parameters for server to `-port` and `-query_port`.
+* For matchmaking, use an Assignment object containing the `ConnectionString`, the `Roster`, and an `AssignmentError` string instead of just the `ConnectionString`.
 
 ### Fixes
-* Fixed an issue with building iOS on Windows
-* Fixed inconsistent error handling between platforms when the network buffer is full
+* Fixed an issue with building iOS on Windows.
+* Fixed inconsistent error handling between platforms when the network buffer is full.
 
 ### Upgrade guide
 Unity 2019.1 is now required.
 
 `BasicNetworkDriver` has been renamed to `GenericNetworkDriver` and a new `UdpNetworkDriver` helper class is also available.
 
-System.Net EndPoints can no longer be used as addresses, use the new NetworkEndpoint struct instead.
+`System.Net` EndPoints can no longer be used as addresses, use the new NetworkEndpoint struct instead.

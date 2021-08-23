@@ -27,7 +27,7 @@ namespace Unity.Networking.Transport
                 Receive: ReceiveFunctionPointer,
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
-                ReceiveCapacity: param.MaxPacketCount * (param.MaxPacketSize+UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
+                ReceiveCapacity: param.MaxPacketCount * (param.MaxPacketSize + UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
                 SendCapacity: 0,
                 HeaderCapacity: 0,
                 SharedStateCapacity: UnsafeUtility.SizeOf<SimulatorUtility.Context>()
@@ -60,8 +60,8 @@ namespace Unity.Networking.Transport
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
-            var context = (SimulatorUtility.Context*) ctx.internalSharedProcessBuffer;
-            var param = *(SimulatorUtility.Parameters*) ctx.staticInstanceBuffer;
+            var context = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
+            var param = *(SimulatorUtility.Parameters*)ctx.staticInstanceBuffer;
             var simulator = new SimulatorUtility(param.MaxPacketCount, param.MaxPacketSize, param.PacketDelayMs, param.PacketJitterMs);
 
             if (inboundBuffer.bufferLength > param.MaxPacketSize)
@@ -108,6 +108,7 @@ namespace Unity.Networking.Transport
 
             inboundBuffer = default;
         }
+
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 
@@ -133,7 +134,7 @@ namespace Unity.Networking.Transport
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
                 ReceiveCapacity: 0,
-                SendCapacity: param.MaxPacketCount * (param.MaxPacketSize+UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
+                SendCapacity: param.MaxPacketCount * (param.MaxPacketSize + UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
                 HeaderCapacity: 0,
                 SharedStateCapacity: UnsafeUtility.SizeOf<SimulatorUtility.Context>()
             );
@@ -158,14 +159,14 @@ namespace Unity.Networking.Transport
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
-            var context = (SimulatorUtility.Context*) ctx.internalSharedProcessBuffer;
-            var param = *(SimulatorUtility.Parameters*) ctx.staticInstanceBuffer;
+            var context = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
+            var param = *(SimulatorUtility.Parameters*)ctx.staticInstanceBuffer;
 
             var simulator = new SimulatorUtility(param.MaxPacketCount, param.MaxPacketSize, param.PacketDelayMs, param.PacketJitterMs);
-            if (inboundBuffer.headerPadding+inboundBuffer.bufferLength > param.MaxPacketSize)
+            if (inboundBuffer.headerPadding + inboundBuffer.bufferLength > param.MaxPacketSize)
             {
                 //UnityEngine.Debug.LogWarning("Incoming packet too large for internal storage buffer. Passing through. [buffer=" + (inboundBuffer.headerPadding+inboundBuffer.buffer.Length) + " packet=" + param.MaxPacketSize + "]");
-                return (int) Error.StatusCode.NetworkPacketOverflow;
+                return (int)Error.StatusCode.NetworkPacketOverflow;
             }
 
             var timestamp = ctx.timestamp;
@@ -209,6 +210,7 @@ namespace Unity.Networking.Transport
             ref NetworkPipelineStage.Requests requests)
         {
         }
+
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 }

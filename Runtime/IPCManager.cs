@@ -80,7 +80,6 @@ namespace Unity.Networking.Transport
                         m_IPCChannels.TryAdd(port, id);
                     }
                 }
-
             }
             else
             {
@@ -93,14 +92,15 @@ namespace Unity.Networking.Transport
 
             var endpoint = default(NetworkInterfaceEndPoint);
             endpoint.dataLength = 4;
-            *(int*) endpoint.data = id;
+            *(int*)endpoint.data = id;
 
             return endpoint;
         }
+
         public unsafe bool GetEndPointPort(NetworkInterfaceEndPoint ep, out ushort port)
         {
             ManagerAccessHandle.Complete();
-            int id = *(int*) ep.data;
+            int id = *(int*)ep.data;
             var values = m_IPCChannels.GetValueArray(Allocator.Temp);
             var keys = m_IPCChannels.GetKeyArray(Allocator.Temp);
             port = 0;
@@ -120,7 +120,7 @@ namespace Unity.Networking.Transport
         {
             ManagerAccessHandle.Complete();
             IPCData data;
-            from = default(NetworkInterfaceEndPoint);
+            from = default;
             length = 0;
 
             if (m_IPCQueue.Peek(*(int*)local.data, out data))
@@ -135,27 +135,18 @@ namespace Unity.Networking.Transport
             return length;
         }
 
-        public unsafe int ReceiveMessageEx(NetworkInterfaceEndPoint local, ref UdpCHeader header, void* payloadData, int payloadLen, ref NetworkInterfaceEndPoint remote)
+        public unsafe int ReceiveMessageEx(NetworkInterfaceEndPoint local, void* payloadData, int payloadLen, ref NetworkInterfaceEndPoint remote)
         {
             IPCData data;
             if (!m_IPCQueue.Peek(*(int*)local.data, out data))
                 return 0;
             GetEndPointByHandle(data.from, out remote);
 
-            int totalLength = 0;
-            var curLength = Math.Min(UdpCHeader.Length, data.length - totalLength);
-            fixed (void* headerData = header.Data)
-            {
-                UnsafeUtility.MemCpy(headerData, data.data + totalLength, curLength);
-            }
-            totalLength += curLength;
-
-            curLength = Math.Min(payloadLen, data.length - totalLength);
-            UnsafeUtility.MemCpy(payloadData, data.data + totalLength, curLength);
-            totalLength += curLength;
+            var totalLength = Math.Min(payloadLen, data.length);
+            UnsafeUtility.MemCpy(payloadData, data.data, totalLength);
 
             if (totalLength < data.length)
-                return -1;
+                return -10040; // out of memory
             m_IPCQueue.Dequeue(*(int*)local.data, out data);
 
             return totalLength;

@@ -55,8 +55,6 @@ namespace Unity.Networking.Transport
             Disconnected,
             /// <summary>Indicates the connection is trying to connect.</summary>
             Connecting,
-            /// <summary>Indicates the connection is waiting for a connection response. </summary>
-            AwaitingResponse,
             /// <summary>Indicates the connection is connected.. </summary>
             Connected
         }
@@ -113,12 +111,12 @@ namespace Unity.Networking.Transport
             return driver.GetConnectionState(this);
         }
 
-        public static bool operator ==(NetworkConnection lhs, NetworkConnection rhs)
+        public static bool operator==(NetworkConnection lhs, NetworkConnection rhs)
         {
             return lhs.m_NetworkId == rhs.m_NetworkId && lhs.m_NetworkVersion == rhs.m_NetworkVersion;
         }
 
-        public static bool operator !=(NetworkConnection lhs, NetworkConnection rhs)
+        public static bool operator!=(NetworkConnection lhs, NetworkConnection rhs)
         {
             return lhs.m_NetworkId != rhs.m_NetworkId || lhs.m_NetworkVersion != rhs.m_NetworkVersion;
         }
@@ -127,6 +125,7 @@ namespace Unity.Networking.Transport
         {
             return this == (NetworkConnection)o;
         }
+
         public bool Equals(NetworkConnection o)
         {
             return this == o;

@@ -28,6 +28,7 @@ namespace Unity.Networking.Transport.Tests
                 SharedStateCapacity: 0
             );
         }
+
         public int StaticSize => 2;
 
         [BurstCompile(DisableDirectCall = true)]
@@ -181,6 +182,7 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(i, readStrm.ReadInt());
             }
         }
+
         [Test]
         public void NetworkPipeline_Fragmentation_SendRecvMaxSize()
         {
@@ -197,7 +199,7 @@ namespace Unity.Networking.Transport.Tests
             var serverToClient = m_ServerDriver.Accept();
             Assert.AreNotEqual(default(NetworkConnection), serverToClient);
 
-            int messageSize = 4*1024-m_ServerDriver.MaxHeaderSize(serverPipe);
+            int messageSize = 4 * 1024 - m_ServerDriver.MaxHeaderSize(serverPipe);
 
             // Send message to client
             if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm, messageSize) == 0)
@@ -245,7 +247,7 @@ namespace Unity.Networking.Transport.Tests
             int messageCount = 3;
 
             int packetCount = -1;
-            for(int dropIndex = 0; dropIndex != packetCount; ++dropIndex)
+            for (int dropIndex = 0; dropIndex != packetCount; ++dropIndex)
             {
                 TempDropPacketPipelineStage.s_StaticInstanceBuffer[0] = 0; // Reset packet counter
                 TempDropPacketPipelineStage.s_StaticInstanceBuffer[1] = (byte)dropIndex;
@@ -295,6 +297,7 @@ namespace Unity.Networking.Transport.Tests
                 }
             }
         }
+
         [Test]
         public void NetworkPipeline_Fragmentation_Unreliable_SendRecv1380_Plus()
         {
@@ -338,6 +341,7 @@ namespace Unity.Networking.Transport.Tests
                 }
             }
         }
+
         [Test]
         public void NetworkPipeline_Unreliable_Fragmentation_SendRecv1380_Plus()
         {

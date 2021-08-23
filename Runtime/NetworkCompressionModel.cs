@@ -18,11 +18,11 @@ namespace Unity.Networking.Transport
         internal static readonly int[] k_FirstBucketCandidate =
         {
             // 0   1   2   3   4   5   6   7   8   9   10  11  12  13  14  15  16  17  18 19 20 21 22 23 24 25 26 27 28 29 30 31 32
-               15, 15, 15, 15, 14, 14, 14, 13, 13, 13, 12, 12, 12, 11, 11, 11, 10, 10, 10, 9, 9, 8, 8, 7, 7, 6, 5, 4, 3, 2, 1, 1, 0
+            15, 15, 15, 15, 14, 14, 14, 13, 13, 13, 12, 12, 12, 11, 11, 11, 10, 10, 10, 9, 9, 8, 8, 7, 7, 6, 5, 4, 3, 2, 1, 1, 0
         };
         internal static readonly byte[] k_DefaultModelData = { 16, // 16 symbols
-            2, 3, 3, 3,   4, 4, 4, 5,     5, 5, 6, 6,     6, 6, 6, 6,
-            0, 0 };  // no contexts
+                                                               2, 3, 3, 3,   4, 4, 4, 5,     5, 5, 6, 6,     6, 6, 6, 6,
+                                                               0, 0 }; // no contexts
         internal const int k_AlphabetSize = 16;
         internal const int k_MaxHuffmanSymbolLength = 6;
         internal const int k_MaxContexts = 1;
@@ -30,6 +30,7 @@ namespace Unity.Networking.Transport
         public void Dispose()
         {
         }
+
         public NetworkCompressionModel(Allocator allocator)
         {
             for (int i = 0; i < k_AlphabetSize; ++i)
@@ -104,6 +105,7 @@ namespace Unity.Networking.Transport
                 }
             }
         }
+
         private static void GenerateHuffmanCodes(byte[] symboLCodes, int symbolCodesOffset, byte[] symbolLengths, int symbolLengthsOffset, int alphabetSize, int maxCodeLength)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -141,6 +143,7 @@ namespace Unity.Networking.Transport
                 nextCodeWord <<= 1;
             }
         }
+
         private static uint ReverseBits(uint value, int num_bits)
         {
             value = ((value & 0x55555555u) << 1) | ((value & 0xAAAAAAAAu) >> 1);
@@ -175,10 +178,12 @@ namespace Unity.Networking.Transport
                     {
                         decodeTable[decodeTableOffset + code] = (ushort)(symbol << 8 | length);
                         code += step;
-                    } while (code < maxCode);
+                    }
+                    while (code < maxCode);
                 }
             }
         }
+
         public fixed ushort encodeTable[k_MaxContexts * k_AlphabetSize];
         public fixed ushort decodeTable[k_MaxContexts * (1 << k_MaxHuffmanSymbolLength)];
         public fixed byte bucketSizes[k_AlphabetSize];

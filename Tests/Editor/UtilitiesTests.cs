@@ -64,7 +64,7 @@ namespace Unity.Networking.Transport.Tests
             using (var freeList = new UnsafeAtomicFreeList(1024, Allocator.Persistent))
             {
                 var job = new FreeJob {freeList = freeList};
-                job.Schedule(1024*100, 1).Complete();
+                job.Schedule(1024 * 100, 1).Complete();
                 var foo = new HashSet<int>();
                 for (int i = 0; i < freeList.Capacity; ++i)
                 {

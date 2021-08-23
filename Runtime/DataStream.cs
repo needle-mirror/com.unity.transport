@@ -3,6 +3,7 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using System;
 using System.Diagnostics;
+using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
@@ -70,6 +71,22 @@ namespace Unity.Networking.Transport
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct DataStreamWriter
     {
+        struct IsLittleEndianStructKey {}
+        private static readonly SharedStatic<int> m_IsLittleEndian = SharedStatic<int>.GetOrCreate<IsLittleEndianStructKey>();
+        public static bool IsLittleEndian
+        {
+            get
+            {
+                if (m_IsLittleEndian.Data == 0)
+                {
+                    uint test = 1;
+                    byte* testPtr = (byte*)&test;
+                    m_IsLittleEndian.Data = testPtr[0] == 1 ? 1 : 2;
+                }
+                return m_IsLittleEndian.Data == 1;
+            }
+        }
+
         struct StreamData
         {
             public byte* buffer;
@@ -99,13 +116,28 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Initializes a new instance of the DataStreamWriter struct with a NativeArray<byte>
+        /// Initializes a new instance of the DataStreamWriter struct with a NativeArray{byte}
         /// </summary>
         /// <param name="data">The buffer we want to attach to our DataStreamWriter.</param>
         public DataStreamWriter(NativeArray<byte> data)
         {
             Initialize(out this, data);
         }
+
+        /// <summary>
+        /// Initializes a new instance of the DataStreamWriter struct with a memory we don't own
+        /// </summary>
+        /// <param name="data">Pointer to the data</param>
+        /// <param name="length">Length of the data</param>
+        public DataStreamWriter(byte* data, int length)
+        {
+            var na = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(data, length, Allocator.Invalid);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref na, AtomicSafetyHandle.GetTempMemoryHandle());
+#endif
+            Initialize(out this, na);
+        }
+
         public NativeArray<byte> AsNativeArray()
         {
             var na = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(m_Data.buffer, Length, Allocator.Invalid);
@@ -114,6 +146,7 @@ namespace Unity.Networking.Transport
 #endif
             return na;
         }
+
         private static void Initialize(out DataStreamWriter self, NativeArray<byte> data)
         {
             self.m_SendHandleData = IntPtr.Zero;
@@ -128,24 +161,16 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             self.m_Safety = NativeArrayUnsafeUtility.GetAtomicSafetyHandle(data);
 #endif
-            uint test = 1;
-            unsafe
-            {
-                byte* test_b = (byte*) &test;
-                self.m_IsLittleEndian = test_b[0] == 1 ? 1 : 0;
-            }
         }
-
-        private int m_IsLittleEndian;
-        private bool IsLittleEndian => m_IsLittleEndian != 0;
 
         private static short ByteSwap(short val)
         {
-            return (short)(((val & 0xff) << 8) | ((val >> 8)&0xff));
+            return (short)(((val & 0xff) << 8) | ((val >> 8) & 0xff));
         }
+
         private static int ByteSwap(int val)
         {
-            return (int)(((val & 0xff) << 24) |((val&0xff00)<<8) | ((val>>8)&0xff00) | ((val >> 24)&0xff));
+            return (int)(((val & 0xff) << 24) | ((val & 0xff00) << 8) | ((val >> 8) & 0xff00) | ((val >> 24) & 0xff));
         }
 
         /// <summary>
@@ -193,7 +218,7 @@ namespace Unity.Networking.Transport
             {
                 CheckRead();
                 SyncBitData();
-                return m_Data.length*8 + m_Data.bitIndex;
+                return m_Data.length * 8 + m_Data.bitIndex;
             }
         }
 
@@ -214,6 +239,7 @@ namespace Unity.Networking.Transport
                 ++offset;
             }
         }
+
         public void Flush()
         {
             while (m_Data.bitIndex > 0)
@@ -243,7 +269,7 @@ namespace Unity.Networking.Transport
 
         public bool WriteByte(byte value)
         {
-            return WriteBytes((byte*) &value, sizeof(byte));
+            return WriteBytes((byte*)&value, sizeof(byte));
         }
 
         /// <summary>
@@ -257,43 +283,49 @@ namespace Unity.Networking.Transport
 
         public bool WriteShort(short value)
         {
-            return WriteBytes((byte*) &value, sizeof(short));
+            return WriteBytes((byte*)&value, sizeof(short));
         }
 
         public bool WriteUShort(ushort value)
         {
-            return WriteBytes((byte*) &value, sizeof(ushort));
+            return WriteBytes((byte*)&value, sizeof(ushort));
         }
 
         public bool WriteInt(int value)
         {
-            return WriteBytes((byte*) &value, sizeof(int));
+            return WriteBytes((byte*)&value, sizeof(int));
         }
 
         public bool WriteUInt(uint value)
         {
-            return WriteBytes((byte*) &value, sizeof(uint));
+            return WriteBytes((byte*)&value, sizeof(uint));
         }
+
+        public bool WriteLong(long value)
+        {
+            return WriteBytes((byte*)&value, sizeof(long));
+        }
+
         public bool WriteULong(ulong value)
         {
-            return WriteBytes((byte*) &value, sizeof(ulong));
+            return WriteBytes((byte*)&value, sizeof(ulong));
         }
 
         public bool WriteShortNetworkByteOrder(short value)
         {
             short netValue = IsLittleEndian ? ByteSwap(value) : value;
-            return WriteBytes((byte*) &netValue, sizeof(short));
+            return WriteBytes((byte*)&netValue, sizeof(short));
         }
 
         public bool WriteUShortNetworkByteOrder(ushort value)
         {
-            return WriteShortNetworkByteOrder((short) value);
+            return WriteShortNetworkByteOrder((short)value);
         }
 
         public bool WriteIntNetworkByteOrder(int value)
         {
             int netValue = IsLittleEndian ? ByteSwap(value) : value;
-            return WriteBytes((byte*) &netValue, sizeof(int));
+            return WriteBytes((byte*)&netValue, sizeof(int));
         }
 
         public bool WriteUIntNetworkByteOrder(uint value)
@@ -305,7 +337,7 @@ namespace Unity.Networking.Transport
         {
             UIntFloat uf = new UIntFloat();
             uf.floatValue = value;
-            return WriteInt((int) uf.intValue);
+            return WriteInt((int)uf.intValue);
         }
 
         private void FlushBits()
@@ -317,6 +349,7 @@ namespace Unity.Networking.Transport
                 m_Data.bitBuffer >>= 8;
             }
         }
+
         void WriteRawBitsInternal(uint value, int numbits)
         {
             CheckBits(value, numbits);
@@ -324,6 +357,7 @@ namespace Unity.Networking.Transport
             m_Data.bitBuffer |= ((ulong)value << m_Data.bitIndex);
             m_Data.bitIndex += numbits;
         }
+
         public bool WriteRawBits(uint value, int numbits)
         {
             CheckWrite();
@@ -346,7 +380,7 @@ namespace Unity.Networking.Transport
             int bits = model.bucketSizes[bucket];
             ushort encodeEntry = model.encodeTable[bucket];
 
-            if (m_Data.length + ((m_Data.bitIndex + (encodeEntry&0xff) + bits + 7) >> 3) > m_Data.capacity)
+            if (m_Data.length + ((m_Data.bitIndex + (encodeEntry & 0xff) + bits + 7) >> 3) > m_Data.capacity)
             {
                 ++m_Data.failedWrites;
                 return false;
@@ -356,25 +390,54 @@ namespace Unity.Networking.Transport
             FlushBits();
             return true;
         }
+
+        public bool WritePackedULong(ulong value, NetworkCompressionModel model)
+        {
+            return WritePackedUInt((uint)(value >> 32), model) &
+                WritePackedUInt((uint)(value & 0xFFFFFFFF), model);
+        }
+
         public bool WritePackedInt(int value, NetworkCompressionModel model)
         {
             uint interleaved = (uint)((value >> 31) ^ (value << 1));      // interleave negative values between positive values: 0, -1, 1, -2, 2
             return WritePackedUInt(interleaved, model);
         }
+
+        public bool WritePackedLong(long value, NetworkCompressionModel model)
+        {
+            ulong interleaved = (ulong)((value >> 63) ^ (value << 1));      // interleave negative values between positive values: 0, -1, 1, -2, 2
+            return WritePackedULong(interleaved, model);
+        }
+
         public bool WritePackedFloat(float value, NetworkCompressionModel model)
         {
             return WritePackedFloatDelta(value, 0, model);
         }
+
         public bool WritePackedUIntDelta(uint value, uint baseline, NetworkCompressionModel model)
         {
             int diff = (int)(baseline - value);
             return WritePackedInt(diff, model);
         }
+
         public bool WritePackedIntDelta(int value, int baseline, NetworkCompressionModel model)
         {
             int diff = (int)(baseline - value);
             return WritePackedInt(diff, model);
         }
+
+        public bool WritePackedLongDelta(long value, long baseline, NetworkCompressionModel model)
+        {
+            long diff = (long)(baseline - value);
+            return WritePackedLong(diff, model);
+        }
+
+        public bool WritePackedULongDelta(ulong value, ulong baseline, NetworkCompressionModel model)
+        {
+            long diff = (long)(baseline - value);
+            return WritePackedLong(diff, model);
+        }
+
         public bool WritePackedFloatDelta(float value, float baseline, NetworkCompressionModel model)
         {
             CheckWrite();
@@ -399,67 +462,68 @@ namespace Unity.Networking.Transport
             return true;
         }
 
-        public unsafe bool WriteFixedString32(FixedString32 str)
+        public unsafe bool WriteFixedString32(FixedString32Bytes str)
         {
             int length = (int)*((ushort*)&str) + 2;
             byte* data = ((byte*)&str);
             return WriteBytes(data, length);
         }
-        public unsafe bool WriteFixedString64(FixedString64 str)
+        public unsafe bool WriteFixedString64(FixedString64Bytes str)
         {
             int length = (int)*((ushort*)&str) + 2;
             byte* data = ((byte*)&str);
             return WriteBytes(data, length);
         }
-        public unsafe bool WriteFixedString128(FixedString128 str)
+        public unsafe bool WriteFixedString128(FixedString128Bytes str)
         {
             int length = (int)*((ushort*)&str) + 2;
             byte* data = ((byte*)&str);
             return WriteBytes(data, length);
         }
-        public unsafe bool WriteFixedString512(FixedString512 str)
+        public unsafe bool WriteFixedString512(FixedString512Bytes str)
         {
             int length = (int)*((ushort*)&str) + 2;
             byte* data = ((byte*)&str);
             return WriteBytes(data, length);
         }
-        public unsafe bool WriteFixedString4096(FixedString4096 str)
+        public unsafe bool WriteFixedString4096(FixedString4096Bytes str)
         {
             int length = (int)*((ushort*)&str) + 2;
             byte* data = ((byte*)&str);
             return WriteBytes(data, length);
         }
 
-        public unsafe bool WritePackedFixedString32Delta(FixedString32 str, FixedString32 baseline, NetworkCompressionModel model)
+        public unsafe bool WritePackedFixedString32Delta(FixedString32Bytes str, FixedString32Bytes baseline, NetworkCompressionModel model)
         {
             ushort length = *((ushort*)&str);
             byte* data = ((byte*)&str) + 2;
             return WritePackedFixedStringDelta(data, length, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
         }
-        public unsafe bool WritePackedFixedString64Delta(FixedString64 str, FixedString64 baseline, NetworkCompressionModel model)
+        public unsafe bool WritePackedFixedString64Delta(FixedString64Bytes str, FixedString64Bytes baseline, NetworkCompressionModel model)
         {
             ushort length = *((ushort*)&str);
             byte* data = ((byte*)&str) + 2;
             return WritePackedFixedStringDelta(data, length, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
         }
-        public unsafe bool WritePackedFixedString128Delta(FixedString128 str, FixedString128 baseline, NetworkCompressionModel model)
+        public unsafe bool WritePackedFixedString128Delta(FixedString128Bytes str, FixedString128Bytes baseline, NetworkCompressionModel model)
         {
             ushort length = *((ushort*)&str);
             byte* data = ((byte*)&str) + 2;
             return WritePackedFixedStringDelta(data, length, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
         }
-        public unsafe bool WritePackedFixedString512Delta(FixedString512 str, FixedString512 baseline, NetworkCompressionModel model)
+        public unsafe bool WritePackedFixedString512Delta(FixedString512Bytes str, FixedString512Bytes baseline, NetworkCompressionModel model)
         {
             ushort length = *((ushort*)&str);
             byte* data = ((byte*)&str) + 2;
             return WritePackedFixedStringDelta(data, length, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
         }
-        public unsafe bool WritePackedFixedString4096Delta(FixedString4096 str, FixedString4096 baseline, NetworkCompressionModel model)
+        public unsafe bool WritePackedFixedString4096Delta(FixedString4096Bytes str, FixedString4096Bytes baseline, NetworkCompressionModel model)
         {
             ushort length = *((ushort*)&str);
             byte* data = ((byte*)&str) + 2;
             return WritePackedFixedStringDelta(data, length, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
         }
+
         private unsafe bool WritePackedFixedStringDelta(byte* data, uint length, byte* baseData, uint baseLength, NetworkCompressionModel model)
         {
             var oldData = m_Data;
@@ -578,31 +642,38 @@ namespace Unity.Networking.Transport
 
         public DataStreamReader(NativeArray<byte> array)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            m_Safety = NativeArrayUnsafeUtility.GetAtomicSafetyHandle(array);
-#endif
-            m_bufferPtr = (byte*)array.GetUnsafeReadOnlyPtr();
-            m_Length = array.Length;
-            m_Context = default;
-
-            uint test = 1;
-            unsafe
-            {
-                byte* test_b = (byte*) &test;
-                m_IsLittleEndian = test_b[0] == 1 ? 1 : 0;
-            }
+            Initialize(out this, array);
         }
 
-        private int m_IsLittleEndian;
-        private bool IsLittleEndian => m_IsLittleEndian != 0;
+        public DataStreamReader(byte* data, int length)
+        {
+            var na = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(data, length, Allocator.Invalid);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref na, AtomicSafetyHandle.GetTempMemoryHandle());
+#endif
+            Initialize(out this, na);
+        }
+
+        private static void Initialize(out DataStreamReader self, NativeArray<byte> array)
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            self.m_Safety = NativeArrayUnsafeUtility.GetAtomicSafetyHandle(array);
+#endif
+            self.m_bufferPtr = (byte*)array.GetUnsafeReadOnlyPtr();
+            self.m_Length = array.Length;
+            self.m_Context = default;
+        }
+
+        public bool IsLittleEndian => DataStreamWriter.IsLittleEndian;
 
         private static short ByteSwap(short val)
         {
-            return (short)(((val & 0xff) << 8) | ((val >> 8)&0xff));
+            return (short)(((val & 0xff) << 8) | ((val >> 8) & 0xff));
         }
+
         private static int ByteSwap(int val)
         {
-            return (int)(((val & 0xff) << 24) |((val&0xff00)<<8) | ((val>>8)&0xff00) | ((val >> 24)&0xff));
+            return (int)(((val & 0xff) << 24) | ((val & 0xff00) << 8) | ((val >> 8) & 0xff00) | ((val >> 24) & 0xff));
         }
 
         public bool HasFailedReads => m_Context.m_FailedReads > 0;
@@ -670,10 +741,12 @@ namespace Unity.Networking.Transport
         {
             return m_Context.m_ReadByteIndex - (m_Context.m_BitIndex >> 3);
         }
+
         public int GetBitsRead()
         {
-            return (m_Context.m_ReadByteIndex<<3) - m_Context.m_BitIndex;
+            return (m_Context.m_ReadByteIndex << 3) - m_Context.m_BitIndex;
         }
+
         public void SeekSet(int pos)
         {
             if (pos > m_Length)
@@ -692,74 +765,76 @@ namespace Unity.Networking.Transport
         public byte ReadByte()
         {
             byte data;
-            ReadBytes((byte*) &data, sizeof(byte));
+            ReadBytes((byte*)&data, sizeof(byte));
             return data;
         }
 
         public short ReadShort()
         {
             short data;
-            ReadBytes((byte*) &data, sizeof(short));
+            ReadBytes((byte*)&data, sizeof(short));
             return data;
         }
 
         public ushort ReadUShort()
         {
             ushort data;
-            ReadBytes((byte*) &data, sizeof(ushort));
+            ReadBytes((byte*)&data, sizeof(ushort));
             return data;
         }
 
         public int ReadInt()
         {
             int data;
-            ReadBytes((byte*) &data, sizeof(int));
+            ReadBytes((byte*)&data, sizeof(int));
             return data;
         }
 
         public uint ReadUInt()
         {
             uint data;
-            ReadBytes((byte*) &data, sizeof(uint));
+            ReadBytes((byte*)&data, sizeof(uint));
             return data;
         }
+
         public ulong ReadULong()
         {
             ulong data;
-            ReadBytes((byte*) &data, sizeof(ulong));
+            ReadBytes((byte*)&data, sizeof(ulong));
             return data;
         }
 
         public short ReadShortNetworkByteOrder()
         {
             short data;
-            ReadBytes((byte*) &data, sizeof(short));
+            ReadBytes((byte*)&data, sizeof(short));
             return IsLittleEndian ? ByteSwap(data) : data;
         }
 
         public ushort ReadUShortNetworkByteOrder()
         {
-            return (ushort) ReadShortNetworkByteOrder();
+            return (ushort)ReadShortNetworkByteOrder();
         }
 
         public int ReadIntNetworkByteOrder()
         {
             int data;
-            ReadBytes((byte*) &data, sizeof(int));
+            ReadBytes((byte*)&data, sizeof(int));
             return IsLittleEndian ? ByteSwap(data) : data;
         }
 
         public uint ReadUIntNetworkByteOrder()
         {
-            return (uint) ReadIntNetworkByteOrder();
+            return (uint)ReadIntNetworkByteOrder();
         }
 
         public float ReadFloat()
         {
             UIntFloat uf = new UIntFloat();
-            uf.intValue = (uint) ReadInt();
+            uf.intValue = (uint)ReadInt();
             return uf.floatValue;
         }
+
         public uint ReadPackedUInt(NetworkCompressionModel model)
         {
             CheckRead();
@@ -787,6 +862,7 @@ namespace Unity.Networking.Transport
             int bits = model.bucketSizes[symbol];
             return ReadRawBitsInternal(bits) + offset;
         }
+
         void FillBitBuffer()
         {
             while (m_Context.m_BitIndex <= 56 && m_Context.m_ReadByteIndex < m_Length)
@@ -795,6 +871,7 @@ namespace Unity.Networking.Transport
                 m_Context.m_BitIndex += 8;
             }
         }
+
         uint ReadRawBitsInternal(int numbits)
         {
             CheckBits(numbits);
@@ -811,6 +888,7 @@ namespace Unity.Networking.Transport
             m_Context.m_BitIndex -= numbits;
             return res;
         }
+
         public uint ReadRawBits(int numbits)
         {
             CheckRead();
@@ -818,15 +896,32 @@ namespace Unity.Networking.Transport
             return ReadRawBitsInternal(numbits);
         }
 
+        public ulong ReadPackedULong(NetworkCompressionModel model)
+        {
+            //hi
+            ulong hi = ReadPackedUInt(model);
+            hi <<= 32;
+            hi |= ReadPackedUInt(model);
+            return hi;
+        }
+
         public int ReadPackedInt(NetworkCompressionModel model)
         {
             uint folded = ReadPackedUInt(model);
             return (int)(folded >> 1) ^ -(int)(folded & 1);    // Deinterleave values from [0, -1, 1, -2, 2...] to [..., -2, -1, -0, 1, 2, ...]
         }
+
+        public long ReadPackedLong(NetworkCompressionModel model)
+        {
+            ulong folded = ReadPackedULong(model);
+            return (long)(folded >> 1) ^ -(long)(folded & 1);    // Deinterleave values from [0, -1, 1, -2, 2...] to [..., -2, -1, -0, 1, 2, ...]
+        }
+
         public float ReadPackedFloat(NetworkCompressionModel model)
         {
             return ReadPackedFloatDelta(0, model);
         }
+
         public int ReadPackedIntDelta(int baseline, NetworkCompressionModel model)
         {
             int delta = ReadPackedInt(model);
@@ -838,6 +933,19 @@ namespace Unity.Networking.Transport
             uint delta = (uint)ReadPackedInt(model);
             return baseline - delta;
         }
+
+        public long ReadPackedLongDelta(long baseline, NetworkCompressionModel model)
+        {
+            long delta = ReadPackedLong(model);
+            return baseline - delta;
+        }
+
+        public ulong ReadPackedULongDelta(ulong baseline, NetworkCompressionModel model)
+        {
+            ulong delta = (ulong)ReadPackedLong(model);
+            return baseline - delta;
+        }
+
         public float ReadPackedFloatDelta(float baseline, NetworkCompressionModel model)
         {
             CheckRead();
@@ -851,41 +959,42 @@ namespace Unity.Networking.Transport
             return uf.floatValue;
         }
 
-        public unsafe FixedString32 ReadFixedString32()
+        public unsafe FixedString32Bytes ReadFixedString32()
         {
-            FixedString32 str;
+            FixedString32Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadFixedString(data, str.Capacity);
             return str;
         }
-        public unsafe FixedString64 ReadFixedString64()
+        public unsafe FixedString64Bytes ReadFixedString64()
         {
-            FixedString64 str;
+            FixedString64Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadFixedString(data, str.Capacity);
             return str;
         }
-        public unsafe FixedString128 ReadFixedString128()
+        public unsafe FixedString128Bytes ReadFixedString128()
         {
-            FixedString128 str;
+            FixedString128Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadFixedString(data, str.Capacity);
             return str;
         }
-        public unsafe FixedString512 ReadFixedString512()
+        public unsafe FixedString512Bytes ReadFixedString512()
         {
-            FixedString512 str;
+            FixedString512Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadFixedString(data, str.Capacity);
             return str;
         }
-        public unsafe FixedString4096 ReadFixedString4096()
+        public unsafe FixedString4096Bytes ReadFixedString4096()
         {
-            FixedString4096 str;
+            FixedString4096Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadFixedString(data, str.Capacity);
             return str;
         }
+
         public unsafe ushort ReadFixedString(byte* data, int maxLength)
         {
             ushort length = ReadUShort();
@@ -900,41 +1009,42 @@ namespace Unity.Networking.Transport
             return length;
         }
 
-        public unsafe FixedString32 ReadPackedFixedString32Delta(FixedString32 baseline, NetworkCompressionModel model)
+        public unsafe FixedString32Bytes ReadPackedFixedString32Delta(FixedString32Bytes baseline, NetworkCompressionModel model)
         {
-            FixedString32 str;
+            FixedString32Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadPackedFixedStringDelta(data, str.Capacity, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
             return str;
         }
-        public unsafe FixedString64 ReadPackedFixedString64Delta(FixedString64 baseline, NetworkCompressionModel model)
+        public unsafe FixedString64Bytes ReadPackedFixedString64Delta(FixedString64Bytes baseline, NetworkCompressionModel model)
         {
-            FixedString64 str;
+            FixedString64Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadPackedFixedStringDelta(data, str.Capacity, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
             return str;
         }
-        public unsafe FixedString128 ReadPackedFixedString128Delta(FixedString128 baseline, NetworkCompressionModel model)
+        public unsafe FixedString128Bytes ReadPackedFixedString128Delta(FixedString128Bytes baseline, NetworkCompressionModel model)
         {
-            FixedString128 str;
+            FixedString128Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadPackedFixedStringDelta(data, str.Capacity, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
             return str;
         }
-        public unsafe FixedString512 ReadPackedFixedString512Delta(FixedString512 baseline, NetworkCompressionModel model)
+        public unsafe FixedString512Bytes ReadPackedFixedString512Delta(FixedString512Bytes baseline, NetworkCompressionModel model)
         {
-            FixedString512 str;
+            FixedString512Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadPackedFixedStringDelta(data, str.Capacity, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
             return str;
         }
-        public unsafe FixedString4096 ReadPackedFixedString4096Delta(FixedString4096 baseline, NetworkCompressionModel model)
+        public unsafe FixedString4096Bytes ReadPackedFixedString4096Delta(FixedString4096Bytes baseline, NetworkCompressionModel model)
         {
-            FixedString4096 str;
+            FixedString4096Bytes str;
             byte* data = ((byte*)&str) + 2;
             *(ushort*)&str = ReadPackedFixedStringDelta(data, str.Capacity, ((byte*)&baseline) + 2, *((ushort*)&baseline), model);
             return str;
         }
+
         public unsafe ushort ReadPackedFixedStringDelta(byte* data, int maxLength, byte* baseData, ushort baseLength, NetworkCompressionModel model)
         {
             uint length = ReadPackedUIntDelta(baseLength, model);
@@ -959,6 +1069,7 @@ namespace Unity.Networking.Transport
             }
             return (ushort)length;
         }
+
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
         void CheckRead()
         {

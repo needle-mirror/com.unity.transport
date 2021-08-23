@@ -36,7 +36,7 @@ namespace Unity.Networking.Transport
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
-            var fragContext = (FragContext*) ctx.internalProcessBuffer;
+            var fragContext = (FragContext*)ctx.internalProcessBuffer;
             var dataBuffer = ctx.internalProcessBuffer + sizeof(FragContext);
             var param = (FragmentationUtility.Parameters*)ctx.staticInstanceBuffer;
 
@@ -99,10 +99,10 @@ namespace Unity.Networking.Transport
 
 #if FRAGMENTATION_DEBUG
             // For debugging - this allows WireShark to identify fragmentation packets
-            ctx.header.WriteByte((byte) '@');
-            ctx.header.WriteByte((byte) '@');
-            ctx.header.WriteByte((byte) '@');
-            ctx.header.WriteByte((byte) '@');
+            ctx.header.WriteByte((byte)'@');
+            ctx.header.WriteByte((byte)'@');
+            ctx.header.WriteByte((byte)'@');
+            ctx.header.WriteByte((byte)'@');
 #endif
             return (int)Error.StatusCode.Success;
         }
@@ -111,7 +111,7 @@ namespace Unity.Networking.Transport
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
         {
-            var fragContext = (FragContext*) ctx.internalProcessBuffer;
+            var fragContext = (FragContext*)ctx.internalProcessBuffer;
             var dataBuffer = ctx.internalProcessBuffer + sizeof(FragContext);
             var param = (FragmentationUtility.Parameters*)ctx.staticInstanceBuffer;
 
@@ -185,6 +185,7 @@ namespace Unity.Networking.Transport
             byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
         }
+
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
