@@ -1,5 +1,14 @@
 # Change log
 
+## [1.0.0-pre.3] - 2021-09-01
+### New features
+* Removed references of TransportSamples from readme as they are not currently included in the package
+* Stripping out un-needed files from the package
+
+### Changes 
+### Fixes
+### Upgrade guide
+
 ## [1.0.0-pre.2] - 2021-08-23
 ### New features
 * Upgraded collections to 1.0.0-pre.5
