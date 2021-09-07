@@ -51,14 +51,14 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var context = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
             var param = *(SimulatorUtility.Parameters*)ctx.staticInstanceBuffer;
@@ -157,7 +157,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var context = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
             var param = *(SimulatorUtility.Parameters*)ctx.staticInstanceBuffer;
@@ -207,7 +207,7 @@ namespace Unity.Networking.Transport
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer,
-            ref NetworkPipelineStage.Requests requests)
+            ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
         }
 

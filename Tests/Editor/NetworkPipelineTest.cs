@@ -30,7 +30,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var headerData = (int*)inboundBuffer.buffer;
             if (*headerData != 1)
@@ -40,7 +40,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             ctx.header.WriteInt((int)1);
             return (int)Error.StatusCode.Success;
@@ -78,7 +78,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var headerData = (int*)inboundBuffer.buffer;
             if (*headerData != 2)
@@ -89,7 +89,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             ctx.header.WriteInt((int)2);
             return (int)Error.StatusCode.Success;
@@ -128,7 +128,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             for (int i = 0; i < inboundBuffer.bufferLength; ++i)
                 ctx.internalProcessBuffer[i] = (byte)(inboundBuffer.buffer[i] ^ 0xff);
@@ -137,7 +137,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var len = inboundBuffer.bufferLength;
             for (int i = 0; i < len; ++i)
@@ -181,7 +181,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             for (int i = 0; i < inboundBuffer.bufferLength; ++i)
                 inboundBuffer.buffer[i] = (byte)(inboundBuffer.buffer[i] ^ 0xff);
@@ -189,7 +189,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var len = inboundBuffer.bufferLength;
             for (int i = 0; i < len; ++i)
@@ -233,13 +233,13 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
         }
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static unsafe int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static unsafe int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var len = inboundBuffer.bufferLength;
             for (int i = 0; i < len; ++i)
@@ -284,7 +284,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var receiveData = (int*)ctx.internalProcessBuffer;
             for (int i = 4; i <= 6; ++i)
@@ -302,7 +302,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var sendData = (int*)ctx.internalProcessBuffer;
             for (int i = 1; i <= 3; ++i)
@@ -369,7 +369,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var receiveData = (int*)ctx.internalProcessBuffer;
             for (int i = 4; i <= 6; ++i)
@@ -387,7 +387,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             var sendData = (int*)ctx.internalProcessBuffer;
             for (int i = 1; i <= 3; ++i)

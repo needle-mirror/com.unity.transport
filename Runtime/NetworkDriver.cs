@@ -115,6 +115,11 @@ namespace Unity.Networking.Transport
 
                 return headerSize;
             }
+            
+            internal int MaxProtocolHeaderSize()
+            {
+                return m_NetworkProtocolInterface.PaddingSize;
+            }
 
             struct PendingSend
             {
@@ -987,6 +992,11 @@ namespace Unity.Networking.Transport
         public int MaxHeaderSize(NetworkPipeline pipe)
         {
             return ToConcurrentSendOnly().MaxHeaderSize(pipe);
+        }
+
+        internal int MaxProtocolHeaderSize()
+        {
+            return m_NetworkProtocolInterface.PaddingSize;
         }
 
         public int BeginSend(NetworkPipeline pipe, NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)

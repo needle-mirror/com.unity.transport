@@ -29,7 +29,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var inboundArray = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(inboundBuffer.buffer, inboundBuffer.bufferLength, Allocator.Invalid);
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -52,7 +52,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var sequenceId = (int*)ctx.internalProcessBuffer;
             ctx.header.WriteUShort((ushort)*sequenceId);

@@ -1,5 +1,15 @@
 # Change log
 
+## [1.0.0-pre.4] - 2021-09-07
+
+### New features
+### Changes 
+### Fixes
+* Fixed: Updated collection types in `SecureNetworkProtocol.cs`
+* Fixed: Fixed race condition between UTP and Relay disconnects
+* Fixed: Relay not being able to use the fragmentation pipelinestage
+
+### Upgrade guide
 ## [1.0.0-pre.3] - 2021-09-01
 ### New features
 * Removed references of TransportSamples from readme as they are not currently included in the package

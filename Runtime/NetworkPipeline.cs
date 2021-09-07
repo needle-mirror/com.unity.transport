@@ -97,10 +97,10 @@ namespace Unity.Networking.Transport
         }
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void ReceiveDelegate(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref Requests requests);
+        public delegate void ReceiveDelegate(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref Requests requests, int systemHeadersSize);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate int SendDelegate(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref Requests requests);
+        public delegate int SendDelegate(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref Requests requests, int systemHeadersSize);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void InitializeConnectionDelegate(byte* staticInstanceBuffer, int staticInstanceBufferLength,
@@ -319,6 +319,7 @@ namespace Unity.Networking.Transport
                 ctx.timestamp = m_timestamp[0];
                 var p = m_Pipelines[pipeline.Id - 1];
                 var connectionId = connection.m_NetworkId;
+                var systemHeaderSize = driver.MaxProtocolHeaderSize();
 
                 var resumeQ = new NativeList<int>(16, Allocator.Temp);
                 int resumeQStart = 0;
@@ -378,7 +379,7 @@ namespace Unity.Networking.Transport
                         var prevInbound = inboundBuffer;
                         NetworkPipelineStage.Requests requests = NetworkPipelineStage.Requests.None;
 
-                        var sendResult = ProcessSendStage(i, internalBufferOffset, internalSharedBufferOffset, p, ref resumeQ, ref ctx, ref inboundBuffer, ref requests);
+                        var sendResult = ProcessSendStage(i, internalBufferOffset, internalSharedBufferOffset, p, ref resumeQ, ref ctx, ref inboundBuffer, ref requests, systemHeaderSize);
 
                         if ((requests & NetworkPipelineStage.Requests.Update) != 0)
                             AddSendUpdate(connection, i, pipeline, currentUpdates);
@@ -488,7 +489,7 @@ namespace Unity.Networking.Transport
             }
 
             private unsafe int ProcessSendStage(int startStage, int internalBufferOffset, int internalSharedBufferOffset,
-                PipelineImpl p, ref NativeList<int> resumeQ, ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+                PipelineImpl p, ref NativeList<int> resumeQ, ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
             {
                 var stageIndex = p.FirstStageIndex + startStage;
                 var pipelineStage = m_StageCollection[m_StageList[stageIndex]];
@@ -502,7 +503,7 @@ namespace Unity.Networking.Transport
                 ctx.internalSharedProcessBufferLength = pipelineStage.SharedStateCapacity;
 
                 requests = NetworkPipelineStage.Requests.None;
-                var retval = pipelineStage.Send.Ptr.Invoke(ref ctx, ref inboundBuffer, ref requests);
+                var retval = pipelineStage.Send.Ptr.Invoke(ref ctx, ref inboundBuffer, ref requests, systemHeaderSize);
                 if ((requests & NetworkPipelineStage.Requests.Resume) != 0)
                     resumeQ.Add(startStage);
                 return retval;
@@ -868,13 +869,16 @@ namespace Unity.Networking.Transport
             ProcessReceiveStagesFrom(driver, startStage, new NetworkPipeline {Id = pipelineId}, connection, inBuffer);
         }
 
-        private unsafe void ProcessReceiveStagesFrom(NetworkDriver driver, int startStage, NetworkPipeline pipeline, NetworkConnection connection, InboundRecvBuffer buffer)
+        private unsafe void ProcessReceiveStagesFrom(NetworkDriver driver, int startStage, NetworkPipeline pipeline,
+            NetworkConnection connection, InboundRecvBuffer buffer)
         {
             var p = m_Pipelines[pipeline.Id - 1];
             var connectionId = connection.m_NetworkId;
             var resumeQ = new NativeList<int>(16, Allocator.Temp);
             int resumeQStart = 0;
 
+            var systemHeaderSize = driver.MaxProtocolHeaderSize();
+            
             var inboundBuffer = buffer;
 
             var ctx = new NetworkPipelineContext
@@ -899,7 +903,7 @@ namespace Unity.Networking.Transport
 
                 for (int i = startStage; i >= 0; --i)
                 {
-                    ProcessReceiveStage(i, pipeline, internalBufferOffset, internalSharedBufferOffset, ref ctx, ref inboundBuffer, ref resumeQ, ref needsUpdate, ref needsSendUpdate);
+                    ProcessReceiveStage(i, pipeline, internalBufferOffset, internalSharedBufferOffset, ref ctx, ref inboundBuffer, ref resumeQ, ref needsUpdate, ref needsSendUpdate, systemHeaderSize);
                     if (needsUpdate)
                     {
                         var newUpdate = new UpdatePipeline
@@ -947,7 +951,9 @@ namespace Unity.Networking.Transport
             }
         }
 
-        private unsafe void ProcessReceiveStage(int stage, NetworkPipeline pipeline, int internalBufferOffset, int internalSharedBufferOffset, ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NativeList<int> resumeQ, ref bool needsUpdate, ref bool needsSendUpdate)
+        private unsafe void ProcessReceiveStage(int stage, NetworkPipeline pipeline, int internalBufferOffset,
+            int internalSharedBufferOffset, ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer,
+            ref NativeList<int> resumeQ, ref bool needsUpdate, ref bool needsSendUpdate, int systemHeadersSize)
         {
             var p = m_Pipelines[pipeline.Id - 1];
 
@@ -961,7 +967,7 @@ namespace Unity.Networking.Transport
             ctx.internalSharedProcessBufferLength = pipelineStage.SharedStateCapacity;
             NetworkPipelineStage.Requests requests = NetworkPipelineStage.Requests.None;
 
-            pipelineStage.Receive.Ptr.Invoke(ref ctx, ref inboundBuffer, ref requests);
+            pipelineStage.Receive.Ptr.Invoke(ref ctx, ref inboundBuffer, ref requests, systemHeadersSize);
 
             if ((requests & NetworkPipelineStage.Requests.Resume) != 0)
                 resumeQ.Add(stage);

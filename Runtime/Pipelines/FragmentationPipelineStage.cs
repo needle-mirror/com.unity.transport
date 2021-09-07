@@ -34,7 +34,7 @@ namespace Unity.Networking.Transport
 #endif
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var fragContext = (FragContext*)ctx.internalProcessBuffer;
             var dataBuffer = ctx.internalProcessBuffer + sizeof(FragContext);
@@ -43,7 +43,7 @@ namespace Unity.Networking.Transport
             FragFlags flags = FragFlags.First;
             int headerCapacity = ctx.header.Capacity;
 
-            var systemHeaderCapacity = sizeof(UdpCHeader) + 1 + 2;    // Extra byte is for pipeline id, two bytes for footer
+            var systemHeaderCapacity = systemHeaderSize + 1 + 2;    // Extra byte is for pipeline id, two bytes for footer
             var maxBlockLength = NetworkParameterConstants.MTU - systemHeaderCapacity - inboundBuffer.headerPadding;
             var maxBlockLengthFirstPacket = maxBlockLength - ctx.accumulatedHeaderCapacity; // The first packet has the headers for all pipeline stages before this one
 
@@ -109,7 +109,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var fragContext = (FragContext*)ctx.internalProcessBuffer;
             var dataBuffer = ctx.internalProcessBuffer + sizeof(FragContext);

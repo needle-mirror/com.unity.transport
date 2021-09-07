@@ -457,6 +457,11 @@ namespace Unity.Networking.Transport.Relay
                         case ProcessPacketCommandType.DataWithImplicitConnectionAccept:
                             command.AsDataWithImplicitConnectionAccept.Offset += RelayMessageRelay.Length;
                             break;
+
+                        case ProcessPacketCommandType.Disconnect:
+                            SendRelayDisconnect(
+                                protocolData, ref relayMessage.FromAllocationId, ref sendInterface, ref queueHandle);
+                            break;
                     }
 
                     command.ConnectionAddress = default;
@@ -470,6 +475,58 @@ namespace Unity.Networking.Transport.Relay
 
             command.Type = ProcessPacketCommandType.Drop;
             return true;
+        }
+
+        private static unsafe void SendRelayDisconnect(RelayProtocolData* relayProtocolData, ref RelayAllocationId hostAllocationId,
+            ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
+        {
+            if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageDisconnect.Length) != 0)
+            {
+                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
+                return;
+            }
+
+            var packet = (byte*)sendHandle.data;
+            sendHandle.size = RelayMessageDisconnect.Length;
+            if (sendHandle.size > sendHandle.capacity)
+            {
+                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
+                return;
+            }
+
+            var disconnectMessage = (RelayMessageDisconnect*)packet;
+            *disconnectMessage = RelayMessageDisconnect.Create(relayProtocolData->ServerData.AllocationId, hostAllocationId);
+#if ENABLE_MANAGED_UNITYTLS
+            if (relayProtocolData->ServerData.IsSecure == 1 &&
+                (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
+            {
+                var secureUserData =
+                    (SecureUserData*) relayProtocolData->SecureClientState.ClientConfig->transportUserData;
+                SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint,
+                    ref sendInterface, ref queueHandle, secureUserData);
+
+                var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr,
+                    (byte*) sendHandle.data,
+                    new UIntPtr((uint) sendHandle.size));
+
+                var sendSize = sendHandle.size;
+
+                // we end up having to abort this handle so we can free it up as DTSL will generate a new one
+                // based on the encrypted buffer size
+                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+
+                if (result != Binding.UNITYTLS_SUCCESS)
+                {
+                    Debug.LogError($"Secure Send failed with result {result}");
+                    return;
+                }
+            }
+            else
+#endif
+            {
+                sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
+            }
         }
 
         [BurstCompile(DisableDirectCall = true)]
@@ -776,56 +833,6 @@ namespace Unity.Networking.Transport.Relay
                 SessionToken = connection.SendToken,
                 Flags = 0
             };
-#if ENABLE_MANAGED_UNITYTLS
-            if (relayProtocolData->ServerData.IsSecure == 1 &&
-                (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
-            {
-                var secureUserData =
-                    (SecureUserData*) relayProtocolData->SecureClientState.ClientConfig->transportUserData;
-                SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint,
-                    ref sendInterface, ref queueHandle, secureUserData);
-
-                var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr,
-                    (byte*) sendHandle.data,
-                    new UIntPtr((uint) sendHandle.size));
-
-                var sendSize = sendHandle.size;
-
-                // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                // based on the encrypted buffer size
-                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                if (result != Binding.UNITYTLS_SUCCESS)
-                {
-                    Debug.LogError($"Secure Send failed with result {result}");
-                    return;
-                }
-            }
-            else
-#endif
-            {
-                sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
-            }
-
-
-            // Relay Disconnect
-            if (sendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, sendInterface.UserData, RelayMessageDisconnect.Length) != 0)
-            {
-                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
-                return;
-            }
-
-            packet = (byte*)sendHandle.data;
-            sendHandle.size = RelayMessageDisconnect.Length;
-            if (sendHandle.size > sendHandle.capacity)
-            {
-                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
-                return;
-            }
-
-            var disconnectMessage = (RelayMessageDisconnect*)packet;
-            *disconnectMessage = RelayMessageDisconnect.Create(relayProtocolData->ServerData.AllocationId, connection.Address.AsRelayAllocationId());
 #if ENABLE_MANAGED_UNITYTLS
             if (relayProtocolData->ServerData.IsSecure == 1 &&
                 (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))

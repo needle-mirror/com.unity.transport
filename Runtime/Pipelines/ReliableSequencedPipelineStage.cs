@@ -41,7 +41,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             // Request a send update to see if a queued packet needs to be resent later or if an ack packet should be sent
             requests = NetworkPipelineStage.Requests.SendUpdate;
@@ -107,7 +107,7 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             // Request an update to see if a queued packet needs to be resent later or if an ack packet should be sent
             requests = NetworkPipelineStage.Requests.Update;

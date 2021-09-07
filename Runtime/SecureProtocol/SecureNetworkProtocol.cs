@@ -23,10 +23,10 @@ namespace Unity.Networking.Transport.TLS
     struct SecureNetworkProtocolData
     {
         public UnsafeHashMap<NetworkInterfaceEndPoint, SecureClientState> SecureClients;
-        public FixedString4096  Pem;
-        public FixedString4096  Rsa;
-        public FixedString4096  RsaKey;
-        public FixedString32    Hostname;
+        public FixedString4096Bytes  Pem;
+        public FixedString4096Bytes  Rsa;
+        public FixedString4096Bytes  RsaKey;
+        public FixedString32Bytes    Hostname;
         public uint             Protocol;
         public uint             SSLReadTimeoutMs;
         public uint             SSLHandshakeTimeoutMax;
@@ -168,13 +168,13 @@ namespace Unity.Networking.Transport.TLS
     public struct SecureNetworkProtocolParameter : INetworkParameter
     {
         /// <summary>Common (client/server) certificate</summary>
-        public FixedString4096                      Pem;
+        public FixedString4096Bytes                      Pem;
         /// <summary>Server (or client) own certificate</summary>
-        public FixedString4096                      Rsa;
+        public FixedString4096Bytes                      Rsa;
         /// <summary>Server (or client) own private key</summary>
-        public FixedString4096                      RsaKey;
+        public FixedString4096Bytes                      RsaKey;
         /// <summary>Server's hostname's name</summary>
-        public FixedString32                        Hostname;
+        public FixedString32Bytes                        Hostname;
         /// <summary>Underlying transport protocol provided to tls </summary>
         /// <remarks>
         /// This value is either TLS (used for TCP Connections) or DTLS (used for UDP Connections)

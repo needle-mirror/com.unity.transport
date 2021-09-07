@@ -35,7 +35,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             if (*ctx.staticInstanceBuffer == 0)
             {
@@ -45,7 +45,7 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             return (int)Error.StatusCode.Success;
         }
@@ -84,13 +84,13 @@ namespace Unity.Networking.Transport.Tests
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
         }
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request)
+        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests request, int systemHeaderSize)
         {
             if (*ctx.staticInstanceBuffer == 0)
             {
@@ -198,7 +198,7 @@ namespace Unity.Networking.Transport.Tests
                     staticInstanceBufferLength = ep1Buffer.Length
                 };
                 output = inboundSend;
-                ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest);
+                ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest, 0);
                 Assert.True(output.buffer[0] == packet[0]);
                 Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
             }
@@ -219,7 +219,7 @@ namespace Unity.Networking.Transport.Tests
                     staticInstanceBufferLength = ep2Buffer.Length
                 };
                 slice = data;
-                ep2.Receive.Ptr.Invoke(ref ctx, ref slice, ref stageRequest);
+                ep2.Receive.Ptr.Invoke(ref ctx, ref slice, ref stageRequest, 0);
 
                 if (slice.bufferLength > 0)
                     Assert.True(slice.buffer[0] == packet[0]);
@@ -246,7 +246,7 @@ namespace Unity.Networking.Transport.Tests
                     staticInstanceBufferLength = ep1Buffer.Length
                 };
                 output = inboundSend;
-                ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest);
+                ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest, 0);
 
                 Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
                 Assert.True(output.buffer[0] == packet[0]);
@@ -279,7 +279,7 @@ namespace Unity.Networking.Transport.Tests
                 };
                 stageRequest = NetworkPipelineStage.Requests.None;
                 slice = data;
-                ep2.Receive.Ptr.Invoke(ref ctx, ref slice, ref stageRequest);
+                ep2.Receive.Ptr.Invoke(ref ctx, ref slice, ref stageRequest, 0);
 
                 if (slice.bufferLength > 0)
                 {
@@ -315,7 +315,7 @@ namespace Unity.Networking.Transport.Tests
                     internalSharedProcessBufferLength = ep2SharedBuffer.Length
                 };
                 slice = data;
-                ep2.Receive.Ptr.Invoke(ref ctx, ref slice, ref stageRequest);
+                ep2.Receive.Ptr.Invoke(ref ctx, ref slice, ref stageRequest, 0);
 
                 if (slice.bufferLength > 0)
                 {
@@ -925,25 +925,25 @@ namespace Unity.Networking.Transport.Tests
 
                 // Process 65535, 0 should then be next in line on the resume field
                 var stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(0, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 0, after that 1 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(1, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 1, after that 2 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(2, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 2, and we are done
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
@@ -1012,25 +1012,25 @@ namespace Unity.Networking.Transport.Tests
 
                 // Process 65534, 65535 should then be next in line on the resume field
                 var stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(65535, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 65535, after that 0 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(0, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 0, after that 1 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(1, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 1, and we are done
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
@@ -1098,7 +1098,7 @@ namespace Unity.Networking.Transport.Tests
 
                 // Receive 99, it's out of order so should be queued for later (waiting for 95)
                 var stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
@@ -1107,27 +1107,27 @@ namespace Unity.Networking.Transport.Tests
 
                 // First 95 is received and then receive resume runs up to 99
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(96, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(97, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(98, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(99, receiveContext->Resume);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest);
+                reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
                 Assert.AreEqual(-1, receiveContext->Resume);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
@@ -1204,7 +1204,7 @@ namespace Unity.Networking.Transport.Tests
                 inboundBuffer.SetBufferFrombufferWithHeaders();
 
                 var stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Send.Ptr.Invoke(ref pipelineContext, ref inboundBuffer, ref stageRequest);
+                reliablePipeline.Send.Ptr.Invoke(ref pipelineContext, ref inboundBuffer, ref stageRequest, 0);
 
                 // seqId 3 should now be stored in slot 0
                 Assert.AreEqual(3, ReliableUtility.GetPacketInformation(sendBufferPtr, 3)->SequenceId);
@@ -1286,7 +1286,7 @@ namespace Unity.Networking.Transport.Tests
                 var inboundBuffer = new InboundSendBuffer();
 
                 var stageRequest = NetworkPipelineStage.Requests.None;
-                reliablePipeline.Send.Ptr.Invoke(ref pipelineContext, ref inboundBuffer, ref stageRequest);
+                reliablePipeline.Send.Ptr.Invoke(ref pipelineContext, ref inboundBuffer, ref stageRequest, 0);
 
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation((byte*)sendBuffer.GetUnsafeReadOnlyPtr(), 0)->SequenceId);
                 Assert.AreEqual(-1, ReliableUtility.GetPacketInformation((byte*)sendBuffer.GetUnsafeReadOnlyPtr(), 1)->SequenceId);
