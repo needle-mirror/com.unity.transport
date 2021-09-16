@@ -1,21 +1,28 @@
 # Change log
 
+## [1.0.0-pre.5] - 2021-09-16
+
+### Fixes
+* Fixed: Socket never created on unbound DTLS clients (causes handshake to fail)
+* Fixed: When using DTLS it would not properly read data packets
+* Fixed: When using DTLS it could possibly fail to send a packet that was at the MTU size.
+
 ## [1.0.0-pre.4] - 2021-09-07
 
 ### New features
-### Changes 
+### Changes
 ### Fixes
 * Fixed: Updated collection types in `SecureNetworkProtocol.cs`
 * Fixed: Fixed race condition between UTP and Relay disconnects
 * Fixed: Relay not being able to use the fragmentation pipelinestage
-
 ### Upgrade guide
+
 ## [1.0.0-pre.3] - 2021-09-01
 ### New features
 * Removed references of TransportSamples from readme as they are not currently included in the package
 * Stripping out un-needed files from the package
 
-### Changes 
+### Changes
 ### Fixes
 ### Upgrade guide
 
@@ -24,14 +31,14 @@
 * Upgraded collections to 1.0.0-pre.5
 * Added support for Secure Protocol while using Unity Relay
 
-### Changes 
+### Changes
 ### Fixes
 ### Upgrade guide
 
 ## [1.0.0-pre.1] - 2021-07-29
 ### New features
 * Moving into pre-release
-* Added Secure Protocol support (TLS/DTLS) to allow for encrypted and secure connections. 
+* Added Secure Protocol support (TLS/DTLS) to allow for encrypted and secure connections.
 * Unity Transport package now supports connecting to the Unity Relay Service. See [Unity Relay](https://unity.com/products/relay) for more information.
 * Upgraded burst to 1.5.5
 

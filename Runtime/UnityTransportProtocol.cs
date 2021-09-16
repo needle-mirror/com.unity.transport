@@ -22,7 +22,7 @@ namespace Unity.Networking.Transport
             return 2;
         }
 
-        public unsafe int Connect(INetworkInterface networkInterface, NetworkEndPoint remoteEndpoint, out NetworkInterfaceEndPoint remoteAddress)
+        public int Connect(INetworkInterface networkInterface, NetworkEndPoint remoteEndpoint, out NetworkInterfaceEndPoint remoteAddress)
         {
             int result;
             remoteAddress = default;

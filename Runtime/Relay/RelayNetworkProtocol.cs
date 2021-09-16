@@ -47,7 +47,7 @@ namespace Unity.Networking.Transport.Relay
             Connecting = 4,
             Connected = 5,
         }
-        
+
         private enum SecuredRelayConnectionState : byte
         {
             Unsecure = 0,
@@ -93,7 +93,7 @@ namespace Unity.Networking.Transport.Relay
             {
                 relayConnectionTimeMS = relayConfig.RelayConnectionTimeMS;
             }
-        
+
 #if ENABLE_MANAGED_UNITYTLS
             if (relayConfig.ServerData.IsSecure == 1)
             {
@@ -168,7 +168,7 @@ namespace Unity.Networking.Transport.Relay
                     // with the Relay server, so we set the state to "binding" until the connection with server is confirm.
                     protocolData->ConnectionState = RelayConnectionState.Binding;
                 }
-                
+
                 return 1; // 1 = Binding for the NetworkDriver, a full stablished bind is 2
             }
         }
@@ -246,15 +246,14 @@ namespace Unity.Networking.Transport.Relay
                     command.Type = ProcessPacketCommandType.Drop;
                     return;
                 }
-                
+
 #if ENABLE_MANAGED_UNITYTLS
                 if (protocolData->ConnectionState == RelayConnectionState.Handshake)
                 {
-                    
                     var secureUserData = (SecureUserData*)protocolData->SecureClientState.ClientConfig->transportUserData;
 
                     SecureNetworkProtocol.SetSecureUserData(stream, size, ref endpoint, ref sendInterface, ref queueHandle, secureUserData);
-                    
+
                     var clientState = Binding.unitytls_client_get_state(protocolData->SecureClientState.ClientPtr);
                     uint handshakeResult = Binding.UNITYTLS_SUCCESS;
 
@@ -265,32 +264,29 @@ namespace Unity.Networking.Transport.Relay
                         bool shouldRunAgain = false;
                         do
                         {
-                            Debug.Log("handshake from revc");
                             handshakeResult = SecureNetworkProtocol.UpdateSecureHandshakeState(ref protocolData->SecureClientState);
                             clientState = Binding.unitytls_client_get_state(protocolData->SecureClientState.ClientPtr);
                             shouldRunAgain = (size != 0 && secureUserData->BytesProcessed == 0 && clientState == Binding.UnityTLSClientState_Handshake);
                         }
                         while (shouldRunAgain);
                     }
-                    
+
                     if (clientState == Binding.UnityTLSClientState_Messaging)
                     {
-                        Debug.Log("We made it past the handshake");
-                        
                         // we are moving to the binding state
                         protocolData->ConnectionState = RelayConnectionState.Binding;
                         protocolData->SecureState = SecuredRelayConnectionState.Secured;
                     }
-                    
+
                     command.Type = ProcessPacketCommandType.Drop;
                     return;
                 }
 
-                // Are we setup for a secure state? and if so 
+                // Are we setup for a secure state? and if so
                 if (protocolData->ServerData.IsSecure == 1 &&
                     (protocolData->SecureState != SecuredRelayConnectionState.Secured))
                 {
-                    // we should not get here ? 
+                    // we should not get here ?
                     command.Type = ProcessPacketCommandType.Drop;
                     return;
                 }
@@ -301,7 +297,7 @@ namespace Unity.Networking.Transport.Relay
                     var secureUserData = (SecureUserData*)protocolData->SecureClientState.ClientConfig->transportUserData;
 
                     SecureNetworkProtocol.SetSecureUserData(stream, size, ref endpoint, ref sendInterface, ref queueHandle, secureUserData);
-                    
+
                     var buffer = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Temp);
                     var bytesRead = new UIntPtr();
                     var result = Binding.unitytls_client_read_data(protocolData->SecureClientState.ClientPtr,
@@ -310,17 +306,19 @@ namespace Unity.Networking.Transport.Relay
 
                     if (result == Binding.UNITYTLS_SUCCESS)
                     {
-                        if (ProcessRelayData((IntPtr)buffer.GetUnsafePtr(), ref endpoint, (int)bytesRead.ToUInt32(), ref sendInterface, ref queueHandle, ref command, protocolData, true)) 
+                        // when we have a proper read we need to copy that data into the stream. It should be noted
+                        // that this copy does change data we don't technically own.
+                        UnsafeUtility.MemCpy((void*)stream, buffer.GetUnsafePtr(), bytesRead.ToUInt32());
+
+                        if (ProcessRelayData(stream, ref endpoint, (int)bytesRead.ToUInt32(), ref sendInterface, ref queueHandle, ref command, protocolData))
                             return;
                     }
-                    else
-                    {
-                        command.Type = ProcessPacketCommandType.Drop;
-                        return;
-                    }
+
+                    command.Type = ProcessPacketCommandType.Drop;
+                    return;
                 }
 #endif
-                if (ProcessRelayData(stream, ref endpoint, size, ref sendInterface, ref queueHandle, ref command, protocolData, false)) 
+                if (ProcessRelayData(stream, ref endpoint, size, ref sendInterface, ref queueHandle, ref command, protocolData))
                     return;
 
                 command.Type = ProcessPacketCommandType.Drop;
@@ -329,10 +327,10 @@ namespace Unity.Networking.Transport.Relay
 
         private static unsafe bool ProcessRelayData(IntPtr stream, ref NetworkInterfaceEndPoint endpoint, int size,
             ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, ref ProcessPacketCommand command,
-            RelayProtocolData* protocolData, bool iSecure)
+            RelayProtocolData* protocolData)
         {
-            var data = (byte*) stream;
-            var header = *(RelayMessageHeader*) data;
+            var data = (byte*)stream;
+            var header = *(RelayMessageHeader*)data;
 
             if (size < RelayMessageHeader.Length || !header.IsValid())
             {
@@ -363,7 +361,7 @@ namespace Unity.Networking.Transport.Relay
                     protocolData->ConnectionState = RelayConnectionState.Bound;
                     command.Type = ProcessPacketCommandType.BindAccept;
                     return true;
-                
+
                 case RelayMessageType.Accepted:
                     command.Type = ProcessPacketCommandType.Drop;
 
@@ -376,62 +374,33 @@ namespace Unity.Networking.Transport.Relay
                     if (protocolData->HostAllocationId != default)
                         return true;
 
-                    var acceptedMessage = *(RelayMessageAccepted*) data;
+                    var acceptedMessage = *(RelayMessageAccepted*)data;
                     protocolData->HostAllocationId = acceptedMessage.FromAllocationId;
 
                     command.Type = ProcessPacketCommandType.AddressUpdate;
                     command.AsAddressUpdate.Address = default;
                     command.AsAddressUpdate.NewAddress = default;
                     command.AsAddressUpdate.SessionToken = protocolData->ConnectionReceiveToken;
-                    
-                    fixed (byte* addressPtr = command.AsAddressUpdate.NewAddress.data)
+
+                    fixed(byte* addressPtr = command.AsAddressUpdate.NewAddress.data)
                     {
-                        *(RelayAllocationId*) addressPtr = acceptedMessage.FromAllocationId;
+                        *(RelayAllocationId*)addressPtr = acceptedMessage.FromAllocationId;
                     }
-                    
-                    if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageRelay.Length + UdpCHeader.Length) != 0)
+
+                    var type = UdpCProtocol.ConnectionRequest;
+                    var token = protocolData->ConnectionReceiveToken;
+                    var result = SendHeaderOnlyHostMessage(
+                        type, token, protocolData, ref acceptedMessage.FromAllocationId, ref sendInterface, ref queueHandle);
+                    if (result < 0)
                     {
-                        UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet to host");
+                        Debug.LogError("Failed to send Connection Request message to host.");
                         return false;
-                    }
-
-                    var writeResult = WriteConnectionRequestToHost(ref protocolData->ServerData.AllocationId, ref acceptedMessage.FromAllocationId,
-                        protocolData->ConnectionReceiveToken,
-                        ref protocolData->ServerEndpoint, ref sendHandle, ref queueHandle);
-
-                    if (!writeResult)
-                    {
-                        sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                        return false;
-                    }
-#if ENABLE_MANAGED_UNITYTLS
-                    if (iSecure)
-                    {
-                        var result = Binding.unitytls_client_send_data(protocolData->SecureClientState.ClientPtr, (byte*)sendHandle.data,
-                            new UIntPtr((uint)sendHandle.size));
-
-                        var sendSize = sendHandle.size;
-
-                        // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                        // based on the encrypted buffer size
-                        sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                        if (result != Binding.UNITYTLS_SUCCESS)
-                        {
-                            Debug.LogError($"Secure Send failed with result {result}");
-                            return false;
-                        }
-                    }
-                    else
-#endif
-                    {
-                        sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref protocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
                     }
 
                     return true;
-                
+
                 case RelayMessageType.Relay:
-                    var relayMessage = *(RelayMessageRelay*) data;
+                    var relayMessage = *(RelayMessageRelay*)data;
                     relayMessage.DataLength = RelayNetworkProtocol.SwitchEndianness(relayMessage.DataLength);
                     if (size < RelayMessageRelay.Length || size != RelayMessageRelay.Length + relayMessage.DataLength)
                     {
@@ -465,9 +434,9 @@ namespace Unity.Networking.Transport.Relay
                     }
 
                     command.ConnectionAddress = default;
-                    fixed (byte* addressPtr = command.ConnectionAddress.data)
+                    fixed(byte* addressPtr = command.ConnectionAddress.data)
                     {
-                        *(RelayAllocationId*) addressPtr = relayMessage.FromAllocationId;
+                        *(RelayAllocationId*)addressPtr = relayMessage.FromAllocationId;
                     }
 
                     return true;
@@ -475,6 +444,44 @@ namespace Unity.Networking.Transport.Relay
 
             command.Type = ProcessPacketCommandType.Drop;
             return true;
+        }
+
+        private static unsafe int SendMessage(RelayProtocolData* protocolData, ref NetworkSendInterface sendInterface,
+            ref NetworkInterfaceSendHandle sendHandle, ref NetworkSendQueueHandle queueHandle)
+        {
+#if ENABLE_MANAGED_UNITYTLS
+            if (protocolData->ServerData.IsSecure == 1 && protocolData->SecureState == SecuredRelayConnectionState.Secured)
+            {
+                var secureUserData = (SecureUserData*)protocolData->SecureClientState.ClientConfig->transportUserData;
+                SecureNetworkProtocol.SetSecureUserData(
+                    IntPtr.Zero, 0, ref protocolData->ServerEndpoint, ref sendInterface, ref queueHandle, secureUserData);
+
+                // we need to free up the current handle before we call send because we could be at capacity and thus
+                // when we go and try to get a new handle it will fail.
+                var buffer = new NativeArray<byte>(sendHandle.size, Allocator.Temp);
+                UnsafeUtility.MemCpy(buffer.GetUnsafePtr(), (void*)sendHandle.data, sendHandle.size);
+
+                // We end up having to abort this handle so we can free it up as DTLS will generate a
+                // new one based on the encrypted buffer size.
+                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+
+                var result = Binding.unitytls_client_send_data(
+                    protocolData->SecureClientState.ClientPtr, (byte*)buffer.GetUnsafePtr(), new UIntPtr((uint)buffer.Length));
+
+                if (result != Binding.UNITYTLS_SUCCESS)
+                {
+                    Debug.LogError($"Secure send failed with result: {result}.");
+                    return -1;
+                }
+
+                return buffer.Length;
+            }
+            else
+#endif
+            {
+                return sendInterface.EndSendMessage.Ptr.Invoke(
+                    ref sendHandle, ref protocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
+            }
         }
 
         private static unsafe void SendRelayDisconnect(RelayProtocolData* relayProtocolData, ref RelayAllocationId hostAllocationId,
@@ -502,13 +509,13 @@ namespace Unity.Networking.Transport.Relay
                 (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
             {
                 var secureUserData =
-                    (SecureUserData*) relayProtocolData->SecureClientState.ClientConfig->transportUserData;
+                    (SecureUserData*)relayProtocolData->SecureClientState.ClientConfig->transportUserData;
                 SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint,
                     ref sendInterface, ref queueHandle, secureUserData);
 
                 var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr,
-                    (byte*) sendHandle.data,
-                    new UIntPtr((uint) sendHandle.size));
+                    (byte*)sendHandle.data,
+                    new UIntPtr((uint)sendHandle.size));
 
                 var sendSize = sendHandle.size;
 
@@ -534,41 +541,17 @@ namespace Unity.Networking.Transport.Relay
         public static unsafe int ProcessSend(ref NetworkDriver.Connection connection, bool hasPipeline, ref NetworkSendInterface sendInterface, ref NetworkInterfaceSendHandle sendHandle, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             var relayProtocolData = (RelayProtocolData*)userData;
-            
+
             var dataLength = (ushort)UnityTransportProtocol.WriteSendMessageHeader(ref connection, hasPipeline, ref sendHandle, RelayMessageRelay.Length);
-            
+
             var relayMessage = (RelayMessageRelay*)sendHandle.data;
             fixed(byte* addressPtr = connection.Address.data)
             {
                 *relayMessage = RelayMessageRelay.Create(relayProtocolData->ServerData.AllocationId, *(RelayAllocationId*)addressPtr, dataLength);
             }
             relayProtocolData->LastSentTime = relayProtocolData->LastUpdateTime;
-#if ENABLE_MANAGED_UNITYTLS
-            if (relayProtocolData->ServerData.IsSecure == 1 &&
-                (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
-            {
-                var secureUserData = (SecureUserData*)relayProtocolData->SecureClientState.ClientConfig->transportUserData;
-                SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint, ref sendInterface, ref queueHandle, secureUserData);
-                
-                var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr, (byte*)sendHandle.data,
-                    new UIntPtr((uint)sendHandle.size));
-                
-                var sendSize = sendHandle.size;
 
-                // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                // based on the encrypted buffer size
-                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                if (result != Binding.UNITYTLS_SUCCESS)
-                {
-                    Debug.LogError($"Secure Send failed with result {result}");
-                    return -1;
-                }
-
-                return sendSize;
-            }
-#endif
-            return sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
+            return SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle);
         }
 
         [BurstCompile(DisableDirectCall = true)]
@@ -613,38 +596,46 @@ namespace Unity.Networking.Transport.Relay
                 var relayMessage = (RelayMessageRelay*)packet;
                 *relayMessage = RelayMessageRelay.Create(relayProtocolData->ServerData.AllocationId, toAllocationId, (ushort)size);
                 Assert.IsTrue(sendHandle.size <= sendHandle.capacity);
-        
-#if ENABLE_MANAGED_UNITYTLS
-                if (relayProtocolData->ServerData.IsSecure == 1 &&
-                    (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
-                {
-                    var secureUserData = (SecureUserData*)relayProtocolData->SecureClientState.ClientConfig->transportUserData;
-                    SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint, ref sendInterface, ref queueHandle, secureUserData);
-                
-                    var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr, (byte*)sendHandle.data,
-                        new UIntPtr((uint)sendHandle.size));
-                    
-                    var sendSize = sendHandle.size;
 
-                    // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                    // based on the encrypted buffer size
-                    sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                    if (result != Binding.UNITYTLS_SUCCESS)
-                    {
-                        Debug.LogError($"Secure Send failed with result {result}");
-                        return;
-                    }
-                }
-                else
-#endif
+                if (SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
                 {
-                    if (sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle) < 0)
-                    {
-                        UnityEngine.Debug.LogError("Failed to send a ConnectionAccept packet");
-                    }
+                    Debug.LogError("Failed to send Connection Accept message to host.");
+                    return;
                 }
             }
+        }
+
+        private static unsafe int SendHeaderOnlyHostMessage(UdpCProtocol type, ushort token, RelayProtocolData* relayProtocolData,
+            ref RelayAllocationId hostAllocationId, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
+        {
+            var result = sendInterface.BeginSendMessage.Ptr.Invoke(
+                out var sendHandle, sendInterface.UserData, RelayMessageRelay.Length + UdpCHeader.Length);
+            if (result != 0)
+            {
+                return -1;
+            }
+
+            var packet = (byte*)sendHandle.data;
+            sendHandle.size = RelayMessageRelay.Length + UdpCHeader.Length;
+            if (sendHandle.size > sendHandle.capacity)
+            {
+                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+                return -1;
+            }
+
+            var relayMessage = (RelayMessageRelay*)packet;
+            *relayMessage = RelayMessageRelay.Create(
+                relayProtocolData->ServerData.AllocationId, hostAllocationId, UdpCHeader.Length);
+
+            var header = (UdpCHeader*)(((byte*)relayMessage) + RelayMessageRelay.Length);
+            *header = new UdpCHeader
+            {
+                Type = (byte)type,
+                SessionToken = token,
+                Flags = 0
+            };
+
+            return SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle);
         }
 
         [BurstCompile(DisableDirectCall = true)]
@@ -666,120 +657,35 @@ namespace Unity.Networking.Transport.Relay
                         UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
                         return;
                     }
-                    
+
                     var writeResult = WriteConnectionRequestToRelay(ref relayProtocolData->ServerData.AllocationId, ref relayProtocolData->ServerData.HostConnectionData,
                         ref relayProtocolData->ServerEndpoint, ref sendHandle, ref queueHandle);
-                    
+
                     if (!writeResult)
                     {
                         sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
                         return;
                     }
-#if ENABLE_MANAGED_UNITYTLS
-                    if (relayProtocolData->ServerData.IsSecure == 1 &&
-                        (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
+
+                    if (SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
                     {
-                        var secureUserData =
-                            (SecureUserData*) relayProtocolData->SecureClientState.ClientConfig->transportUserData;
-                        SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint,
-                            ref sendInterface, ref queueHandle, secureUserData);
-
-                        var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr,
-                            (byte*) sendHandle.data,
-                            new UIntPtr((uint) sendHandle.size));
-
-                        var sendSize = sendHandle.size;
-
-                        // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                        // based on the encrypted buffer size
-                        sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                        if (result != Binding.UNITYTLS_SUCCESS)
-                        {
-                            Debug.LogError($"Secure Send failed with result {result}");
-                            return;
-                        }
-                    }
-                    else
-#endif
-                    {
-                        sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
-
+                        Debug.LogError("Failed to send Connection Request message to relay.");
+                        return;
                     }
                 }
                 else
                 {
-                    if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageRelay.Length + UdpCHeader.Length) != 0)
+                    var type = UdpCProtocol.ConnectionRequest;
+                    var token = relayProtocolData->ConnectionReceiveToken;
+                    var result = SendHeaderOnlyHostMessage(
+                        type, token, relayProtocolData, ref relayProtocolData->HostAllocationId, ref sendInterface, ref queueHandle);
+                    if (result < 0)
                     {
-                        UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet to host");
+                        Debug.LogError("Failed to send Connection Request message to host.");
                         return;
-                    }
-                    
-                    var writeResult = WriteConnectionRequestToHost(ref relayProtocolData->ServerData.AllocationId, ref relayProtocolData->HostAllocationId, relayProtocolData->ConnectionReceiveToken,
-                        ref relayProtocolData->ServerEndpoint, ref sendHandle, ref queueHandle);
-                    
-                    if (!writeResult)
-                    {
-                        sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                        return;
-                    }
-#if ENABLE_MANAGED_UNITYTLS
-                    if (relayProtocolData->ServerData.IsSecure == 1 &&
-                        (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
-                    {
-                        var secureUserData =
-                            (SecureUserData*) relayProtocolData->SecureClientState.ClientConfig->transportUserData;
-                        SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint,
-                            ref sendInterface, ref queueHandle, secureUserData);
-
-                        var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr,
-                            (byte*) sendHandle.data,
-                            new UIntPtr((uint) sendHandle.size));
-
-                        var sendSize = sendHandle.size;
-
-                        // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                        // based on the encrypted buffer size
-                        sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                        if (result != Binding.UNITYTLS_SUCCESS)
-                        {
-                            Debug.LogError($"Secure Send failed with result {result}");
-                            return;
-                        }
-                    }
-                    else
-#endif
-                    {
-                        sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
                     }
                 }
             }
-        }
-
-        [BurstCompatible]
-        public static unsafe bool WriteConnectionRequestToHost(ref RelayAllocationId allocationId, ref RelayAllocationId hostAllocationId, ushort receiveToken, ref NetworkInterfaceEndPoint serverEndpoint, ref NetworkInterfaceSendHandle sendHandle, ref NetworkSendQueueHandle queueHandle)
-        {
-            var packet = (byte*)sendHandle.data;
-            sendHandle.size = RelayMessageRelay.Length + UdpCHeader.Length;
-            if (sendHandle.size > sendHandle.capacity)
-            {
-                UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet to host");
-                return false;
-            }
-
-            var relayMessage = (RelayMessageRelay*)packet;
-            *relayMessage = RelayMessageRelay.Create(allocationId, hostAllocationId, UdpCHeader.Length);
-
-            var header = (UdpCHeader*)(((byte*)relayMessage) + RelayMessageRelay.Length);
-            *header = new UdpCHeader
-            {
-                Type = (byte)UdpCProtocol.ConnectionRequest,
-                SessionToken = receiveToken,
-                Flags = 0
-            };
-
-            return true;
         }
 
         [BurstCompatible]
@@ -808,14 +714,26 @@ namespace Unity.Networking.Transport.Relay
         {
             var relayProtocolData = (RelayProtocolData*)userData;
 
-            if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageRelay.Length + UdpCHeader.Length) != 0)
+            // Host Disconnect
+            var type = UdpCProtocol.Disconnect;
+            var token = connection.SendToken;
+            var result = SendHeaderOnlyHostMessage(
+                type, token, relayProtocolData, ref connection.Address.AsRelayAllocationId(), ref sendInterface, ref queueHandle);
+            if (result < 0)
+            {
+                Debug.LogError("Failed to send Disconnect message to host.");
+                return;
+            }
+
+            // Relay Disconnect
+            if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageDisconnect.Length) != 0)
             {
                 UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
                 return;
             }
 
             var packet = (byte*)sendHandle.data;
-            sendHandle.size = RelayMessageRelay.Length + UdpCHeader.Length;
+            sendHandle.size = RelayMessageDisconnect.Length;
             if (sendHandle.size > sendHandle.capacity)
             {
                 sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
@@ -823,45 +741,13 @@ namespace Unity.Networking.Transport.Relay
                 return;
             }
 
-            var relayMessage = (RelayMessageRelay*)packet;
-            *relayMessage = RelayMessageRelay.Create(relayProtocolData->ServerData.AllocationId, connection.Address.AsRelayAllocationId(), UdpCHeader.Length);
+            var disconnectMessage = (RelayMessageDisconnect*)packet;
+            *disconnectMessage = RelayMessageDisconnect.Create(relayProtocolData->ServerData.AllocationId, connection.Address.AsRelayAllocationId());
 
-            var header = (UdpCHeader*)(((byte*)relayMessage) + RelayMessageRelay.Length);
-            *header = new UdpCHeader
+            if (SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
             {
-                Type = (byte)UdpCProtocol.Disconnect,
-                SessionToken = connection.SendToken,
-                Flags = 0
-            };
-#if ENABLE_MANAGED_UNITYTLS
-            if (relayProtocolData->ServerData.IsSecure == 1 &&
-                (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
-            {
-                var secureUserData =
-                    (SecureUserData*) relayProtocolData->SecureClientState.ClientConfig->transportUserData;
-                SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint,
-                    ref sendInterface, ref queueHandle, secureUserData);
-
-                var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr,
-                    (byte*) sendHandle.data,
-                    new UIntPtr((uint) sendHandle.size));
-
-                var sendSize = sendHandle.size;
-
-                // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                // based on the encrypted buffer size
-                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                if (result != Binding.UNITYTLS_SUCCESS)
-                {
-                    Debug.LogError($"Secure Send failed with result {result}");
-                    return;
-                }
-            }
-            else
-#endif
-            {
-                sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
+                Debug.LogError("Failed to send Disconnect message to relay.");
+                return;
             }
         }
 
@@ -880,15 +766,15 @@ namespace Unity.Networking.Transport.Relay
                     {
                         if (protocolData->SecureClientState.ClientPtr == null)
                         {
-                            // we need to create a config/client 
+                            // we need to create a config/client
                             var config = (Binding.unitytls_client_config*)UnsafeUtility.Malloc(
                                 UnsafeUtility.SizeOf<Binding.unitytls_client_config>(),
                                 UnsafeUtility.AlignOf<Binding.unitytls_client_config>(), Allocator.Persistent);
 
                             *config = new Binding.unitytls_client_config();
-                            
+
                             Binding.unitytls_client_init_config(config);
-                            
+
                             config->dataSendCB = ManagedSecureFunctions.s_SendCallback.Data.Value;
                             config->dataReceiveCB = ManagedSecureFunctions.s_RecvMethod.Data.Value;
 
@@ -901,8 +787,8 @@ namespace Unity.Networking.Transport.Relay
                                 SecureNetworkProtocol.DefaultParameters.SSLHandshakeTimeoutMin;
                             config->ssl_handshake_timeout_max =
                                 SecureNetworkProtocol.DefaultParameters.SSLHandshakeTimeoutMax;
-                            
-                            
+
+
                             config->psk = new Binding.unitytls_dataRef()
                             {
                                 dataPtr = protocolData->ServerData.HMACKey.Value,
@@ -916,9 +802,9 @@ namespace Unity.Networking.Transport.Relay
                             };
 
                             protocolData->SecureClientState.ClientConfig = config;
-                            
+
                             protocolData->SecureClientState.ClientPtr = Binding.unitytls_client_create(Binding.UnityTLSRole_Client, protocolData->SecureClientState.ClientConfig);
-                            
+
                             IntPtr secureUserData = (IntPtr)UnsafeUtility.Malloc(UnsafeUtility.SizeOf<SecureUserData>(),
                                 UnsafeUtility.AlignOf<SecureUserData>(), Allocator.Persistent);
 
@@ -933,27 +819,27 @@ namespace Unity.Networking.Transport.Relay
                             };
 
                             protocolData->SecureClientState.ClientConfig->transportUserData = secureUserData;
-                            
+
                             Binding.unitytls_client_init(protocolData->SecureClientState.ClientPtr);
                         }
-                        
+
                         var currentState = Binding.unitytls_client_get_state(protocolData->SecureClientState.ClientPtr);
                         if (currentState == Binding.UnityTLSClientState_Handshake)
                             return;
-                        
+
                         var data = (SecureUserData*)protocolData->SecureClientState.ClientConfig->transportUserData;
 
                         SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref protocolData->ServerEndpoint, ref sendInterface, ref queueHandle, data);
                         var handshakeResult = SecureNetworkProtocol.UpdateSecureHandshakeState(ref protocolData->SecureClientState);
                     }
-                        break;
+                    break;
 #endif
                     case RelayConnectionState.Binding:
                         if (updateTime - protocolData->LastConnectAttempt > protocolData->ConnectTimeoutMS || protocolData->LastUpdateTime == 0)
                         {
                             protocolData->LastConnectAttempt = updateTime;
                             protocolData->LastSentTime = updateTime;
-                            
+
                             const int requirePayloadSize = RelayMessageBind.Length;
 
                             if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, requirePayloadSize) != 0)
@@ -961,7 +847,7 @@ namespace Unity.Networking.Transport.Relay
                                 UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
                                 return;
                             }
-                            
+
                             var writeResult = WriteBindMessage(ref protocolData->ServerEndpoint, ref sendHandle, ref queueHandle, userData);
 
                             if (!writeResult)
@@ -969,35 +855,11 @@ namespace Unity.Networking.Transport.Relay
                                 sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
                                 return;
                             }
-#if ENABLE_MANAGED_UNITYTLS 
-                            if (protocolData->ServerData.IsSecure == 1 &&
-                                (protocolData->SecureState == SecuredRelayConnectionState.Secured))
+
+                            if (SendMessage(protocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
                             {
-                                var secureUserData =
-                                    (SecureUserData*) protocolData->SecureClientState.ClientConfig->transportUserData;
-                                SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref protocolData->ServerEndpoint,
-                                    ref sendInterface, ref queueHandle, secureUserData);
-
-                                var result = Binding.unitytls_client_send_data(protocolData->SecureClientState.ClientPtr,
-                                    (byte*) sendHandle.data,
-                                    new UIntPtr((uint) sendHandle.size));
-
-                                var sendSize = sendHandle.size;
-
-                                // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                                // based on the encrypted buffer size
-                                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                                if (result != Binding.UNITYTLS_SUCCESS)
-                                {
-                                    Debug.LogError($"Secure Send failed with result {result}");
-                                    return;
-                                }
-                            }
-                            else
-#endif
-                            {
-                                sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref protocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
+                                Debug.LogError("Failed to send Bind message to relay.");
+                                return;
                             }
                         }
                         break;
@@ -1011,43 +873,19 @@ namespace Unity.Networking.Transport.Relay
                                 UnityEngine.Debug.LogError("Failed to send a RelayPingMessage packet");
                                 return;
                             }
-                            
-                            var writeResult = WritePingMessage(ref protocolData->ServerEndpoint, ref sendHandle, ref queueHandle, userData);
-                            
+
+                            var writeResult = WriteRelayPingMessage(ref protocolData->ServerEndpoint, ref sendHandle, ref queueHandle, userData);
+
                             if (!writeResult)
                             {
                                 sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
                                 return;
                             }
-#if ENABLE_MANAGED_UNITYTLS
-                            if (protocolData->ServerData.IsSecure == 1 &&
-                                (protocolData->SecureState == SecuredRelayConnectionState.Secured))
+
+                            if (SendMessage(protocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
                             {
-                                var secureUserData =
-                                    (SecureUserData*) protocolData->SecureClientState.ClientConfig->transportUserData;
-                                SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref protocolData->ServerEndpoint,
-                                    ref sendInterface, ref queueHandle, secureUserData);
-
-                                var result = Binding.unitytls_client_send_data(protocolData->SecureClientState.ClientPtr,
-                                    (byte*) sendHandle.data,
-                                    new UIntPtr((uint) sendHandle.size));
-
-                                var sendSize = sendHandle.size;
-
-                                // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                                // based on the encrypted buffer size
-                                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                                if (result != Binding.UNITYTLS_SUCCESS)
-                                {
-                                    Debug.LogError($"Secure Send failed with result {result}");
-                                    return;
-                                }
-                            }
-                            else
-#endif
-                            {
-                                sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref protocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
+                                Debug.LogError("Failed to send Ping message to relay.");
+                                return;
                             }
 
                             protocolData->LastSentTime = updateTime;
@@ -1061,7 +899,7 @@ namespace Unity.Networking.Transport.Relay
         }
 
         [BurstCompatible]
-        private static unsafe bool WritePingMessage(ref NetworkInterfaceEndPoint serverEndpoint, ref NetworkInterfaceSendHandle sendHandle, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        private static unsafe bool WriteRelayPingMessage(ref NetworkInterfaceEndPoint serverEndpoint, ref NetworkInterfaceSendHandle sendHandle, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             var protocolData = (RelayProtocolData*)userData;
 

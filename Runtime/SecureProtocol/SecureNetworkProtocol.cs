@@ -356,7 +356,8 @@ namespace Unity.Networking.Transport.TLS
 
         public int Connect(INetworkInterface networkInterface, NetworkEndPoint endPoint, out NetworkInterfaceEndPoint address)
         {
-            return networkInterface.CreateInterfaceEndPoint(endPoint, out address);
+            var utp = new UnityTransportProtocol();
+            return utp.Connect(networkInterface, endPoint, out address);
         }
 
         public NetworkEndPoint GetRemoteEndPoint(INetworkInterface networkInterface, NetworkInterfaceEndPoint address)
@@ -618,7 +619,11 @@ namespace Unity.Networking.Transport.TLS
                         return;
                     }
 
-                    UnityTransportProtocol.ProcessReceive((IntPtr)buffer.GetUnsafePtr(),
+                    // when we have a proper read we need to copy that data into the stream. It should be noted
+                    // that this copy does change data we don't technically own.
+                    UnsafeUtility.MemCpy((void*)stream, buffer.GetUnsafePtr(), bytesRead.ToUInt32());
+
+                    UnityTransportProtocol.ProcessReceive(stream,
                         ref endpoint,
                         (int)bytesRead.ToUInt32(),
                         ref sendInterface,
@@ -630,7 +635,6 @@ namespace Unity.Networking.Transport.TLS
                     {
                         // So we got a disconnect message we need to clean up the agent
                         DisposeSecureClient(ref secureClient);
-
                         protocolData->SecureClients.Remove(endpoint);
                     }
                 }
@@ -668,14 +672,16 @@ namespace Unity.Networking.Transport.TLS
 
             UnityTransportProtocol.WriteSendMessageHeader(ref connection, hasPipeline, ref sendHandle, 0);
 
-            var result = Binding.unitytls_client_send_data(secureClient.ClientPtr, (byte*)sendHandle.data,
-                new UIntPtr((uint)sendHandle.size));
+            // we need to free up the current handle before we call send because we could be at capacity and thus
+            // when we go and try to get a new handle it will fail.
+            var buffer = new NativeArray<byte>(sendHandle.size, Allocator.Temp);
+            UnsafeUtility.MemCpy(buffer.GetUnsafePtr(), (void*)sendHandle.data, sendHandle.size);
 
-            var sendSize = sendHandle.size;
-
-            // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-            // based on the encrypted buffer size
+            // We end up having to abort this handle so we can free it up as DTLS will generate a
+            // new one based on the encrypted buffer size.
             sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+
+            var result = Binding.unitytls_client_send_data(secureClient.ClientPtr, (byte*)buffer.GetUnsafePtr(), new UIntPtr((uint)buffer.Length));
 
             if (result != Binding.UNITYTLS_SUCCESS)
             {
@@ -683,7 +689,7 @@ namespace Unity.Networking.Transport.TLS
                 return -1;
             }
 
-            return sendSize;
+            return buffer.Length;
         }
 
         [BurstCompile(DisableDirectCall = true)]
