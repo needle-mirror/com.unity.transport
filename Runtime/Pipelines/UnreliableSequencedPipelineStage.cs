@@ -6,12 +6,22 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// The UnreliableSequencedPipelineStage is used to send unreliable packets in order. 
+    /// </summary>
     [BurstCompile]
     public unsafe struct UnreliableSequencedPipelineStage : INetworkPipelineStage
     {
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        /// <summary>
+        /// Statics the initialize using the specified static instance buffer
+        /// </summary>
+        /// <param name="staticInstanceBuffer">The static instance buffer</param>
+        /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
+        /// <param name="netParams">The net params</param>
+        /// <returns>The network pipeline stage</returns>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
             return new NetworkPipelineStage(
@@ -25,6 +35,9 @@ namespace Unity.Networking.Transport
             );
         }
 
+        /// <summary>
+        /// Gets the value of the static size
+        /// </summary>
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]

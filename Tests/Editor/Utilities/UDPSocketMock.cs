@@ -87,7 +87,7 @@ namespace Unity.Networking.Transport.Tests
 
         private void ProcessPacket(byte[] buffer, int count, EndPoint endpoint)
         {
-            for (var p = m_ExpectedPacketsCount - 1; p >= 0; --p)
+            for (var p = 0; p < m_ExpectedPacketsCount; p++)
             {
                 ref var packet = ref m_ExpectedPackets[p];
                 if (IsExpectedPacket(ref packet, buffer, count))
@@ -103,8 +103,9 @@ namespace Unity.Networking.Transport.Tests
 
                     // remove the packet from the list
                     --m_ExpectedPacketsCount;
-                    packet = m_ExpectedPackets[m_ExpectedPacketsCount];
-                    m_ExpectedPackets[m_ExpectedPacketsCount] = default;
+                    var newExpected = new List<ExpectedPacket>(m_ExpectedPackets);
+                    newExpected.RemoveAt(p);
+                    m_ExpectedPackets = newExpected.ToArray();
 
                     return;
                 }

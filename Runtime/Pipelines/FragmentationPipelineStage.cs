@@ -8,14 +8,28 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// The fragmentation pipeline stage allows for packets to be broken up into smaller packets.
+    /// </summary>
+    /// <remarks>
+    /// The current implementation of this pipeline stage does not handle reassembly of out-of-order
+    /// fragments. Thus if it is expected that multiple fragmented messages will be in flight at the
+    /// same time, and/or if sending on networks with a lot of jitter, it is recommended to pair
+    /// this pipeline stage with <see cref="ReliableSequencedPipelineStage">.
+    /// </remarks>
     [BurstCompile]
     public unsafe struct FragmentationPipelineStage : INetworkPipelineStage
     {
+        /// <summary>The fragmentation stage's internal context.</summary>
         public struct FragContext
         {
+            /// <summary> Starting index. </summary>
             public int startIndex;
+            /// <summary> Ending index. </summary>
             public int endIndex;
+            /// <summary> Sequence number. </summary>
             public int sequence;
+            /// <summary> Whether there's an error with a packet. </summary>
             public bool packetError;
         }
 
@@ -32,6 +46,7 @@ namespace Unity.Networking.Transport
 #else
         const int FragHeaderCapacity = 2;    // 2 bits for First/Last flags, 14 bits sequence number
 #endif
+
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
         private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
@@ -43,7 +58,7 @@ namespace Unity.Networking.Transport
             FragFlags flags = FragFlags.First;
             int headerCapacity = ctx.header.Capacity;
 
-            var systemHeaderCapacity = systemHeaderSize + 1 + 2;    // Extra byte is for pipeline id, two bytes for footer
+            var systemHeaderCapacity = systemHeaderSize + 1 + SessionIdToken.k_Length;    // Extra 1 byte is for pipeline id, SessionIdToken.k_Length bytes for footer
             var maxBlockLength = NetworkParameterConstants.MTU - systemHeaderCapacity - inboundBuffer.headerPadding;
             var maxBlockLengthFirstPacket = maxBlockLength - ctx.accumulatedHeaderCapacity; // The first packet has the headers for all pipeline stages before this one
 
@@ -51,7 +66,13 @@ namespace Unity.Networking.Transport
             {
                 var isResume = 0 == inboundBuffer.bufferLength;
                 if (!isResume)
+                {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                     throw new InvalidOperationException("Internal error: we encountered data in the fragmentation buffer, but this is not a resume call.");
+#else
+                    return (int)Error.StatusCode.NetworkStateMismatch;
+#endif
+                }
 
                 // We have data left over from a previous call
                 flags &= ~FragFlags.First;
@@ -74,7 +95,11 @@ namespace Unity.Networking.Transport
                 var excessStart = inboundBuffer.buffer + maxBlockLengthFirstPacket;
                 if (excessLength + inboundBuffer.headerPadding > payloadCapacity)
                 {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                     throw new InvalidOperationException($"Fragmentation capacity exceeded. Capacity:{payloadCapacity} Payload:{excessLength + inboundBuffer.headerPadding}");
+#else
+                    return (int)Error.StatusCode.NetworkPacketOverflow;
+#endif
                 }
                 UnsafeUtility.MemCpy(dataBuffer + inboundBuffer.headerPadding, excessStart, excessLength);
                 fragContext->startIndex = inboundBuffer.headerPadding; // Leaving room for header
@@ -151,7 +176,12 @@ namespace Unity.Networking.Transport
                 {
                     if (fragContext->endIndex + inboundBuffer.bufferLength > param->PayloadCapacity)
                     {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                         throw new InvalidOperationException($"Fragmentation capacity exceeded");
+#else
+                        UnityEngine.Debug.LogError($"Fragmentation capacity exceeded");
+                        return;
+#endif
                     }
                     // Append the data to the end
                     UnsafeUtility.MemCpy(dataBuffer + fragContext->endIndex, inboundBuffer.buffer, inboundBuffer.bufferLength);
@@ -189,6 +219,14 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        /// <summary>
+        /// Statics the initialize using the specified static instance buffer
+        /// </summary>
+        /// <param name="staticInstanceBuffer">The static instance buffer</param>
+        /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
+        /// <param name="netParams">The net params</param>
+        /// <exception cref="InvalidOperationException">Please specify a FragmentationUtility.Parameters with a PayloadCapacity greater than MTU, which is {NetworkParameterConstants.MTU}</exception>
+        /// <returns>The network pipeline stage</returns>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
             FragmentationUtility.Parameters param = default;
@@ -204,7 +242,14 @@ namespace Unity.Networking.Transport
                 payloadCapacity = 4 * 1024;
 
             if (payloadCapacity <= NetworkParameterConstants.MTU)
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException($"Please specify a FragmentationUtility.Parameters with a PayloadCapacity greater than MTU, which is {NetworkParameterConstants.MTU}");
+#else
+                UnityEngine.Debug.LogError($"Please a FragmentationUtility.Parameters with a PayloadCapacity greater than MTU, which is {NetworkParameterConstants.MTU}. Default to 4KB.");
+                payloadCapacity = 4 * 1024;
+#endif
+            }
 
             param.PayloadCapacity = payloadCapacity;
 
@@ -222,6 +267,9 @@ namespace Unity.Networking.Transport
             );
         }
 
+        /// <summary>
+        /// Gets the value of the static size
+        /// </summary>
         public int StaticSize => UnsafeUtility.SizeOf<FragmentationUtility.Parameters>();
     }
 }

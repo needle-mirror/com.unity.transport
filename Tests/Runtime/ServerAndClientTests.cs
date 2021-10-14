@@ -24,6 +24,14 @@ namespace Tests
 
         private const string backend = "baselib";
 
+        private readonly NetworkConfigParameter defaultConfigParams = new NetworkConfigParameter
+        {
+            connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
+            maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
+            disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
+            heartbeatTimeoutMS = NetworkParameterConstants.HeartbeatTimeoutMS
+        };
+
         NetworkEvent.Type PollDriverAndFindDataEvent(ref NetworkDriver driver, NetworkConnection connection, NetworkEvent.Type eventType, int maxRetryCount = 10)
         {
             for (int retry = 0; retry < maxRetryCount; ++retry)
@@ -38,10 +46,12 @@ namespace Tests
             return NetworkEvent.Type.Empty;
         }
 
-        public void SetupServerAndClientAndConnectThem(NetworkEndPoint nep, int bufferSize)
+        public void SetupServerAndClientAndConnectThem(NetworkEndPoint nep, int bufferSize, NetworkConfigParameter configParams)
         {
+            var streamParams = new NetworkDataStreamParameter { size = bufferSize };
+
             //setup server
-            server_driver = NetworkDriver.Create(new NetworkDataStreamParameter { size = bufferSize });
+            server_driver = NetworkDriver.Create(streamParams, configParams);
             NetworkEndPoint server_endpoint = nep;
             server_endpoint.Port = 1337;
             var ret = server_driver.Bind(server_endpoint);
@@ -51,13 +61,11 @@ namespace Tests
                 server_endpoint.Port += 17;
                 ret = server_driver.Bind(server_endpoint);
             }
-            ;
             Assert.AreEqual(ret, 0, "Failed to bind the socket");
             server_driver.Listen();
 
             //setup client
-            client_driver = NetworkDriver.Create(
-                new NetworkDataStreamParameter { size = bufferSize });
+            client_driver = NetworkDriver.Create(streamParams, configParams);
             clientToServerConnection = client_driver.Connect(server_endpoint);
 
             //update drivers
@@ -96,14 +104,14 @@ namespace Tests
         [Test]
         public void ServerAndClient_Connect_Successfull_IPv6()
         {
-            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv6, 0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv6, 0, defaultConfigParams);
             DisconnectAndCleanup();
         }
 
         [Test]
         public void ServerAndClient_Connect_Successfully_IPv4()
         {
-            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, defaultConfigParams);
             DisconnectAndCleanup();
         }
 
@@ -191,7 +199,7 @@ namespace Tests
 
         public void ServerAndClient_PingPong_Successfully(NetworkEndPoint nep)
         {
-            SetupServerAndClientAndConnectThem(nep, 0);
+            SetupServerAndClientAndConnectThem(nep, 0, defaultConfigParams);
 
             //send data from client
             if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
@@ -252,7 +260,7 @@ namespace Tests
         [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
         public IEnumerator ServerAndClient_SendBigMessage_OverflowsIncomingDriverBuffer()
         {
-            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 8);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, UdpCHeader.Length + SessionIdToken.k_Length, defaultConfigParams);
 
             //send data from client
             if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
@@ -278,9 +286,9 @@ namespace Tests
         [Test]
         public void ServerAndClient_SendMessageWithMaxLength_SentAndReceivedWithoutErrors()
         {
-            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, defaultConfigParams);
 
-            int messageLength = 1400 - UdpCHeader.Length;
+            int messageLength = NetworkParameterConstants.MTU - client_driver.MaxHeaderSize(NetworkPipeline.Null);
             var messageToSend = new NativeArray<byte>(messageLength, Allocator.Temp);
             for (int i = 0; i < messageLength; i++)
             {
@@ -305,9 +313,10 @@ namespace Tests
         }
 
         [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
+        [Ignore("EndSend can't send messages larger than MTU. Test is actually testing sending an empty message.")]
         public IEnumerator ServerAndClient_SendMessageWithMoreThenMaxLength_OverflowsIncomingDriverBuffer()
         {
-            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, defaultConfigParams);
 
             //send data from client
 
@@ -339,7 +348,7 @@ namespace Tests
         [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
         public IEnumerator ServerAndClient_SendMessageWithoutReadingIt_GivesErrorOnDriverUpdate()
         {
-            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0);
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, defaultConfigParams);
 
             //send data from client
             if (client_driver.BeginSend(clientToServerConnection, out var m_OutStream) == 0)
@@ -357,6 +366,145 @@ namespace Tests
 
             DisconnectAndCleanup();
             yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ServerAndClient_DisconnectTimeout_ReachedOnCommLoss()
+        {
+            const int DisconnectTimeout = 200;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+
+            var config = defaultConfigParams;
+            config.disconnectTimeoutMS = DisconnectTimeout;
+
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, config);
+
+            // Make it seem to the server like there's a communication loss.
+            client_driver.Dispose();
+
+            NetworkEvent.Type ev = NetworkEvent.Type.Empty;
+
+            float startTime = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - startTime <= WaitTime)
+            {
+                ev = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Disconnect);
+                if (ev == NetworkEvent.Type.Disconnect)
+                {
+                    break;
+                }
+
+                yield return null;
+            }
+
+            server_driver.Dispose();
+            yield return null;
+
+            Assert.AreEqual(NetworkEvent.Type.Disconnect, ev);
+        }
+
+        [UnityTest]
+        public IEnumerator ServerAndClient_DisconnectTimeout_ReachedWithDisabledHeartbeats()
+        {
+            const int DisconnectTimeout = 200;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+
+            var config = defaultConfigParams;
+            config.disconnectTimeoutMS = DisconnectTimeout;
+            config.heartbeatTimeoutMS = 0;
+
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, config);
+
+            bool disconnected = false;
+
+            float startTime = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - startTime <= WaitTime)
+            {
+                var ev1 = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Disconnect);
+                var ev2 = PollDriverAndFindDataEvent(ref client_driver, clientToServerConnection, NetworkEvent.Type.Disconnect);
+                if (ev1 == NetworkEvent.Type.Disconnect || ev2 == NetworkEvent.Type.Disconnect)
+                {
+                    disconnected = true;
+                    break;
+                }
+
+                yield return null;
+            }
+
+            server_driver.Dispose();
+            client_driver.Dispose();
+            yield return null;
+
+            Assert.IsTrue(disconnected);
+        }
+
+        [UnityTest]
+        public IEnumerator ServerAndClient_DisconnectTimeout_ReachedWithInfrequentHeartbeats()
+        {
+            const int DisconnectTimeout = 200;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+
+            var config = defaultConfigParams;
+            config.disconnectTimeoutMS = DisconnectTimeout;
+            config.heartbeatTimeoutMS = DisconnectTimeout * 2;
+
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, config);
+
+            bool disconnected = false;
+
+            float startTime = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - startTime <= WaitTime)
+            {
+                var ev1 = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Disconnect);
+                var ev2 = PollDriverAndFindDataEvent(ref client_driver, clientToServerConnection, NetworkEvent.Type.Disconnect);
+                if (ev1 == NetworkEvent.Type.Disconnect || ev2 == NetworkEvent.Type.Disconnect)
+                {
+                    disconnected = true;
+                    break;
+                }
+
+                yield return null;
+            }
+
+            server_driver.Dispose();
+            client_driver.Dispose();
+            yield return null;
+
+            Assert.IsTrue(disconnected);
+        }
+
+        [UnityTest]
+        public IEnumerator ServerAndClient_DisconnectTimeout_NotReachedWithFrequentHeartbeats()
+        {
+            const int DisconnectTimeout = 200;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+
+            var config = defaultConfigParams;
+            config.disconnectTimeoutMS = DisconnectTimeout;
+            config.heartbeatTimeoutMS = DisconnectTimeout / 2;
+
+            SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv4, 0, config);
+
+            bool disconnected = false;
+
+            float startTime = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - startTime <= WaitTime)
+            {
+                var ev1 = PollDriverAndFindDataEvent(ref server_driver, connectionToClient, NetworkEvent.Type.Disconnect);
+                var ev2 = PollDriverAndFindDataEvent(ref client_driver, clientToServerConnection, NetworkEvent.Type.Disconnect);
+                if (ev1 == NetworkEvent.Type.Disconnect || ev2 == NetworkEvent.Type.Disconnect)
+                {
+                    disconnected = true;
+                    break;
+                }
+
+                yield return null;
+            }
+
+            server_driver.Dispose();
+            client_driver.Dispose();
+            yield return null;
+
+            Assert.IsFalse(disconnected);
         }
     }
 }

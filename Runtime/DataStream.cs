@@ -797,12 +797,19 @@ namespace Unity.Networking.Transport
             return data;
         }
 
+        public long ReadLong()
+        {
+            long data;
+            ReadBytes((byte*)&data, sizeof(long));
+            return data;
+        }
+	    
         public ulong ReadULong()
         {
             ulong data;
             ReadBytes((byte*)&data, sizeof(ulong));
             return data;
-        }
+        }  
 
         public short ReadShortNetworkByteOrder()
         {

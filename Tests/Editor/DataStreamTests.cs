@@ -121,8 +121,8 @@ namespace Unity.Networking.Transport.Tests
                 }
                 Assert.AreEqual(1979, reader.ReadInt());
             }
-        }
-
+        }   
+        
         [Test]
         public void ReadWritePackedIntExistingData()
         {
@@ -393,6 +393,73 @@ namespace Unity.Networking.Transport.Tests
             var reader = new DataStreamReader(dataStream.AsNativeArray());
             var dst = reader.ReadPackedFixedString4096Delta(baseline, compressionModel);
             Assert.AreEqual(src, dst);
+        }
+        
+        [Test]
+        public void ReadWriteLong()
+        {
+            var dataStream = new DataStreamWriter(300 * 8, Allocator.Temp);
+            long base_val = -99;
+            long count = 277;
+            for (uint i = 0; i < count; ++i)
+                dataStream.WriteLong(base_val + i);
+
+            dataStream.WriteLong(-1979);
+            dataStream.Flush();
+            var reader = new DataStreamReader(dataStream.AsNativeArray());
+            for (uint i = 0; i < count; ++i)
+            {
+                var val = reader.ReadLong();
+                Assert.AreEqual(base_val + i, val);
+            }
+
+            Assert.AreEqual(-1979, reader.ReadLong());
+        }
+        
+        [Test]
+        public void ReadWritePackedLong()
+        {
+            using (var compressionModel = new NetworkCompressionModel(Allocator.Persistent))
+            {
+                var dataStream = new DataStreamWriter(300 * 8, Allocator.Temp);
+                long base_val = -99;
+                long count = 277;
+                for (uint i = 0; i < count; ++i)
+                    dataStream.WritePackedLong(base_val + i, compressionModel);
+
+                dataStream.WriteLong(-1979);
+                dataStream.Flush();
+                var reader = new DataStreamReader(dataStream.AsNativeArray());
+                for (uint i = 0; i < count; ++i)
+                {
+                    var val = reader.ReadPackedLong(compressionModel);
+                    Assert.AreEqual(base_val + i, val);
+                }
+                Assert.AreEqual(-1979, reader.ReadLong());
+            }
+        }    
+        
+        [Test]
+        public void ReadWritePackedULong()
+        {
+            using (var compressionModel = new NetworkCompressionModel(Allocator.Persistent))
+            {
+                var dataStream = new DataStreamWriter(300 * 8, Allocator.Temp);
+                ulong base_val = 2000;
+                ulong count = 277;
+                for (uint i = 0; i < count; ++i)
+                    dataStream.WritePackedULong(base_val + i, compressionModel);
+
+                dataStream.WriteULong(1979);
+                dataStream.Flush();
+                var reader = new DataStreamReader(dataStream.AsNativeArray());
+                for (uint i = 0; i < count; ++i)
+                {
+                    var val = reader.ReadPackedULong(compressionModel);
+                    Assert.AreEqual(base_val + i, val);
+                }
+                Assert.AreEqual(1979, reader.ReadULong());
+            }
         }
     }
 }

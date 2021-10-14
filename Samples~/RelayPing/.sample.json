@@ -1,0 +1,4 @@
+{
+    "displayName": "Unity Relay with Unity Transport",        
+    "description": "Basic sample on how to use Unity Relay with Unity Transport, your project must depend on com.unity.services.relay"
+}

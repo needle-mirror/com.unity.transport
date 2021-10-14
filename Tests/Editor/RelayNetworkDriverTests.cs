@@ -45,7 +45,7 @@ namespace Unity.Networking.Transport.Tests
             using (var server = new RelayServerMock("127.0.0.1", m_port++))
             using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
             {
-                server.SetupForBind();
+                server.SetupForBind(0);
 
                 Assert.Zero(driver.Bind(NetworkEndPoint.AnyIpv4));
                 driver.ScheduleUpdate(default).Complete();
@@ -53,10 +53,10 @@ namespace Unity.Networking.Transport.Tests
                 RelayServerMock.WaitForCondition(() =>
                 {
                     driver.ScheduleUpdate().Complete();
-                    return driver.Bound;
+                    return server.IsBound(0);
                 });
 
-                Assert.IsTrue(driver.Bound);
+                Assert.IsTrue(server.IsBound(0));
             }
         }
 
@@ -77,7 +77,7 @@ namespace Unity.Networking.Transport.Tests
                 }))
             {
                 var retriesLeft = k_RetryCount;
-                server.SetupForBindRetry(k_RetryCount, () => -- retriesLeft);
+                server.SetupForBindRetry(k_RetryCount, () => -- retriesLeft, 0);
 
                 Assert.Zero(driver.Bind(NetworkEndPoint.AnyIpv4));
                 driver.ScheduleFlushSend(default).Complete();
@@ -85,11 +85,11 @@ namespace Unity.Networking.Transport.Tests
                 RelayServerMock.WaitForCondition(() =>
                 {
                     driver.ScheduleUpdate().Complete();
-                    return driver.Bound;
+                    return server.IsBound(0);
                 });
 
                 Assert.IsTrue(retriesLeft <= 0);
-                Assert.IsTrue(driver.Bound);
+                Assert.IsTrue(server.IsBound(0));
             }
         }
 
@@ -99,24 +99,8 @@ namespace Unity.Networking.Transport.Tests
             using (var server = new RelayServerMock("127.0.0.1", m_port++))
             using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
             {
-                host.Bind(NetworkEndPoint.AnyIpv4);
-                Assert.True(server.CompleteBind(host));
+                Assert.True(server.CompleteBind(host, 0));
                 Assert.Zero(host.Listen());
-            }
-        }
-
-        [Test]
-        public void RelayNetworkDriver_ListenWithUnbound_Fail()
-        {
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
-            {
-                host.Bind(NetworkEndPoint.AnyIpv4);
-                Assert.IsFalse(host.Bound);
-                Assert.Throws<System.InvalidOperationException>(() =>
-                {
-                    host.Listen();
-                });
             }
         }
 
@@ -127,10 +111,7 @@ namespace Unity.Networking.Transport.Tests
             using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
             using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(1), RelayConnectionTimeMS = 10000000 }))
             {
-                host.Bind(NetworkEndPoint.AnyIpv4);
                 Assert.True(server.CompleteBind(host, 0));
-
-                client.Bind(NetworkEndPoint.AnyIpv4);
                 Assert.True(server.CompleteBind(client, 1));
 
                 Assert.Zero(host.Listen());
@@ -180,10 +161,7 @@ namespace Unity.Networking.Transport.Tests
                     maxFrameTimeMS = 0
                 }))
             {
-                host.Bind(NetworkEndPoint.AnyIpv4);
                 Assert.True(server.CompleteBind(host, 0));
-
-                client.Bind(NetworkEndPoint.AnyIpv4);
                 Assert.True(server.CompleteBind(client, 1));
 
                 Assert.Zero(host.Listen());
@@ -222,30 +200,30 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void RelayNetworkDriver_Disconnect_Succeed()
         {
-            //using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            //using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0) }))
-            //using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(1) })) {
-            //    Assert.True(server.CompleteConnect(host, out var connections, client));
-            //    var connection = connections[0];
+            using (var server = new RelayServerMock("127.0.0.1", m_port++))
+            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0) }))
+            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(1) })) {
+               Assert.True(server.CompleteConnect(host, out var connections, client));
+               var connection = connections[0];
 
-            //    server.SetupForDisconnect(1, 0);
+               server.SetupForDisconnect(1, 0);
 
-            //    Assert.AreEqual(NetworkConnection.State.Connected, client.GetConnectionState(connections[0].clientToHost));
-            //    Assert.AreEqual(NetworkConnection.State.Connected, host.GetConnectionState(connections[0].hostToClient));
+               Assert.AreEqual(NetworkConnection.State.Connected, client.GetConnectionState(connection.clientToHost));
+               Assert.AreEqual(NetworkConnection.State.Connected, host.GetConnectionState(connection.hostToClient));
 
-            //    Assert.Zero(client.Disconnect(connections[0].clientToHost));
+               Assert.Zero(client.Disconnect(connection.clientToHost));
 
-            //    RelayServerMock.WaitForCondition(() =>
-            //    {
-            //        client.ScheduleUpdate(default).Complete();
-            //        host.ScheduleUpdate(default).Complete();
+               RelayServerMock.WaitForCondition(() =>
+               {
+                   client.ScheduleUpdate(default).Complete();
+                   host.ScheduleUpdate(default).Complete();
 
-            //        return host.GetConnectionState(connections[0].hostToClient) == NetworkConnection.State.Disconnected;
-            //    });
+                   return host.GetConnectionState(connection.hostToClient) == NetworkConnection.State.Disconnected;
+               });
 
-            //    Assert.AreEqual(NetworkConnection.State.Disconnected, client.GetConnectionState(connections[0].clientToHost));
-            //    Assert.AreEqual(NetworkConnection.State.Disconnected, host.GetConnectionState(connections[0].hostToClient));
-            //}
+               Assert.AreEqual(NetworkConnection.State.Disconnected, client.GetConnectionState(connection.clientToHost));
+               Assert.AreEqual(NetworkConnection.State.Disconnected, host.GetConnectionState(connection.hostToClient));
+            }
         }
 
         [Test]

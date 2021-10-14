@@ -4,6 +4,9 @@ using Unity.Mathematics;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Used to provide Huffman compression when using packed DataStream functions
+    /// </summary>
     public unsafe struct NetworkCompressionModel : IDisposable
     {
         internal static readonly byte[] k_BucketSizes =
@@ -27,10 +30,17 @@ namespace Unity.Networking.Transport
         internal const int k_MaxHuffmanSymbolLength = 6;
         internal const int k_MaxContexts = 1;
 
+        /// <summary>
+        /// Disposes this instance
+        /// </summary>
         public void Dispose()
         {
         }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="NetworkCompressionModel"/> class
+        /// </summary>
+        /// <param name="allocator">The allocator</param>
         public NetworkCompressionModel(Allocator allocator)
         {
             for (int i = 0; i < k_AlphabetSize; ++i)
@@ -184,10 +194,16 @@ namespace Unity.Networking.Transport
             }
         }
 
-        public fixed ushort encodeTable[k_MaxContexts * k_AlphabetSize];
-        public fixed ushort decodeTable[k_MaxContexts * (1 << k_MaxHuffmanSymbolLength)];
-        public fixed byte bucketSizes[k_AlphabetSize];
-        public fixed uint bucketOffsets[k_AlphabetSize];
+        internal fixed ushort encodeTable[k_MaxContexts * k_AlphabetSize];
+        internal fixed ushort decodeTable[k_MaxContexts * (1 << k_MaxHuffmanSymbolLength)];
+        internal fixed byte bucketSizes[k_AlphabetSize];
+        internal fixed uint bucketOffsets[k_AlphabetSize];
+        
+        /// <summary>
+        /// Calculates the bucket using the specified value
+        /// </summary>
+        /// <param name="value">The value</param>
+        /// <returns>The bucket index</returns>
         public int CalculateBucket(uint value)
         {
             int bucketIndex = k_FirstBucketCandidate[math.lzcnt(value)];

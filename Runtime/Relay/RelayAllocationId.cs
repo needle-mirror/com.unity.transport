@@ -9,14 +9,34 @@ namespace Unity.Networking.Transport.Relay
     /// </summary>
     public unsafe struct RelayAllocationId : IEquatable<RelayAllocationId>, IComparable<RelayAllocationId>
     {
+        /// <summary>
+        /// The length in bytes of the Allocation Id.
+        /// </summary>
         public const int k_Length = 16;
+        /// <summary>
+        /// The raw data of the Allocation Id.
+        /// </summary>
         public fixed byte Value[k_Length];
 
         // Used by Relay SDK
+        /// <summary>
+        /// Converts a byte pointer to a RelayAllocationId.
+        /// </summary>
+        /// <param name="dataPtr">The pointer to the data of the Allocation Id.</param>
+        /// <param name="length">The length of the data.</param>
+        /// <exception cref="ArgumentException">Provided byte array length is invalid, must be {k_Length} but got {length}.</exception>
+        /// <returns>Returns a RelayAllocationId constructed from the provided data.</returns>
         public static RelayAllocationId FromBytePointer(byte* dataPtr, int length)
         {
             if (length != k_Length)
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"Provided byte array length is invalid, must be {k_Length} but got {length}.");
+#else
+                UnityEngine.Debug.LogError($"Provided byte array length is invalid, must be {k_Length} but got {length}.");
+                return default;
+#endif
+            }
 
             var allocationId = new RelayAllocationId();
             UnsafeUtility.MemCpy(allocationId.Value, dataPtr, k_Length);

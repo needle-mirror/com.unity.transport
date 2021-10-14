@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Unity.Networking.Transport.Relay
 {
     [StructLayout(LayoutKind.Sequential)]
-    public struct RelayMessagePing
+    internal struct RelayMessagePing
     {
         public const int Length = RelayMessageHeader.Length + RelayAllocationId.k_Length + 2; // Header + FromAllocationId + SequenceNumber
 
@@ -11,7 +11,7 @@ namespace Unity.Networking.Transport.Relay
         public RelayAllocationId FromAllocationId;
         public ushort SequenceNumber;
 
-        public static RelayMessagePing Create(RelayAllocationId fromAllocationId, ushort dataLength)
+        internal static RelayMessagePing Create(RelayAllocationId fromAllocationId, ushort dataLength)
         {
             return new RelayMessagePing
             {

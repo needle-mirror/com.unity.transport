@@ -18,6 +18,14 @@ namespace Unity.Networking.Transport.TLS
     {
         public unsafe Binding.unitytls_client* ClientPtr;
         public unsafe Binding.unitytls_client_config* ClientConfig;
+
+        // Only set (and used) by the client when sending the Connection Request message after
+        // successfully completing the handshake.
+        public SessionIdToken ReceiveToken;
+
+        // During the handshake, tracks the last time UpdateSecureHandshakeState was called.
+        // Used to prune old half-open connections (handshake not completed).
+        public long LastHandshakeUpdate;
     }
 
     struct SecureNetworkProtocolData
@@ -27,11 +35,13 @@ namespace Unity.Networking.Transport.TLS
         public FixedString4096Bytes  Rsa;
         public FixedString4096Bytes  RsaKey;
         public FixedString32Bytes    Hostname;
-        public uint             Protocol;
-        public uint             SSLReadTimeoutMs;
-        public uint             SSLHandshakeTimeoutMax;
-        public uint             SSLHandshakeTimeoutMin;
-        public uint             ClientAuth;
+        public uint                  Protocol;
+        public uint                  SSLReadTimeoutMs;
+        public uint                  SSLHandshakeTimeoutMax;
+        public uint                  SSLHandshakeTimeoutMin;
+        public uint                  ClientAuth;
+        public long                  LastUpdate;
+        public long                  LastHalfOpenPrune;
     }
 
     internal struct SecureUserData
@@ -168,13 +178,13 @@ namespace Unity.Networking.Transport.TLS
     public struct SecureNetworkProtocolParameter : INetworkParameter
     {
         /// <summary>Common (client/server) certificate</summary>
-        public FixedString4096Bytes                      Pem;
+        public FixedString4096Bytes                 Pem;
         /// <summary>Server (or client) own certificate</summary>
-        public FixedString4096Bytes                      Rsa;
+        public FixedString4096Bytes                 Rsa;
         /// <summary>Server (or client) own private key</summary>
-        public FixedString4096Bytes                      RsaKey;
+        public FixedString4096Bytes                 RsaKey;
         /// <summary>Server's hostname's name</summary>
-        public FixedString32Bytes                        Hostname;
+        public FixedString32Bytes                   Hostname;
         /// <summary>Underlying transport protocol provided to tls </summary>
         /// <remarks>
         /// This value is either TLS (used for TCP Connections) or DTLS (used for UDP Connections)
@@ -290,6 +300,8 @@ namespace Unity.Networking.Transport.TLS
                     Hostname = secureConfig.Hostname,
                     Protocol = (uint)secureConfig.Protocol,
                     SSLReadTimeoutMs = secureConfig.SSLReadTimeoutMs,
+                    SSLHandshakeTimeoutMin = secureConfig.SSLHandshakeTimeoutMin,
+                    SSLHandshakeTimeoutMax = secureConfig.SSLHandshakeTimeoutMax,
                     ClientAuth = (uint)secureConfig.ClientAuthenticationPolicy
                 };
             }
@@ -351,13 +363,13 @@ namespace Unity.Networking.Transport.TLS
             if (networkInterface.Bind(localEndPoint) != 0)
                 return -1;
 
-            return 2;
+            return 0;
         }
 
-        public int Connect(INetworkInterface networkInterface, NetworkEndPoint endPoint, out NetworkInterfaceEndPoint address)
+        public int CreateConnectionAddress(INetworkInterface networkInterface, NetworkEndPoint remoteEndpoint, out NetworkInterfaceEndPoint remoteAddress)
         {
-            var utp = new UnityTransportProtocol();
-            return utp.Connect(networkInterface, endPoint, out address);
+            remoteAddress = default;
+            return networkInterface.CreateInterfaceEndPoint(remoteEndpoint, out remoteAddress);
         }
 
         public NetworkEndPoint GetRemoteEndPoint(INetworkInterface networkInterface, NetworkInterfaceEndPoint address)
@@ -377,13 +389,15 @@ namespace Unity.Networking.Transport.TLS
                 processReceive: new TransportFunctionPointer<NetworkProtocol.ProcessReceiveDelegate>(ProcessReceive),
                 processSend: new TransportFunctionPointer<NetworkProtocol.ProcessSendDelegate>(ProcessSend),
                 processSendConnectionAccept: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionAcceptDelegate>(ProcessSendConnectionAccept),
-                processSendConnectionRequest: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionRequestDelegate>(ProcessSendConnectionRequest),
-                processSendDisconnect: new TransportFunctionPointer<NetworkProtocol.ProcessSendDisconnectDelegate>(ProcessSendDisconnect),
+                connect: new TransportFunctionPointer<NetworkProtocol.ConnectDelegate>(Connect),
+                disconnect: new TransportFunctionPointer<NetworkProtocol.DisconnectDelegate>(Disconnect),
+                processSendPing: new TransportFunctionPointer<NetworkProtocol.ProcessSendPingDelegate>(ProcessSendPing),
+                processSendPong: new TransportFunctionPointer<NetworkProtocol.ProcessSendPongDelegate>(ProcessSendPong),
                 update: new TransportFunctionPointer<NetworkProtocol.UpdateDelegate>(Update),
-                needsUpdate: false,
+                needsUpdate: true,
                 userData: UserData,
                 maxHeaderSize: UdpCHeader.Length,
-                maxFooterSize: 2
+                maxFooterSize: SessionIdToken.k_Length
             );
         }
 
@@ -464,12 +478,14 @@ namespace Unity.Networking.Transport.TLS
         private static bool CreateNewSecureClientState(
             ref NetworkInterfaceEndPoint endpoint,
             uint tlsRole,
-            SecureNetworkProtocolData* protocolData)
+            SecureNetworkProtocolData* protocolData,
+            SessionIdToken receiveToken = default)
         {
             if (protocolData->SecureClients.TryAdd(endpoint, new SecureClientState()))
             {
                 var secureClient = protocolData->SecureClients[endpoint];
                 secureClient.ClientConfig = GetSecureClientConfig(protocolData);
+                secureClient.ReceiveToken = receiveToken;
 
                 CreateSecureClient(tlsRole, &secureClient);
 
@@ -538,7 +554,7 @@ namespace Unity.Networking.Transport.TLS
             return false;
         }
 
-        internal static uint UpdateSecureHandshakeState(ref SecureClientState clientAgent)
+        internal static uint SecureHandshakeStep(ref SecureClientState clientAgent)
         {
             // So now we need to check which role we are ?
             var isServer = Binding.unitytls_client_get_role(clientAgent.ClientPtr) == Binding.UnityTLSRole_Server;
@@ -561,6 +577,58 @@ namespace Unity.Networking.Transport.TLS
             while (shouldStep);
 
             return result;
+        }
+
+        private unsafe static uint UpdateSecureHandshakeState(
+            SecureNetworkProtocolData* protocolData, ref NetworkInterfaceEndPoint endpoint)
+        {
+            var secureClient = protocolData->SecureClients[endpoint];
+
+            secureClient.LastHandshakeUpdate = protocolData->LastUpdate;
+            protocolData->SecureClients[endpoint] = secureClient;
+
+            return SecureHandshakeStep(ref secureClient);
+        }
+
+        private unsafe static void PruneHalfOpenConnections(SecureNetworkProtocolData* protocolData)
+        {
+            var endpoints = protocolData->SecureClients.GetKeyArray(Allocator.Temp);
+            bool pruned = false;
+
+            for (int i = 0; i < endpoints.Length; i++)
+            {
+                var secureClient = protocolData->SecureClients[endpoints[i]];
+                var state = Binding.unitytls_client_get_state(secureClient.ClientPtr);
+
+                // After the maximum handshake timeout is a good time to prune half-open connections
+                // since at that point there is no progress possible on the handshake. By default
+                // it's also a very generous timeout (a minute).
+                //
+                // The check on LastHandshakeUpdate being greater than 0 is required in the case
+                // where a client hello is received before the very first update of the protocol.
+                // Unlikely to occur in practice (the client hello would have to come in right
+                // between the server's bind and its first update), but common in automated tests.
+                if (state == Binding.UnityTLSClientState_Handshake &&
+                    secureClient.LastHandshakeUpdate > 0 &&
+                    protocolData->LastUpdate - secureClient.LastHandshakeUpdate > protocolData->SSLHandshakeTimeoutMax)
+                {
+                    DisposeSecureClient(ref secureClient);
+                    protocolData->SecureClients.Remove(endpoints[i]);
+
+                    pruned = true;
+                }
+            }
+
+            // It would be more useful to log each client that has been pruned (we could show the
+            // details of the client's endpoint), but a malicious actor could abuse that to spam our
+            // logs with many half-open connections. At worst here we'll only log once every second
+            // (the default value of SSLHandshakeTimeoutMin).
+            if (pruned)
+            {
+                Debug.LogError("Had to prune half-open connections (clients with unfinished TLS handshakes).");
+            }
+
+            endpoints.Dispose();
         }
 
         [BurstCompile(DisableDirectCall = true)]
@@ -593,11 +661,21 @@ namespace Unity.Networking.Transport.TLS
                     bool shouldRunAgain = false;
                     do
                     {
-                        handshakeResult = UpdateSecureHandshakeState(ref secureClient);
+                        handshakeResult = UpdateSecureHandshakeState(protocolData, ref endpoint);
                         clientState = Binding.unitytls_client_get_state(secureClient.ClientPtr);
                         shouldRunAgain = (size != 0 && secureUserData->BytesProcessed == 0 && clientState == Binding.UnityTLSClientState_Handshake);
                     }
                     while (shouldRunAgain);
+
+                    // If the handshake has completed and we're a client, immediately send the
+                    // Connection Request message. This avoids having to wait for the driver to
+                    // timeout and resend it (which could be a while).
+                    var role = Binding.unitytls_client_get_role(secureClient.ClientPtr);
+                    if (role == Binding.UnityTLSRole_Client && clientState == Binding.UnityTLSClientState_Messaging)
+                    {
+                        SendConnectionRequest(
+                            secureClient.ReceiveToken, secureClient, ref endpoint, ref sendInterface, ref queueHandle);
+                    }
 
                     command.Type = ProcessPacketCommandType.Drop;
                 }
@@ -611,10 +689,10 @@ namespace Unity.Networking.Transport.TLS
 
                     if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        UnityEngine.Debug.LogError(
-                            $"Secure Read Failed with result {result}");
-
-                        // then we have an error we we have failed!
+                        // Don't log an error here. There are normal situations where we hit this
+                        // situation. For example if we get a retransmitted handshake message after
+                        // the handshake is completed (if the handshake minimum timeout is set too
+                        // low for the network conditions, this can occur frequently).
                         command.Type = ProcessPacketCommandType.Drop;
                         return;
                     }
@@ -636,6 +714,7 @@ namespace Unity.Networking.Transport.TLS
                         // So we got a disconnect message we need to clean up the agent
                         DisposeSecureClient(ref secureClient);
                         protocolData->SecureClients.Remove(endpoint);
+                        return;
                     }
                 }
 
@@ -702,7 +781,7 @@ namespace Unity.Networking.Transport.TLS
                 var protocolData = (SecureNetworkProtocolData*)userData;
                 var secureClient = protocolData->SecureClients[connection.Address];
 
-                var packet = new NativeArray<byte>(UdpCHeader.Length + 2, Allocator.Temp);
+                var packet = new NativeArray<byte>(UdpCHeader.Length + SessionIdToken.k_Length, Allocator.Temp);
                 var size = WriteConnectionAcceptMessage(ref connection, (byte*)packet.GetUnsafePtr(), packet.Length);
 
                 if (size < 0)
@@ -728,7 +807,7 @@ namespace Unity.Networking.Transport.TLS
             var size = UdpCHeader.Length;
 
             if (connection.DidReceiveData == 0)
-                size += 2;
+                size += SessionIdToken.k_Length;
 
             if (size > capacity)
             {
@@ -737,69 +816,88 @@ namespace Unity.Networking.Transport.TLS
             }
 
             var header = (UdpCHeader*)packet;
-            *header = new UdpCHeader
-            {
-                Type = (byte)UdpCProtocol.ConnectionAccept,
-                SessionToken = connection.SendToken,
-                Flags = 0
-            };
+            //Avoid use of 'new' keyword for UdpCHeader now until Mono fix backport gets in; it ignores the StructLayout.Size parameter
+            //and allocates 16 bytes instead of 10
+            header->Type = (byte)UdpCProtocol.ConnectionAccept;
+            header->SessionToken = connection.SendToken;
+            header->Flags = 0;
 
             if (connection.DidReceiveData == 0)
             {
                 header->Flags |= UdpCHeader.HeaderFlags.HasConnectToken;
-                *(ushort*)(packet + UdpCHeader.Length) = connection.ReceiveToken;
+                *(SessionIdToken*)(packet + UdpCHeader.Length) = connection.ReceiveToken;
             }
 
             return size;
         }
 
+
+        private static unsafe void SendConnectionRequest(SessionIdToken token, SecureClientState secureClient,
+            ref NetworkInterfaceEndPoint address, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
+        {
+            var packet = new NativeArray<byte>(UdpCHeader.Length, Allocator.Temp);
+            var header = (UdpCHeader*)packet.GetUnsafePtr();
+            header->Type = (byte)UdpCProtocol.ConnectionRequest;
+            header->SessionToken = token;
+            header->Flags = 0;
+
+            var secureUserData = (SecureUserData*)secureClient.ClientConfig->transportUserData;
+            SetSecureUserData(IntPtr.Zero, 0, ref address, ref sendInterface, ref queueHandle, secureUserData);
+
+            var result = Binding.unitytls_client_send_data(secureClient.ClientPtr,
+                (byte*)packet.GetUnsafePtr(), new UIntPtr((uint)packet.Length));
+            if (result != Binding.UNITYTLS_SUCCESS)
+            {
+                Debug.LogError("We have failed to Send Encrypted SendConnectionRequest");
+            }
+        }
+
+        private static unsafe uint SendHeaderOnlyMessage(UdpCProtocol type, SessionIdToken token, SecureClientState secureClient,
+            ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
+        {
+            var packet = new NativeArray<byte>(UdpCHeader.Length, Allocator.Temp);
+
+            var header = (UdpCHeader*)packet.GetUnsafePtr();
+            header->Type = (byte)type;
+            header->SessionToken = token;
+            header->Flags = 0;
+
+            var secureUserData = (SecureUserData*)secureClient.ClientConfig->transportUserData;
+            SetSecureUserData(IntPtr.Zero, 0, ref connection.Address, ref sendInterface, ref queueHandle, secureUserData);
+
+            return Binding.unitytls_client_send_data(secureClient.ClientPtr, (byte*)packet.GetUnsafePtr(), new UIntPtr((uint)packet.Length));
+        }
+
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendConnectionRequestDelegate))]
-        public static void ProcessSendConnectionRequest(ref NetworkDriver.Connection connection,
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ConnectDelegate))]
+        public static void Connect(ref NetworkDriver.Connection connection,
             ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             unsafe
             {
                 var protocolData = (SecureNetworkProtocolData*)userData;
-                CreateNewSecureClientState(ref connection.Address, Binding.UnityTLSRole_Client, protocolData);
+                CreateNewSecureClientState(
+                    ref connection.Address, Binding.UnityTLSRole_Client, protocolData, connection.ReceiveToken);
 
                 var secureClient = protocolData->SecureClients[connection.Address];
 
                 var secureUserData = (SecureUserData*)secureClient.ClientConfig->transportUserData;
-
                 SetSecureUserData(IntPtr.Zero, 0, ref connection.Address, ref sendInterface, ref queueHandle, secureUserData);
 
                 var currentState = Binding.unitytls_client_get_state(secureClient.ClientPtr);
-                // so in this case we are already doing a thing ?
-                // FIXME: Reconnect will need to be dealt with here
-                if (currentState == Binding.UnityTLSClientState_Handshake)
-                    return;
 
                 if (currentState == Binding.UnityTLSClientState_Messaging)
                 {
                     // this is the case we are now with a proper handshake!
                     // we now need to send the proper connection request!
                     // FIXME: If using DTLS we should just make that handshake accept the connection
-                    var packet = new NativeArray<byte>(UdpCHeader.Length, Allocator.Temp);
-                    var header = (UdpCHeader*)packet.GetUnsafePtr();
-                    *header = new UdpCHeader
-                    {
-                        Type = (byte)UdpCProtocol.ConnectionRequest,
-                        SessionToken = connection.ReceiveToken,
-                        Flags = 0
-                    };
-
-                    var result = Binding.unitytls_client_send_data(secureClient.ClientPtr,
-                        (byte*)packet.GetUnsafePtr(), new UIntPtr((uint)packet.Length));
-                    if (result != Binding.UNITYTLS_SUCCESS)
-                    {
-                        Debug.LogError("We have failed to Send Encrypted SendConnectionRequest");
-                    }
+                    SendConnectionRequest(
+                        connection.ReceiveToken, secureClient, ref connection.Address, ref sendInterface, ref queueHandle);
 
                     return;
                 }
 
-                var handshakeResult = UpdateSecureHandshakeState(ref secureClient);
+                var handshakeResult = UpdateSecureHandshakeState(protocolData, ref connection.Address);
                 currentState = Binding.unitytls_client_get_state(secureClient.ClientPtr);
                 if (currentState == Binding.UnityTLSClientState_Fail)
                 {
@@ -816,8 +914,8 @@ namespace Unity.Networking.Transport.TLS
         }
 
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendDisconnectDelegate))]
-        public static void ProcessSendDisconnect(ref NetworkDriver.Connection connection,
+        [MonoPInvokeCallback(typeof(NetworkProtocol.DisconnectDelegate))]
+        public static void Disconnect(ref NetworkDriver.Connection connection,
             ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             unsafe
@@ -827,25 +925,12 @@ namespace Unity.Networking.Transport.TLS
 
                 if (connection.State == NetworkConnection.State.Connected)
                 {
-                    var secureUserData = (SecureUserData*)secureClient.ClientConfig->transportUserData;
-
-                    SetSecureUserData(IntPtr.Zero, 0, ref connection.Address, ref sendInterface, ref queueHandle, secureUserData);
-
-                    var packet = new NativeArray<byte>(UdpCHeader.Length, Allocator.Temp);
-
-                    var header = (UdpCHeader*)packet.GetUnsafePtr();
-                    *header = new UdpCHeader
+                    var type = UdpCProtocol.Disconnect;
+                    var token = connection.SendToken;
+                    var res = SendHeaderOnlyMessage(type, token, secureClient, ref connection, ref sendInterface, ref queueHandle);
+                    if (res != Binding.UNITYTLS_SUCCESS)
                     {
-                        Type = (byte)UdpCProtocol.Disconnect,
-                        SessionToken = connection.SendToken,
-                        Flags = 0
-                    };
-
-                    var result = Binding.unitytls_client_send_data(secureClient.ClientPtr,
-                        (byte*)packet.GetUnsafePtr(), new UIntPtr(UdpCHeader.Length));
-                    if (result != Binding.UNITYTLS_SUCCESS)
-                    {
-                        Debug.LogError("We failed to send Encrypted Disconnect");
+                        Debug.LogError($"Failed to send secure Disconnect message (result: {res})");
                     }
                 }
 
@@ -857,10 +942,61 @@ namespace Unity.Networking.Transport.TLS
         }
 
         [BurstCompile(DisableDirectCall = true)]
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendPingDelegate))]
+        public static void ProcessSendPing(ref NetworkDriver.Connection connection,
+            ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        {
+            unsafe
+            {
+                var protocolData = (SecureNetworkProtocolData*)userData;
+                var secureClient = protocolData->SecureClients[connection.Address];
+
+                var type = UdpCProtocol.Ping;
+                var token = connection.SendToken;
+                var res = SendHeaderOnlyMessage(type, token, secureClient, ref connection, ref sendInterface, ref queueHandle);
+                if (res != Binding.UNITYTLS_SUCCESS)
+                {
+                    Debug.LogError($"Failed to send secure Ping message (result: {res})");
+                }
+            }
+        }
+
+        [BurstCompile(DisableDirectCall = true)]
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendPongDelegate))]
+        public static void ProcessSendPong(ref NetworkDriver.Connection connection,
+            ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        {
+            unsafe
+            {
+                var protocolData = (SecureNetworkProtocolData*)userData;
+                var secureClient = protocolData->SecureClients[connection.Address];
+
+                var type = UdpCProtocol.Pong;
+                var token = connection.SendToken;
+                var res = SendHeaderOnlyMessage(type, token, secureClient, ref connection, ref sendInterface, ref queueHandle);
+                if (res != Binding.UNITYTLS_SUCCESS)
+                {
+                    Debug.LogError($"Failed to send secure Pong message (result: {res})");
+                }
+            }
+        }
+
+        [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkProtocol.UpdateDelegate))]
         public static void Update(long updateTime, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
-            // No-op
+            unsafe
+            {
+                var protocolData = (SecureNetworkProtocolData*)userData;
+                protocolData->LastUpdate = updateTime;
+
+                // No use pruning half-open connections more often than the handshake retry timeout.
+                if (updateTime - protocolData->LastHalfOpenPrune > protocolData->SSLHandshakeTimeoutMin)
+                {
+                    PruneHalfOpenConnections(protocolData);
+                    protocolData->LastHalfOpenPrune = updateTime;
+                }
+            }
         }
     }
 }

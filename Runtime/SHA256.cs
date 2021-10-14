@@ -2,6 +2,9 @@ using Unity.Collections;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Utility class that provides the ability to generate a SHA256 Hash
+    /// </summary>
     public static class SHA256
     {
         internal unsafe struct SHA256State
@@ -24,6 +27,11 @@ namespace Unity.Networking.Transport
                 return result;
             }
 
+            /// <summary>
+            /// Updates data
+            /// </summary>
+            /// <param name="data">The data</param>
+            /// <param name="length">The length</param>
             public void Update(byte* data, int length)
             {
                 var curBufferPos = count & 0x3F;
@@ -40,6 +48,10 @@ namespace Unity.Networking.Transport
                 }
             }
 
+            /// <summary>
+            /// Finalize data and copy into dest
+            /// </summary>
+            /// <param name="dest">The dest</param>
             public void Final(byte* dest)
             {
                 var lenInBits = count << 3;
@@ -71,7 +83,7 @@ namespace Unity.Networking.Transport
                     *dest++ = (byte)state[i];
                 }
             }
-
+            
             private void WriteByteBlock()
             {
                 var data32 = stackalloc uint[16];

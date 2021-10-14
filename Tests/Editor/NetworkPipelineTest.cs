@@ -4,6 +4,7 @@ using NUnit.Framework;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Utilities;
 using Unity.Burst;
+using Unity.Networking.Transport.Protocols;
 
 namespace Unity.Networking.Transport.Tests
 {
@@ -21,7 +22,7 @@ namespace Unity.Networking.Transport.Tests
                 InitializeConnection: InitializeConnectionFunctionPointer,
                 ReceiveCapacity: 0,
                 SendCapacity: 0,
-                HeaderCapacity: 4,
+                HeaderCapacity: UdpCHeader.Length,
                 SharedStateCapacity: 0
             );
         }
@@ -461,9 +462,9 @@ namespace Unity.Networking.Transport.Tests
                 disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
                 fixedFrameTimeMS = 16
             };
-            // NOTE: MaxPacketSize should be 64 for all the tests using simulator except needs to account for header size as well (one test has 2x2B headers)
+            // NOTE: MaxPacketSize should be 64 for all the tests using simulator except needs to account for header size as well (one test has 2x UdpCHeader.Length headers)
             var simulatorParams = new SimulatorUtility.Parameters()
-            {MaxPacketSize = 72, MaxPacketCount = 30, PacketDelayMs = 100};
+            {MaxPacketSize = 64 + (2 * UdpCHeader.Length), MaxPacketCount = 30, PacketDelayMs = 100};
             TestNetworkPipelineStageCollection.Register();
             m_ServerDriver = TestNetworkDriver.Create(timeoutParam, simulatorParams);
             m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);

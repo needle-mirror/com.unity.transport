@@ -28,7 +28,7 @@ namespace Unity.Networking.Transport
         /// Some protocols - as relay - could decide to use virtual addressed that not necessarily
         /// maps 1 - 1 to a endpoint.
         /// </summary>
-        int Connect(INetworkInterface networkInterface, NetworkEndPoint endPoint, out NetworkInterfaceEndPoint address);
+        int CreateConnectionAddress(INetworkInterface networkInterface, NetworkEndPoint endPoint, out NetworkInterfaceEndPoint address);
 
         NetworkEndPoint GetRemoteEndPoint(INetworkInterface networkInterface, NetworkInterfaceEndPoint address);
     }
@@ -69,16 +69,29 @@ namespace Unity.Networking.Transport
         public delegate void ProcessSendConnectionAcceptDelegate(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
 
         /// <summary>
-        /// This method should send a protocol specific connect request message from a client to a server.
+        /// Try to establish a connection (from a client to a server). May only be called by a
+        /// client, and may be called multiple times for a connection (when retrying an attempt).
         /// </summary>
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void ProcessSendConnectionRequestDelegate(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
+        public delegate void ConnectDelegate(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
 
         /// <summary>
-        /// This method should send a protocol specific disconnect request message from a client to a server.
+        /// Close a connection. This method should notify the remote peer of the disconnection.
         /// </summary>
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void ProcessSendDisconnectDelegate(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
+        public delegate void DisconnectDelegate(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
+
+        /// <summary>
+        /// This method should send a protocol specific heartbeat request (ping) message on the connection.
+        /// </summary>
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void ProcessSendPingDelegate(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
+
+        /// <summary>
+        /// This method should send a protocol specific heartbeat response (pong) message on the connection.
+        /// </summary>
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void ProcessSendPongDelegate(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
 
         /// <summary>
         /// This method is called every NetworkDriver tick and can be used for performing protocol update operations.
@@ -91,8 +104,10 @@ namespace Unity.Networking.Transport
         public TransportFunctionPointer<ProcessReceiveDelegate> ProcessReceive;
         public TransportFunctionPointer<ProcessSendDelegate> ProcessSend;
         public TransportFunctionPointer<ProcessSendConnectionAcceptDelegate> ProcessSendConnectionAccept;
-        public TransportFunctionPointer<ProcessSendConnectionRequestDelegate> ProcessSendConnectionRequest;
-        public TransportFunctionPointer<ProcessSendDisconnectDelegate> ProcessSendDisconnect;
+        public TransportFunctionPointer<ConnectDelegate> Connect;
+        public TransportFunctionPointer<DisconnectDelegate> Disconnect;
+        public TransportFunctionPointer<ProcessSendPingDelegate> ProcessSendPing;
+        public TransportFunctionPointer<ProcessSendPongDelegate> ProcessSendPong;
         public TransportFunctionPointer<UpdateDelegate> Update;
 
         /// <summary>
@@ -125,8 +140,10 @@ namespace Unity.Networking.Transport
             TransportFunctionPointer<ProcessReceiveDelegate> processReceive,
             TransportFunctionPointer<ProcessSendDelegate> processSend,
             TransportFunctionPointer<ProcessSendConnectionAcceptDelegate> processSendConnectionAccept,
-            TransportFunctionPointer<ProcessSendConnectionRequestDelegate> processSendConnectionRequest,
-            TransportFunctionPointer<ProcessSendDisconnectDelegate> processSendDisconnect,
+            TransportFunctionPointer<ConnectDelegate> connect,
+            TransportFunctionPointer<DisconnectDelegate> disconnect,
+            TransportFunctionPointer<ProcessSendPingDelegate> processSendPing,
+            TransportFunctionPointer<ProcessSendPongDelegate> processSendPong,
             TransportFunctionPointer<UpdateDelegate> update,
             bool needsUpdate,
             IntPtr userData,
@@ -138,8 +155,10 @@ namespace Unity.Networking.Transport
             ProcessReceive = processReceive;
             ProcessSend = processSend;
             ProcessSendConnectionAccept = processSendConnectionAccept;
-            ProcessSendConnectionRequest = processSendConnectionRequest;
-            ProcessSendDisconnect = processSendDisconnect;
+            Connect = connect;
+            Disconnect = disconnect;
+            ProcessSendPing = processSendPing;
+            ProcessSendPong = processSendPong;
             Update = update;
             NeedsUpdate = needsUpdate;
             UserData = userData;
@@ -149,124 +168,109 @@ namespace Unity.Networking.Transport
     }
 
     /// <summary>
-    /// The type of commands that the NetworkDriver can process from a received packet after it is proccessed
-    /// by the protocol.
+    /// The type of commands that the NetworkDriver can process from a received packet.
     /// </summary>
-    public enum ProcessPacketCommandType : byte
+    internal enum ProcessPacketCommandType : byte
     {
-        /// <summary>
-        /// Do not perform any extra action.
-        /// </summary>
-        Drop = 0, // keep Drop = 0 to make it the default.
+        /// <summary>Do not perform any extra action.</summary>
+        Drop = 0, // Keepit 0 to make it the default.
 
-        /// <summary>
-        /// Find and update the address for a connection.
-        /// </summary>
+        /// <summary>Find and update the address for a connection.</summary>
         AddressUpdate,
-
-        /// <summary>
-        /// Complete the binding proccess.
-        /// </summary>
-        BindAccept,
 
         /// <summary>
         /// The connection has been accepted by the server and can be completed.
         /// </summary>
         ConnectionAccept,
 
-        /// <summary>
-        /// The connection has been rejected by the server.
-        /// </summary>
+        /// <summary>The connection has been rejected by the server.</summary>
         ConnectionReject,
 
-        /// <summary>
-        /// A connection request coming from a client has been received by the server.
-        /// </summary>
+        /// <summary>A connection request was received from a client.</summary>
         ConnectionRequest,
 
-        /// <summary>
-        /// A Data message has been received for a well stablished connection.
-        /// </summary>
+        /// <summary>A data message has been received for an stablished connection.</summary>
         Data,
 
-        /// <summary>
-        /// The connection is requesting to disconnect.
-        /// </summary>
+        /// <summary>The connection is requesting to disconnect.</summary>
         Disconnect,
 
-        /// <summary>
-        /// A simultaneous Data + Connection accept command.
-        /// </summary>
+        /// <summary>Combination of ConnectionAccept and Data.</summary>
         DataWithImplicitConnectionAccept,
+
+        /// <summary>
+        /// A hearbeat request (ping) was received.
+        /// </summary>
+        Ping,
+
+        /// <summary>
+        /// A heartbeat response (pong) was received.
+        /// </summary>
+        Pong,
     }
 
     /// <summary>
     /// Contains the command type and command data required by the NetworkDriver to process a packet.
     /// </summary>
-    [StructLayout(LayoutKind.Explicit)]
-    internal unsafe struct ProcessPacketCommand
+    internal struct ProcessPacketCommand
     {
         /// <summary>
         /// The type of the command to process
         /// </summary>
-        [FieldOffset(0)] public ProcessPacketCommandType Type;
+        public ProcessPacketCommandType Type;
 
-        // The following fields behaves like a C++ union. All command types data should start with the Address field.
-        [FieldOffset(1)] public NetworkInterfaceEndPoint ConnectionAddress;
-        [FieldOffset(1)] public ProcessPacketCommandAddressUpdate AsAddressUpdate;
-        [FieldOffset(1)] public ProcessPacketCommandConnectionAccept AsConnectionAccept;
-        [FieldOffset(1)] public ProcessPacketCommandConnectionRequest AsConnectionRequest;
-        [FieldOffset(1)] public ProcessPacketCommandData AsData;
-        [FieldOffset(1)] public ProcessPacketCommandDataWithImplicitConnectionAccept AsDataWithImplicitConnectionAccept;
-        [FieldOffset(1)] public ProcessPacketCommandDisconnect AsDisconnect;
-    }
-
-    internal struct ProcessPacketCommandAddressUpdate
-    {
+        /// <summary>
+        /// The endpoint from which the packet was received
+        /// </summary>
         public NetworkInterfaceEndPoint Address;
-        public NetworkInterfaceEndPoint NewAddress;
-        public ushort SessionToken;
-    }
 
-    internal struct ProcessPacketCommandConnectionRequest
-    {
-        public NetworkInterfaceEndPoint Address;
-        public ushort SessionId;
-    }
+        /// <summary>
+        /// The session token of the packet
+        /// </summary>
+        public SessionIdToken SessionId;
 
-    internal struct ProcessPacketCommandConnectionAccept
-    {
-        public NetworkInterfaceEndPoint Address;
-        public ushort SessionId;
-        public ushort ConnectionToken;
-    }
+        /// <summary>
+        /// Details specific to the packet type
+        /// </summary>
+        public ProcessPacketCommandAs As;
 
-    internal struct ProcessPacketCommandDisconnect
-    {
-        public NetworkInterfaceEndPoint Address;
-        public ushort SessionId;
-    }
+        // Acts like a C/C++ union type.
+        [StructLayout(LayoutKind.Explicit)]
+        public struct ProcessPacketCommandAs
+        {
+            [FieldOffset(0)] public AsAddressUpdate AddressUpdate;
+            [FieldOffset(0)] public AsConnectionAccept ConnectionAccept;
+            [FieldOffset(0)] public AsData Data;
+            [FieldOffset(0)] public AsDataWithImplicitConnectionAccept DataWithImplicitConnectionAccept;
 
-    internal struct ProcessPacketCommandData
-    {
-        public NetworkInterfaceEndPoint Address;
-        public ushort SessionId;
-        public int Offset;
-        public int Length;
-        public byte HasPipelineByte;
+            public struct AsAddressUpdate
+            {
+                public NetworkInterfaceEndPoint NewAddress;
+            }
 
-        public bool HasPipeline => HasPipelineByte != 0;
-    }
+            public struct AsConnectionAccept
+            {
+                public SessionIdToken ConnectionToken;
+            }
 
-    internal struct ProcessPacketCommandDataWithImplicitConnectionAccept
-    {
-        public NetworkInterfaceEndPoint Address;
-        public ushort SessionId;
-        public int Offset;
-        public int Length;
-        public byte HasPipelineByte;
-        public ushort ConnectionToken;
+            public struct AsData
+            {
+                public int Offset;
+                public int Length;
+                public byte HasPipelineByte;
 
-        public bool HasPipeline => HasPipelineByte != 0;
+                public bool HasPipeline => HasPipelineByte != 0;
+            }
+
+            public struct AsDataWithImplicitConnectionAccept
+            {
+                public int Offset;
+                public int Length;
+                public byte HasPipelineByte;
+                public SessionIdToken ConnectionToken;
+
+                public bool HasPipeline => HasPipelineByte != 0;
+            }
+        }
     }
 }

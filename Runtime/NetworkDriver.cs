@@ -26,7 +26,7 @@ namespace Unity.Networking.Transport
     ///
     /// Basic usage:
     /// <code>
-    /// var driver = new NetworkDriver.Create();
+    /// var driver = NetworkDriver.Create();
     /// </code>
     /// </summary>
     public struct NetworkDriver : IDisposable
@@ -75,15 +75,28 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// The Concurrent struct is used to create an Concurrent instance of the GenericNetworkDriver.
+        /// The Concurrent struct is used to create an Concurrent instance of the NetworkDriver.
         /// </summary>
         public struct Concurrent
         {
+            /// <summary>
+            /// Pops events for a connection using the specified connection id
+            /// </summary>
+            /// <param name="connectionId">The connection id</param>
+            /// <param name="reader">Stream reader for the event's data.</param>
+            /// <returns>The network event type</returns>
             public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader)
             {
                 return PopEventForConnection(connectionId, out reader, out var _);
             }
 
+            /// <summary>
+            /// Pops events for a connection using the specified connection id
+            /// </summary>
+            /// <param name="connectionId">The connection id</param>
+            /// <param name="reader">Stream reader for the event's data.</param>
+            /// <param name="pipeline">Pipeline on which the data event was received.</param>
+            /// <returns>The type</returns>
             public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader, out NetworkPipeline pipeline)
             {
                 pipeline = default;
@@ -104,6 +117,11 @@ namespace Unity.Networking.Transport
                 return type;
             }
 
+            /// <summary>
+            /// Max headersize including a <see cref="NetworkPipeline"/>
+            /// </summary>
+            /// <param name="pipe">The pipeline with which to get the maximum header size.</param>
+            /// <returns>The header size</returns>
             public int MaxHeaderSize(NetworkPipeline pipe)
             {
                 var headerSize = m_NetworkProtocolInterface.PaddingSize;
@@ -172,14 +190,15 @@ namespace Unity.Networking.Transport
                 }
 
                 var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) + 1 : 0;
-                var payloadCapacity = requiredPayloadSize > 0 ? requiredPayloadSize + pipelineHeader : 0;
+                var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
+                var payloadCapacity = requiredPayloadSize > 0 ? math.min(requiredPayloadSize + pipelineHeader, pipelinePayloadCapacity) : pipelinePayloadCapacity;
 
                 // This will set the payloadCapacity value to the actual capacity provided by the protocol
                 var packetAllocationSize = m_NetworkProtocolInterface.ComputePacketAllocationSize.Ptr.Invoke(ref connection, m_NetworkProtocolInterface.UserData, ref payloadCapacity, out var payloadOffset);
 
                 payloadCapacity -= pipelineHeader;
 
-                if (packetAllocationSize > m_PipelineProcessor.PayloadCapacity(pipe) || payloadCapacity < requiredPayloadSize)
+                if (payloadCapacity < requiredPayloadSize)
                     return (int)Error.StatusCode.NetworkPacketOverflow;
 
                 var result = 0;
@@ -232,10 +251,29 @@ namespace Unity.Networking.Transport
 #endif
                 PendingSend* pendingSendPtr = (PendingSend*)writer.m_SendHandleData;
                 if (pendingSendPtr == null || pendingSendPtr->Connection == default)
+                {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                     throw new InvalidOperationException("EndSend without matching BeginSend");
+#else
+                    return (int)Error.StatusCode.NetworkSendHandleInvalid;
+#endif
+                }
 
                 if (m_ConnectionList[pendingSendPtr->Connection.m_NetworkId].Version != pendingSendPtr->Connection.m_NetworkVersion)
+                {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                     throw new InvalidOperationException("Connection closed between begin and end send");
+#else
+                    return (int)Error.StatusCode.NetworkVersionMismatch;
+#endif
+                }
+
+                if (writer.HasFailedWrites)
+                {
+                    AbortSend(writer);
+                    // DataStreamWriter can only have failed writes if we overflow its capacity.
+                    return (int)Error.StatusCode.NetworkPacketOverflow;
+                }
 
                 PendingSend pendingSend = *(PendingSend*)writer.m_SendHandleData;
                 pendingSendPtr->Connection = default;
@@ -279,7 +317,14 @@ namespace Unity.Networking.Transport
 #endif
                 PendingSend* pendingSendPtr = (PendingSend*)writer.m_SendHandleData;
                 if (pendingSendPtr == null || pendingSendPtr->Connection == default)
-                    throw new InvalidOperationException("EndSend without matching BeginSend");
+                {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    throw new InvalidOperationException("AbortSend without matching BeginSend");
+#else
+                    UnityEngine.Debug.LogError("AbortSend without matching BeginSend");
+                    return;
+#endif
+                }
                 PendingSend pendingSend = *(PendingSend*)writer.m_SendHandleData;
                 pendingSendPtr->Connection = default;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -315,6 +360,11 @@ namespace Unity.Networking.Transport
                 }
             }
 
+            /// <summary>
+            /// Gets the connection state using the specified id
+            /// </summary>
+            /// <param name="id">The connection id</param>
+            /// <returns>The network connection state</returns>
             public NetworkConnection.State GetConnectionState(NetworkConnection id)
             {
                 if (id.m_NetworkId < 0 || id.m_NetworkId >= m_ConnectionList.Length)
@@ -345,14 +395,14 @@ namespace Unity.Networking.Transport
         internal struct Connection
         {
             public NetworkInterfaceEndPoint Address;
-            public long LastConnectAttempt;
+            public long LastNonDataSend;
             public long LastReceive;
             public int Id;
             public int Version;
             public int ConnectAttempts;
             public NetworkConnection.State State;
-            public ushort ReceiveToken;
-            public ushort SendToken;
+            public SessionIdToken ReceiveToken;
+            public SessionIdToken SendToken;
             public byte DidReceiveData;
             public byte IsAccepted;
 
@@ -365,12 +415,15 @@ namespace Unity.Networking.Transport
             {
                 return lhs.Id != rhs.Id || lhs.Version != rhs.Version || lhs.Address != rhs.Address;
             }
-
+            
             public override bool Equals(object compare)
             {
                 return this == (Connection)compare;
             }
 
+            /// <summary>
+            /// Null Connection 
+            /// </summary>
             public static Connection Null => new Connection() {Id = 0, Version = 0};
 
             public override int GetHashCode()
@@ -407,8 +460,8 @@ namespace Unity.Networking.Transport
         NativeList<Connection> m_ConnectionList;
         NativeArray<int> m_InternalState;
         NativeQueue<int> m_PendingFree;
-        NativeArray<ushort> m_SessionIdCounter;
         NativeArray<int> m_ErrorCodes;
+
         enum ErrorCodeType
         {
             ReceiveError = 0,
@@ -429,6 +482,7 @@ namespace Unity.Networking.Transport
                     maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
                     connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
                     disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
+                    heartbeatTimeoutMS = NetworkParameterConstants.HeartbeatTimeoutMS,
                     maxFrameTimeMS = 0
                 };
                 dataStream = default;
@@ -460,22 +514,27 @@ namespace Unity.Networking.Transport
         private long m_UpdateTime;
         private long m_UpdateTimeAdjustment;
 
+        private Unity.Mathematics.Random m_Rand;
+        
+        /// <summary>
+        /// Gets the value of the last update time
+        /// </summary>
         public long LastUpdateTime => m_UpdateTime;
 
         // properties :::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         private const int InternalStateListening = 0;
         private const int InternalStateBound = 1;
 
+        /// <summary>
+        /// Gets or sets if the driver is Listening 
+        /// </summary>
         public bool Listening
         {
             get { return (m_InternalState[InternalStateListening] != 0); }
             internal set { m_InternalState[InternalStateListening] = value ? 1 : 0; }
         }
 
-        // 0 = Unbound
-        // 1 = Binding
-        // 2 = Bound
-        public bool Bound => m_InternalState[InternalStateBound] == 2;
+        public bool Bound => m_InternalState[InternalStateBound] == 1;
 
         /// <summary>
         /// Helper function for creating a NetworkDriver.
@@ -523,7 +582,7 @@ namespace Unity.Networking.Transport
             }
             return new UnityTransportProtocol();
         }
-
+        
         public NetworkDriver(INetworkInterface netIf, params INetworkParameter[] param) : this(netIf, GetProtocolForParameters(param), param)
         {
         }
@@ -536,6 +595,7 @@ namespace Unity.Networking.Transport
         /// the <see cref="NetworkDataStreamParameter"/> and the <see cref="NetworkConfigParameter"/>.
         /// </param>
         /// <exception cref="ArgumentException">Thrown if the value for NetworkDataStreamParameter.size is smaller then zero.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if network interface couldn't be initialized.</exception>
         internal NetworkDriver(INetworkInterface netIf, INetworkProtocol netProtocol, params INetworkParameter[] param)
         {
             m_NetworkParams = new Parameters(param);
@@ -551,20 +611,27 @@ namespace Unity.Networking.Transport
             var result = netIf.Initialize(param);
             if (0 != result)
             {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException($"Failed to initialize the NetworkInterface. Error Code: {result}.");
+#else
+                UnityEngine.Debug.LogError($"Failed to initialize the NetworkInterface. Error Code: {result}.");
+#endif
             }
 
             m_NetworkSendInterface = netIf.CreateSendInterface();
 
-            m_PipelineProcessor = new NetworkPipelineProcessor(param);
+            m_PipelineProcessor = new NetworkPipelineProcessor(NetworkParameterConstants.MTU - m_NetworkProtocolInterface.PaddingSize, param);
             m_ParallelSendQueue = new NativeQueue<QueuedSendMessage>(Allocator.Persistent);
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_PendingBeginSend = new NativeArray<int>(JobsUtility.MaxJobThreadCount * JobsUtility.CacheLineSize / 4, Allocator.Persistent);
 #endif
 
-            var time = Stopwatch.GetTimestamp() / (Stopwatch.Frequency / 1000);
+            var stopwatchTime = Stopwatch.GetTimestamp();
+            var time = stopwatchTime / (Stopwatch.Frequency / 1000);
             m_UpdateTime = m_NetworkParams.config.fixedFrameTimeMS > 0 ? 1 : time;
             m_UpdateTimeAdjustment = 0;
+
+            m_Rand = new Unity.Mathematics.Random((uint)stopwatchTime);
 
             int initialStreamSize = m_NetworkParams.dataStream.size;
             if (initialStreamSize == 0)
@@ -591,7 +658,6 @@ namespace Unity.Networking.Transport
             m_InternalState = new NativeArray<int>(2, Allocator.Persistent);
             m_PendingFree = new NativeQueue<int>(Allocator.Persistent);
 
-            m_SessionIdCounter = new NativeArray<ushort>(1, Allocator.Persistent) {[0] = RandomHelpers.GetRandomUShort()};
             m_ErrorCodes = new NativeArray<int>((int)ErrorCodeType.NumErrorCodes, Allocator.Persistent);
             Listening = false;
         }
@@ -599,6 +665,9 @@ namespace Unity.Networking.Transport
         // interface implementation :::::::::::::::::::::::::::::::::::::::::::
         public void Dispose()
         {
+            if (!IsCreated)
+                return;
+
             s_NetworkProtocols[m_NetworkProtocolIndex].Dispose();
             s_NetworkProtocols[m_NetworkProtocolIndex] = null;
 
@@ -620,7 +689,6 @@ namespace Unity.Networking.Transport
             m_FreeList.Dispose();
             m_InternalState.Dispose();
             m_PendingFree.Dispose();
-            m_SessionIdCounter.Dispose();
             m_ErrorCodes.Dispose();
             m_ParallelSendQueue.Dispose();
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -628,6 +696,9 @@ namespace Unity.Networking.Transport
 #endif
         }
 
+        /// <summary>
+        /// Returns if NetworkDriver has been created
+        /// </summary>
         public bool IsCreated => m_InternalState.IsCreated;
 
         [BurstCompile]
@@ -682,11 +753,27 @@ namespace Unity.Networking.Transport
             }
         }
 
+        private SessionIdToken GenerateRandomSessionIdToken(ref SessionIdToken token)
+        {
+            //SessionIdToken token = new SessionIdToken();
+            for (uint i = 0; i <= SessionIdToken.k_Length; ++i)
+            {
+                unsafe
+                {
+                    token.Value[i] = (byte)(m_Rand.NextUInt() & 0xFF);
+                }
+            }
+            return token;
+        }
+
         private void UpdateLastUpdateTime()
         {
+            var stopwatchTime = Stopwatch.GetTimestamp();
             long now = m_NetworkParams.config.fixedFrameTimeMS > 0
                 ? m_UpdateTime + m_NetworkParams.config.fixedFrameTimeMS
-                : Stopwatch.GetTimestamp() / (Stopwatch.Frequency / 1000) - m_UpdateTimeAdjustment;
+                : stopwatchTime / (Stopwatch.Frequency / 1000) - m_UpdateTimeAdjustment;
+
+            m_Rand.InitState((uint)stopwatchTime);
 
             long frameTime = now - m_UpdateTime;
             if (m_NetworkParams.config.maxFrameTimeMS > 0 && frameTime > m_NetworkParams.config.maxFrameTimeMS)
@@ -698,6 +785,11 @@ namespace Unity.Networking.Transport
             m_UpdateTime = now;
         }
 
+        /// <summary>
+        /// Schedules update for driver. This should be called once a frame.
+        /// </summary>
+        /// <param name="dep">Job on which to depend.</param>
+        /// <returns>The update job's handle</returns>
         public JobHandle ScheduleUpdate(JobHandle dep = default)
         {
             UpdateLastUpdateTime();
@@ -721,6 +813,12 @@ namespace Unity.Networking.Transport
             return handle;
         }
 
+        /// <summary>
+        /// Schedules flushing the sendqueue. Should be called in cases where you want the driver to send before the
+        /// next <see cref="ScheduleUpdate"/> is called.
+        /// </summary>
+        /// <param name="dep">Job on which to depend.</param>
+        /// <returns>The job handle</returns>
         public JobHandle ScheduleFlushSend(JobHandle dep)
         {
             return s_NetworkInterfaces[m_NetworkInterfaceIndex].ScheduleSend(m_ParallelSendQueue, dep);
@@ -816,16 +914,13 @@ namespace Unity.Networking.Transport
 #endif
             var protocolBind = s_NetworkProtocols[m_NetworkProtocolIndex].Bind(s_NetworkInterfaces[m_NetworkInterfaceIndex], ref ifEndPoint);
 
-            if (protocolBind < 0)
-                return protocolBind;
+            m_InternalState[InternalStateBound] = protocolBind == 0 ? 1 : 0;
 
-            m_InternalState[InternalStateBound] = protocolBind;
-
-            return 0;
+            return protocolBind;
         }
 
         /// <summary>
-        /// Set the driver to Listen for incomming connections
+        /// Set the driver to Listen for incoming connections
         /// </summary>
         /// <value>Returns 0 on success.</value>
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
@@ -856,7 +951,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Checks to see if there are any new connections to Accept.
         /// </summary>
-        /// <value>If accept fails it returnes a default NetworkConnection.</value>
+        /// <value>If accept fails it returns a default NetworkConnection.</value>
         public NetworkConnection Accept()
         {
             if (!Listening)
@@ -880,15 +975,24 @@ namespace Unity.Networking.Transport
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
         public NetworkConnection Connect(NetworkEndPoint endpoint)
         {
-            if (s_NetworkProtocols[m_NetworkProtocolIndex].Connect(s_NetworkInterfaces[m_NetworkInterfaceIndex], endpoint, out var address) != 0)
-            {
-                return default;
-            }
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (!m_InternalState.IsCreated)
                 throw new InvalidOperationException(
                     "Driver must be constructed with a populated or empty INetworkParameter params list");
 #endif
+
+            if (!Bound)
+            {
+                var nep = endpoint.Family == NetworkFamily.Ipv6 ? NetworkEndPoint.AnyIpv6 : NetworkEndPoint.AnyIpv4;
+                if (Bind(nep) != 0)
+                    return default;
+            }
+
+            var result = s_NetworkProtocols[m_NetworkProtocolIndex].CreateConnectionAddress(
+                s_NetworkInterfaces[m_NetworkInterfaceIndex], endpoint, out var address);
+            if (result != 0)
+                return default;
+
             if (!m_FreeList.TryDequeue(out var id))
             {
                 id = m_ConnectionList.Length;
@@ -896,6 +1000,8 @@ namespace Unity.Networking.Transport
             }
 
             int ver = m_ConnectionList[id].Version;
+            var receiveToken = new SessionIdToken();
+            GenerateRandomSessionIdToken(ref receiveToken);
             var c = new Connection
             {
                 Id = id,
@@ -903,26 +1009,22 @@ namespace Unity.Networking.Transport
                 State = NetworkConnection.State.Connecting,
                 Address = address,
                 ConnectAttempts = 1,
-                LastConnectAttempt = m_UpdateTime,
+                LastNonDataSend = m_UpdateTime,
                 LastReceive = 0,
-                SendToken = 0,
-                ReceiveToken = m_SessionIdCounter[0],
+                SendToken = default,
+                ReceiveToken = receiveToken,
                 IsAccepted = 0
             };
-            m_SessionIdCounter[0] = (ushort)(m_SessionIdCounter[0] + 1);
 
-            m_ConnectionList[id] = c;
+            SetConnection(c);
             var netcon = new NetworkConnection {m_NetworkId = id, m_NetworkVersion = ver};
-            SendConnectionRequest(c);
+
+            var queueHandle = NetworkSendQueueHandle.ToTempHandle(m_ParallelSendQueue.AsParallelWriter());
+            m_NetworkProtocolInterface.Connect.Ptr.Invoke(ref c, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
+
             m_PipelineProcessor.initializeConnection(netcon);
 
             return netcon;
-        }
-
-        void SendConnectionRequest(Connection c)
-        {
-            var queueHandle = NetworkSendQueueHandle.ToTempHandle(m_ParallelSendQueue.AsParallelWriter());
-            m_NetworkProtocolInterface.ProcessSendConnectionRequest.Ptr.Invoke(ref c, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
         }
 
         /// <summary>
@@ -939,7 +1041,7 @@ namespace Unity.Networking.Transport
             if (connection.State == NetworkConnection.State.Connected)
             {
                 var queueHandle = NetworkSendQueueHandle.ToTempHandle(m_ParallelSendQueue.AsParallelWriter());
-                m_NetworkProtocolInterface.ProcessSendDisconnect.Ptr.Invoke(ref connection, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
+                m_NetworkProtocolInterface.Disconnect.Ptr.Invoke(ref connection, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
             }
             RemoveConnection(connection);
 
@@ -949,21 +1051,36 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Returns the PipelineBuffers for a specific pipeline and stage.
         /// </summary>
-        /// <param name="pipeline"></param>
-        /// <param name="stageId"></param>
-        /// <param name="connection"></param>
-        /// <param name="readProcessingBuffer"></param>
-        /// <param name="writeProcessingBuffer"></param>
-        /// <param name="sharedBuffer"></param>
+        /// <param name="pipeline">Pipeline for which to get the buffers.</param>
+        /// <param name="stageId">Pipeline for which to get the buffers.</param>
+        /// <param name="connection">Connection for which to the buffers.</param>
+        /// <param name="readProcessingBuffer">The buffer used to process read (receive) operations.</param>
+        /// <param name="writeProcessingBuffer">The buffer used to process write (send) operations.</param>
+        /// <param name="sharedBuffer">The buffer containing the internal state of the pipeline stage.</param>
         /// <exception cref="InvalidOperationException">If the the connection is invalid.</exception>
         public void GetPipelineBuffers(NetworkPipeline pipeline, NetworkPipelineStageId stageId, NetworkConnection connection, out NativeArray<byte> readProcessingBuffer, out NativeArray<byte> writeProcessingBuffer, out NativeArray<byte> sharedBuffer)
         {
             if (connection.m_NetworkId < 0 || connection.m_NetworkId >= m_ConnectionList.Length ||
                 m_ConnectionList[connection.m_NetworkId].Version != connection.m_NetworkVersion)
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException("Invalid connection");
+#else
+                UnityEngine.Debug.LogError("Trying to get pipeline buffers for invalid connection.");
+                readProcessingBuffer = default;
+                writeProcessingBuffer = default;
+                sharedBuffer = default;
+                return;
+#endif
+            }
             m_PipelineProcessor.GetPipelineBuffers(pipeline, stageId, connection, out readProcessingBuffer, out writeProcessingBuffer, out sharedBuffer);
         }
 
+        /// <summary>
+        /// Gets the connection state using the specified <see cref="NetworkConnection"/>
+        /// </summary>
+        /// <param name="con">The connection</param>
+        /// <returns>The network connection state</returns>
         public NetworkConnection.State GetConnectionState(NetworkConnection con)
         {
             Connection connection;
@@ -971,7 +1088,7 @@ namespace Unity.Networking.Transport
                 return NetworkConnection.State.Disconnected;
             return connection.State;
         }
-
+        
         public NetworkEndPoint RemoteEndPoint(NetworkConnection id)
         {
             if (id == default)
@@ -983,12 +1100,21 @@ namespace Unity.Networking.Transport
             return s_NetworkProtocols[m_NetworkProtocolIndex].GetRemoteEndPoint(s_NetworkInterfaces[m_NetworkInterfaceIndex], connection.Address);
         }
 
+        /// <summary>
+        /// Returns local <see cref="NetworkEndPoint"/>
+        /// </summary>
+        /// <returns>The network end point</returns>
         public NetworkEndPoint LocalEndPoint()
         {
             var ep = s_NetworkInterfaces[m_NetworkInterfaceIndex].LocalEndPoint;
             return s_NetworkInterfaces[m_NetworkInterfaceIndex].GetGenericEndPoint(ep);
         }
 
+        /// <summary>
+        /// Max headersize including optional <see cref="NetworkPipeline"/>
+        /// </summary>
+        /// <param name="pipe">The pipeline for which to get the maximum header size.</param>
+        /// <returns>The maximum header size.</returns>
         public int MaxHeaderSize(NetworkPipeline pipe)
         {
             return ToConcurrentSendOnly().MaxHeaderSize(pipe);
@@ -999,21 +1125,52 @@ namespace Unity.Networking.Transport
             return m_NetworkProtocolInterface.PaddingSize;
         }
 
+        /// <summary>
+        /// Acquires a DataStreamWriter for starting a asynchronous send.
+        /// </summary>
+        /// <param name="pipe">The NetworkPipeline to write through</param>
+        /// <param name="id">The NetworkConnection id to write through</param>
+        /// <param name="writer">A DataStreamWriter to write to</param>
+        /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
+        /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
+        /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
         public int BeginSend(NetworkPipeline pipe, NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
         {
             return ToConcurrentSendOnly().BeginSend(pipe, id, out writer, requiredPayloadSize);
         }
 
+        /// <summary>
+        /// Acquires a DataStreamWriter for starting a asynchronous send.
+        /// </summary>
+        /// <param name="id">The NetworkConnection id to write through</param>
+        /// <param name="writer">A DataStreamWriter to write to</param>
+        /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
+        /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
+        /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
         public int BeginSend(NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
         {
             return ToConcurrentSendOnly().BeginSend(NetworkPipeline.Null, id, out writer, requiredPayloadSize);
         }
 
+        /// <summary>
+        /// Ends a asynchronous send.
+        /// </summary>
+        /// <param name="writer">If you require the payload to be of certain size.</param>
+        /// <value>The length of the buffer sent if nothing went wrong.</value>
+        /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
+        /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
         public int EndSend(DataStreamWriter writer)
         {
             return ToConcurrentSendOnly().EndSend(writer);
         }
 
+        /// <summary>
+        /// Aborts a asynchronous send.
+        /// </summary>
+        /// <param name="writer">If you require the payload to be of certain size.</param>
+        /// <value>The length of the buffer sent if nothing went wrong.</value>
+        /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
+        /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
         public void AbortSend(DataStreamWriter writer)
         {
             ToConcurrentSendOnly().AbortSend(writer);
@@ -1022,8 +1179,9 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Pops an event
         /// </summary>
-        /// <param name="con"></param>
-        /// <param name="reader"></param>
+        /// <param name="con">Connection on which the event occured.</param>
+        /// <param name="reader">Stream reader for the event's data.</param>
+        /// <returns>The event's type</returns>
         /// <value>Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
         /// then the DataStreamReader will contain the disconnect reason. If a listening NetworkDriver has received Data
         /// events from a client, but the NetworkDriver has not Accepted the NetworkConnection yet, the Data event will
@@ -1033,6 +1191,13 @@ namespace Unity.Networking.Transport
             return PopEvent(out con, out reader, out var _);
         }
 
+        /// <summary>
+        /// Pops an event
+        /// </summary>
+        /// <param name="con">Connection on which the event occured.</param>
+        /// <param name="reader">Stream reader for the event's data.</param>
+        /// <param name="pipeline">Pipeline on which the event was received.</param>
+        /// <returns>The event's type</returns>
         public NetworkEvent.Type PopEvent(out NetworkConnection con, out DataStreamReader reader, out NetworkPipeline pipeline)
         {
             reader = default;
@@ -1077,8 +1242,9 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Pops an event for a specific connection
         /// </summary>
-        /// <param name="connectionId"></param>
-        /// <param name="reader"></param>
+        /// <param name="connectionId">Connection for which to pop the next event.</param>
+        /// <param name="reader">Stream reader for the event's data.</param>
+        /// <returns>The event's type</returns>
         /// <value>Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
         /// then the DataStreamReader will contain the disconnect reason.<value/>
         public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader)
@@ -1086,6 +1252,13 @@ namespace Unity.Networking.Transport
             return PopEventForConnection(connectionId, out reader, out var _);
         }
 
+        /// <summary>
+        /// Pops an event for a specific connection
+        /// </summary>
+        /// <param name="connectionId">Connection for which to pop the next event.</param>
+        /// <param name="reader">Stream reader for the event's data.</param>
+        /// <param name="pipeline">Pipeline on which the event was received.</param>
+        /// <returns>The event's type</returns>
         public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader, out NetworkPipeline pipeline)
         {
             reader = default;
@@ -1108,7 +1281,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Returns the size of the EventQueue for a specific connection
         /// </summary>
-        /// <param name="connectionId"></param>
+        /// <param name="connectionId">Connection for which to get the event queue size.</param>
         /// <value>If the connection is valid it returns the size of the event queue otherwise it returns 0.</value>
         public int GetEventQueueSizeForConnection(NetworkConnection connectionId)
         {
@@ -1140,7 +1313,7 @@ namespace Unity.Networking.Transport
             return con;
         }
 
-        Connection GetConnection(NetworkInterfaceEndPoint address, ushort sessionId)
+        Connection GetConnection(NetworkInterfaceEndPoint address, SessionIdToken sessionId)
         {
             for (int i = 0; i < m_ConnectionList.Length; i++)
             {
@@ -1151,7 +1324,7 @@ namespace Unity.Networking.Transport
             return Connection.Null;
         }
 
-        Connection GetNewConnection(NetworkInterfaceEndPoint address, ushort sessionId)
+        Connection GetNewConnection(NetworkInterfaceEndPoint address, SessionIdToken sessionId)
         {
             for (int i = 0; i < m_ConnectionList.Length; i++)
             {
@@ -1198,8 +1371,11 @@ namespace Unity.Networking.Transport
                 long now = m_UpdateTime;
 
                 var netcon = new NetworkConnection {m_NetworkId = connection.Id, m_NetworkVersion = connection.Version};
+
+                // Check for connect timeout and connection attemps.
+                // Note that while connecting, LastNonDataSend can only track connection requests.
                 if (connection.State == NetworkConnection.State.Connecting &&
-                    now - connection.LastConnectAttempt > m_NetworkParams.config.connectTimeoutMS)
+                    now - connection.LastNonDataSend > m_NetworkParams.config.connectTimeoutMS)
                 {
                     if (connection.ConnectAttempts >= m_NetworkParams.config.maxConnectAttempts)
                     {
@@ -1209,21 +1385,41 @@ namespace Unity.Networking.Transport
                     }
 
                     connection.ConnectAttempts = ++connection.ConnectAttempts;
-                    connection.LastConnectAttempt = now;
+                    connection.LastNonDataSend = now;
                     SetConnection(connection);
 
-                    SendConnectionRequest(connection);
+                    var queueHandle = NetworkSendQueueHandle.ToTempHandle(m_ParallelSendQueue.AsParallelWriter());
+                    m_NetworkProtocolInterface.Connect.Ptr.Invoke(
+                        ref connection, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
                 }
 
+                // Check for the disconnect timeout.
                 if (connection.State == NetworkConnection.State.Connected &&
                     now - connection.LastReceive > m_NetworkParams.config.disconnectTimeoutMS)
                 {
                     Disconnect(netcon);
                     AddDisconnectEvent(connection.Id, DisconnectReason.Timeout);
                 }
+
+                // Check for the heartbeat timeout.
+                if (connection.State == NetworkConnection.State.Connected &&
+                    connection.DidReceiveData != 0 &&
+                    m_NetworkParams.config.heartbeatTimeoutMS > 0 &&
+                    now - connection.LastReceive > m_NetworkParams.config.heartbeatTimeoutMS &&
+                    now - connection.LastNonDataSend > m_NetworkParams.config.heartbeatTimeoutMS)
+                {
+                    connection.LastNonDataSend = now;
+                    SetConnection(connection);
+
+                    var queueHandle = NetworkSendQueueHandle.ToTempHandle(m_ParallelSendQueue.AsParallelWriter());
+                    m_NetworkProtocolInterface.ProcessSendPing.Ptr.Invoke(ref connection, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
+                }
             }
         }
 
+        /// <summary>
+        /// Gets or sets Receive Error Code
+        /// </summary>
         public int ReceiveErrorCode
         {
             get => m_ErrorCodes[(int)ErrorCodeType.ReceiveError];
@@ -1260,19 +1456,14 @@ namespace Unity.Networking.Transport
                 {
                     for (int i = 0; i < m_ConnectionList.Length; i++)
                     {
-                        if (command.AsAddressUpdate.Address == m_ConnectionList[i].Address && command.AsAddressUpdate.SessionToken == m_ConnectionList[i].ReceiveToken)
-                            m_ConnectionList.ElementAt(i).Address = command.AsAddressUpdate.NewAddress;
+                        if (command.Address == m_ConnectionList[i].Address && command.SessionId == m_ConnectionList[i].ReceiveToken)
+                            m_ConnectionList.ElementAt(i).Address = command.As.AddressUpdate.NewAddress;
                     }
-                } break;
-
-                case ProcessPacketCommandType.BindAccept:
-                {
-                    m_InternalState[InternalStateBound] = 2;
                 } break;
 
                 case ProcessPacketCommandType.ConnectionAccept:
                 {
-                    Connection c = GetConnection(command.AsConnectionAccept.Address, command.AsConnectionAccept.SessionId);
+                    Connection c = GetConnection(command.Address, command.SessionId);
 
                     if (c != Connection.Null)
                     {
@@ -1282,14 +1473,14 @@ namespace Unity.Networking.Transport
                         if (c.State == NetworkConnection.State.Connected)
                         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                            UnityEngine.Debug.LogWarning(string.Format("Dropping connect request for an already connected endpoint [{0}]", command.AsConnectionAccept.Address.ToFixedString()));
+                            UnityEngine.Debug.LogWarning(string.Format("Dropping connect request for an already connected endpoint [{0}]", command.Address.ToFixedString()));
 #endif
                             return;
                         }
 
                         if (c.State == NetworkConnection.State.Connecting)
                         {
-                            c.SendToken = command.AsConnectionAccept.ConnectionToken;
+                            c.SendToken = command.As.ConnectionAccept.ConnectionToken;
 
                             c.State = NetworkConnection.State.Connected;
                             c.IsAccepted = 1;
@@ -1307,16 +1498,16 @@ namespace Unity.Networking.Transport
                     if (Listening == false)
                     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        UnityEngine.Debug.LogError(string.Format("ConnectionRequest received, but Listening == false. Address: [{0}]", command.AsConnectionRequest.Address.ToFixedString()));
+                        UnityEngine.Debug.LogError(string.Format("ConnectionRequest received, but Listening == false. Address: [{0}]", command.Address.ToFixedString()));
 #endif
                         return;
                     }
 
-                    Connection c = GetNewConnection(command.AsConnectionRequest.Address, command.AsConnectionRequest.SessionId);
+                    Connection c = GetNewConnection(command.Address, command.SessionId);
                     if (c == Connection.Null || c.State == NetworkConnection.State.Disconnected)
                     {
-                        var sessionId = m_SessionIdCounter[0];
-                        m_SessionIdCounter[0] = (ushort)(m_SessionIdCounter[0] + 1);
+                        var sessionId = new SessionIdToken();
+                        GenerateRandomSessionIdToken(ref sessionId);
                         if (!m_FreeList.TryDequeue(out var id))
                         {
                             id = m_ConnectionList.Length;
@@ -1329,25 +1520,27 @@ namespace Unity.Networking.Transport
                             Id = id,
                             Version = ver,
                             ReceiveToken = sessionId,
-                            SendToken = command.AsConnectionRequest.SessionId,
+                            SendToken = command.SessionId,
                             State = NetworkConnection.State.Connected,
-                            Address = command.AsConnectionRequest.Address,
+                            Address = command.Address,
                             ConnectAttempts = 1,
-                            LastConnectAttempt = m_UpdateTime,
                             LastReceive = m_UpdateTime,
                             IsAccepted = 0
                         };
-                        SetConnection(c);
+
                         m_PipelineProcessor.initializeConnection(new NetworkConnection {m_NetworkId = id, m_NetworkVersion = c.Version});
                         m_NetworkAcceptQueue.Enqueue(id);
                     }
+
+                    c.LastNonDataSend = m_UpdateTime;
+                    SetConnection(c);
 
                     m_NetworkProtocolInterface.ProcessSendConnectionAccept.Ptr.Invoke(ref c, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
                 } break;
 
                 case ProcessPacketCommandType.Disconnect:
                 {
-                    Connection c = GetConnection(command.AsDisconnect.Address, command.AsDisconnect.SessionId);
+                    Connection c = GetConnection(command.Address, command.SessionId);
                     if (c != Connection.Null)
                     {
                         if (RemoveConnection(c))
@@ -1355,15 +1548,43 @@ namespace Unity.Networking.Transport
                     }
                 } break;
 
+                case ProcessPacketCommandType.Ping:
+                {
+                    Connection c = GetConnection(command.Address, command.SessionId);
+                    if (c == Connection.Null || c.State != NetworkConnection.State.Connected)
+                    {
+                        return;
+                    }
+
+                    c.DidReceiveData = 1;
+                    c.LastReceive = m_UpdateTime;
+                    c.LastNonDataSend = m_UpdateTime;
+                    UpdateConnection(c);
+
+                    m_NetworkProtocolInterface.ProcessSendPong.Ptr.Invoke(ref c, ref m_NetworkSendInterface, ref queueHandle, m_NetworkProtocolInterface.UserData);
+                } break;
+
+                case ProcessPacketCommandType.Pong:
+                {
+                    Connection c = GetConnection(command.Address, command.SessionId);
+                    if (c != Connection.Null)
+                    {
+                        c.DidReceiveData = 1;
+                        c.LastReceive = m_UpdateTime;
+                        UpdateConnection(c);
+                    }
+                } break;
+
                 case ProcessPacketCommandType.DataWithImplicitConnectionAccept:
                 {
-                    Connection c = GetConnection(command.AsDataWithImplicitConnectionAccept.Address, command.AsDataWithImplicitConnectionAccept.SessionId);
+                    Connection c = GetConnection(command.Address, command.SessionId);
                     if (c == Connection.Null)
                     {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        UnityEngine.Debug.LogError(string.Format("DataWithImplicitConnectionAccept received, but GetConnection returned null. Address = [{0}] sessionId = [{1}]",
-                            command.AsDataWithImplicitConnectionAccept.Address.ToFixedString(), command.AsDataWithImplicitConnectionAccept.SessionId));
-#endif
+                        //There used to be a LogError message here that read "DataWithImplicitConnectionAccept received, but GetConnection returned null."
+                        //The log message would occur after a server forcibly disconnected a client while the client was still sending packets.
+                        //There may be more scenarios where this could occur, but those are the expected results in that particular scenario.
+                        //Such a log message does not seem to actually prompt the user to take any action or make any change, and serves as little
+                        //more than noise.
                         return;
                     }
 
@@ -1373,7 +1594,7 @@ namespace Unity.Networking.Transport
 
                     if (c.State == NetworkConnection.State.Connecting)
                     {
-                        c.SendToken = command.AsDataWithImplicitConnectionAccept.ConnectionToken;
+                        c.SendToken = command.As.DataWithImplicitConnectionAccept.ConnectionToken;
 
                         c.State = NetworkConnection.State.Connected;
                         UpdateConnection(c);
@@ -1383,13 +1604,13 @@ namespace Unity.Networking.Transport
 
                     if (c.State == NetworkConnection.State.Connected)
                     {
-                        var memoryOffset = PinMemoryTillUpdate(command.AsDataWithImplicitConnectionAccept.Offset + command.AsDataWithImplicitConnectionAccept.Length);
-                        var sliceOffset = memoryOffset + command.AsDataWithImplicitConnectionAccept.Offset;
+                        var memoryOffset = PinMemoryTillUpdate(command.As.DataWithImplicitConnectionAccept.Offset + command.As.DataWithImplicitConnectionAccept.Length);
+                        var sliceOffset = memoryOffset + command.As.DataWithImplicitConnectionAccept.Offset;
 
-                        if (command.AsDataWithImplicitConnectionAccept.HasPipeline)
+                        if (command.As.DataWithImplicitConnectionAccept.HasPipeline)
                         {
                             var netCon = new NetworkConnection {m_NetworkId = c.Id, m_NetworkVersion = c.Version};
-                            m_PipelineProcessor.Receive(this, netCon, ((NativeArray<byte>)m_DataStream).GetSubArray(sliceOffset, command.AsDataWithImplicitConnectionAccept.Length));
+                            m_PipelineProcessor.Receive(this, netCon, ((NativeArray<byte>)m_DataStream).GetSubArray(sliceOffset, command.As.DataWithImplicitConnectionAccept.Length));
 
                             return;
                         }
@@ -1399,20 +1620,21 @@ namespace Unity.Networking.Transport
                             connectionId = c.Id,
                             type = NetworkEvent.Type.Data,
                             offset = sliceOffset,
-                            size = command.AsDataWithImplicitConnectionAccept.Length
+                            size = command.As.DataWithImplicitConnectionAccept.Length
                         });
                     }
                 } break;
 
                 case ProcessPacketCommandType.Data:
                 {
-                    Connection c = GetConnection(command.AsData.Address, command.AsData.SessionId);
+                    Connection c = GetConnection(command.Address, command.SessionId);
                     if (c == Connection.Null)
                     {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        UnityEngine.Debug.LogError(string.Format("Data received, but GetConnection returned null. Address = [{0}] sessionId = [{1}]", command.AsData.Address.ToFixedString(), command.AsData.SessionId));
-#endif
-                        return;
+                        //There used to be a LogError message here that read "DataWithImplicitConnectionAccept received, but GetConnection returned null."
+                        //The log message would occur after a server forcibly disconnected a client while the client was still sending packets.
+                        //There may be more scenarios where this could occur, but those are the expected results in that particular scenario.
+                        //Such a log message does not seem to actually prompt the user to take any action or make any change, and serves as little
+                        //more than noise.
                     }
 
                     c.DidReceiveData = 1;
@@ -1421,13 +1643,13 @@ namespace Unity.Networking.Transport
 
                     if (c.State == NetworkConnection.State.Connected)
                     {
-                        var memoryOffset = PinMemoryTillUpdate(command.AsData.Offset + command.AsData.Length);
-                        var sliceOffset = memoryOffset + command.AsData.Offset;
+                        var memoryOffset = PinMemoryTillUpdate(command.As.Data.Offset + command.As.Data.Length);
+                        var sliceOffset = memoryOffset + command.As.Data.Offset;
 
-                        if (command.AsData.HasPipeline)
+                        if (command.As.Data.HasPipeline)
                         {
                             var netCon = new NetworkConnection {m_NetworkId = c.Id, m_NetworkVersion = c.Version};
-                            m_PipelineProcessor.Receive(this, netCon, ((NativeArray<byte>)m_DataStream).GetSubArray(sliceOffset, command.AsData.Length));
+                            m_PipelineProcessor.Receive(this, netCon, ((NativeArray<byte>)m_DataStream).GetSubArray(sliceOffset, command.As.Data.Length));
                             return;
                         }
 
@@ -1436,7 +1658,7 @@ namespace Unity.Networking.Transport
                             connectionId = c.Id,
                             type = NetworkEvent.Type.Data,
                             offset = sliceOffset,
-                            size = command.AsData.Length
+                            size = command.As.Data.Length
                         });
                     }
                 } break;

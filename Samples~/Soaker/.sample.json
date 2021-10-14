@@ -1,0 +1,4 @@
+{
+    "displayName": "Soak Sample",        
+    "description": "Shows how to use pipelines and jobs to gather stats and create traffic using Unity Transport"
+}

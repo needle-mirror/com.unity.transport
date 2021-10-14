@@ -11,49 +11,73 @@ using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 namespace Unity.Networking.Transport
 {
     /// <summary>
-    /// NetworkFamily indicates what type of underlying medium we are using.
+    /// Indicates the protocol family of the address (analogous of AF_* in sockets API).
     /// </summary>
     public enum NetworkFamily
     {
+        /// <summary>Invalid network family.</summary>
         Invalid = 0,
+        /// <summary>IPv4 (analogous to AF_INET).</summary>
         Ipv4 = 2,
+        /// <summary>IPv6 (analogous to AF_INET6).</summary>
         Ipv6 = 23
     }
 
+    /// <summary>
+    /// Describes a raw network endpoint (typically IP and port number).
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct NetworkEndPoint
     {
-        enum AddressType { Any = 0, Loopback = 1 }
+        /// <summary>
+        /// Types of addresses with special handling.
+        /// </summary>
+        enum AddressType 
+        { 
+            /// <summary>Type to use when binding to any available address.</summary>
+            Any = 0, 
+            /// <summary>Loopback address (e.g. localhost connection).</summary>
+            Loopback = 1 
+        }
+        
         private const int rawIpv4Length = 4;
+       
         private const int rawIpv6Length = 16;
+
         private const int rawDataLength = 16;               // Maximum space needed to hold a IPv6 Address
 #if !UNITY_2021_1_OR_NEWER && !UNITY_DOTSRUNTIME
         private const int rawLength = rawDataLength + 4;    // SizeOf<Baselib_NetworkAddress>
 #else
         private const int rawLength = rawDataLength + 8;    // SizeOf<Baselib_NetworkAddress>
 #endif
-        private static readonly bool IsLittleEndian = true;
 
+        private static readonly bool IsLittleEndian = true;
+        
         internal Binding.Baselib_NetworkAddress rawNetworkAddress;
 
+        /// <summary>
+        /// Returns the length of the raw network endpoint in bytes.
+        /// </summary>
         public int Length
         {
             get
             {
                 switch (Family)
                 {
-                    case NetworkFamily.Invalid:
-                        return 0;
                     case NetworkFamily.Ipv4:
                         return rawIpv4Length;
                     case NetworkFamily.Ipv6:
                         return rawIpv6Length;
+                    case NetworkFamily.Invalid:
                     default:
-                        throw new ArgumentOutOfRangeException();
+                        return 0;
                 }
             }
         }
 
+        /// <summary>
+        /// Initializes a new instance of <see cref="NetworkEndPoint"/>.
+        /// </summary>
         static NetworkEndPoint()
         {
             uint test = 1;
@@ -61,6 +85,9 @@ namespace Unity.Networking.Transport
             IsLittleEndian = test_b[0] == 1;
         }
 
+        /// <summary>
+        /// Gets or sets port number of the endpoint.
+        /// </summary>
         public ushort Port
         {
             get => (ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8));
@@ -71,12 +98,19 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <summary>
+        /// Gets or sets <see cref="NetworkFamily"/> of the endpoint.
+        /// </summary>
         public NetworkFamily Family
         {
             get => FromBaselibFamily((Binding.Baselib_NetworkAddress_Family)rawNetworkAddress.family);
             set => rawNetworkAddress.family = (byte)ToBaselibFamily(value);
         }
 
+        /// <summary>
+        /// Gets the raw bytes for the endpoint.
+        /// </summary>
+        /// <returns>Native array containing the raw bytes (uses temporary allocation).</returns>
         public NativeArray<byte> GetRawAddressBytes()
         {
             var bytes = new NativeArray<byte>(Length, Allocator.Temp);
@@ -84,26 +118,40 @@ namespace Unity.Networking.Transport
             return bytes;
         }
 
+        /// <summary>
+        /// Directly sets the raw bytes of the endpoint using the specified bytes and family.
+        /// </summary>
+        /// <param name="bytes">Raw bytes to use for the endpoint.</param>
+        /// <param name="family">Endpoint's address family.</param>
+        /// <exception cref="InvalidOperationException">Length of bytes doesn't match family.</exception>
         public void SetRawAddressBytes(NativeArray<byte> bytes, NetworkFamily family = NetworkFamily.Ipv4)
         {
+            if ((family == NetworkFamily.Ipv4 && bytes.Length != rawIpv4Length) ||
+                (family == NetworkFamily.Ipv6 && bytes.Length != rawIpv6Length))
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("Bad input length for given address family.");
+#else
+                UnityEngine.Debug.LogError("Bad input length for given address family.");
+                return;
+#endif
+            }
+
             if (family == NetworkFamily.Ipv4)
             {
-                if (bytes.Length != rawIpv4Length)
-                    throw new InvalidOperationException($"Bad input length, a ipv4 address is 4 bytes long not {bytes.Length}");
-
                 UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(), rawIpv4Length);
                 Family = family;
             }
             else if (family == NetworkFamily.Ipv6)
             {
-                if (bytes.Length != rawIpv6Length)
-                    throw new InvalidOperationException($"Bad input length, a ipv6 address is 16 bytes long not {bytes.Length}");
-
                 UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(), rawIpv6Length);
                 Family = family;
             }
         }
 
+        /// <summary>
+        /// Gets or sets the value of the raw port number.
+        /// </summary>
         public ushort RawPort
         {
             get
@@ -118,16 +166,41 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <summary>
+        /// Gets the endpoint's representation as a <see cref="string">.
+        /// </summary>
         public string Address => AddressAsString();
 
+        /// <summary>
+        /// Whether the endpoint is valid or not.
+        /// </summary>
         public bool IsValid => Family != 0;
 
+        /// <summary>
+        /// Gets an IPv4 endpoint that can be used to bind to any address available (0.0.0.0:0).
+        /// </summary>
         public static NetworkEndPoint AnyIpv4 => CreateAddress(0);
+        
+        /// <summary>
+        /// Gets an IPv4 loopback endpoint (127.0.0.1:0).
+        /// </summary>
         public static NetworkEndPoint LoopbackIpv4 => CreateAddress(0, AddressType.Loopback);
 
+        /// <summary>
+        /// Gets an IPv6 endpoint that can be used to bind to any address available ([::0]:0).
+        /// </summary>
         public static NetworkEndPoint AnyIpv6 => CreateAddress(0, AddressType.Any, NetworkFamily.Ipv6);
+        
+        /// <summary>
+        /// Gets an IPv6 loopback endpoint ([::1]:0).
+        /// </summary>
         public static NetworkEndPoint LoopbackIpv6 => CreateAddress(0, AddressType.Loopback, NetworkFamily.Ipv6);
 
+        /// <summary>
+        /// Use the given port number for this endpoint.
+        /// </summary>
+        /// <param name="port">The port number.</param>
+        /// <returns>The endpoint (this).</returns>
         public NetworkEndPoint WithPort(ushort port)
         {
             var ep = this;
@@ -135,10 +208,24 @@ namespace Unity.Networking.Transport
             return ep;
         }
 
+        /// <summary>
+        /// Whether the endpoint is using a loopback address.
+        /// </summary>
         public bool IsLoopback => (this == LoopbackIpv4.WithPort(Port)) || (this == LoopbackIpv6.WithPort(Port));
+        
+        /// <summary>
+        /// Whether the endpoint is using an "any" address.
+        /// </summary>
         public bool IsAny => (this == AnyIpv4.WithPort(Port)) || (this == AnyIpv6.WithPort(Port));
 
-        // Returns true if we can fully parse the input and return a valid endpoint
+        /// <summary>
+        /// Try to parse the given address and port into a new <see cref="NetworkEndPoint">.
+        /// </summary>
+        /// <param name="address">String representation of the address.</param>
+        /// <param name="port">Port number.</param>
+        /// <param name="endpoint">Return value for the parsed endpoint.</param>
+        /// <param name="family">Address family of 'address'.</param>
+        /// <returns>Whether the endpoint was successfully parsed or not.</returns>
         public static bool TryParse(string address, ushort port, out NetworkEndPoint endpoint, NetworkFamily family = NetworkFamily.Ipv4)
         {
             UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
@@ -166,7 +253,14 @@ namespace Unity.Networking.Transport
             return endpoint.IsValid;
         }
 
-        // Returns a default address if parsing fails
+        /// <summary>
+        /// Same as <see cref="TryParse{T}">, except an endpoint is always returned. If the given
+        /// address, port, and family don't represent a valid endpoint, the default one is returned.
+        /// </summary>
+        /// <param name="address">String representation of the address.</param>
+        /// <param name="port">Return value for the parsed endpoint.</param>
+        /// <param name="family">Address family of 'address'.</param>
+        /// <returns>Parsed network endpoint (default if parsing failed).</returns>
         public static NetworkEndPoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Ipv4)
         {
             if (TryParse(address, port, out var endpoint, family))
@@ -184,12 +278,12 @@ namespace Unity.Networking.Transport
         {
             return !lhs.Compare(rhs);
         }
-
+        
         public override bool Equals(object other)
         {
             return this == (NetworkEndPoint)other;
         }
-
+        
         public override int GetHashCode()
         {
             var p = (byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress);
@@ -205,7 +299,7 @@ namespace Unity.Networking.Transport
                 return result;
             }
         }
-
+        
         bool Compare(NetworkEndPoint other)
         {
             var p = (byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress);
@@ -262,22 +356,21 @@ namespace Unity.Networking.Transport
                     str.Append((ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8)));
                     break;
                 default:
-                    // TODO(steve): Throw an exception?
                     break;
             }
             return str;
         }
-
+        
         private string AddressAsString()
         {
             return AddressToString(rawNetworkAddress).ToString();
         }
-
+        
         private static ushort ByteSwap(ushort val)
         {
             return (ushort)(((val & 0xff) << 8) | (val >> 8));
         }
-
+        
         private static uint ByteSwap(uint val)
         {
             return (uint)(((val & 0xff) << 24) | ((val & 0xff00) << 8) | ((val >> 8) & 0xff00) | (val >> 24));
@@ -338,13 +431,29 @@ namespace Unity.Networking.Transport
         }
     }
 
+    /// <summary>
+    /// Representation of an endpoint, to be used internally by <see cref="INetworkInterface">.
+    /// </summary>
     public unsafe struct NetworkInterfaceEndPoint : IEquatable<NetworkInterfaceEndPoint>
     {
+        /// <summary>
+        /// Maximum length of the interface endpoint's raw representation.
+        /// </summary>
         public const int k_MaxLength = 56;
 
+        /// <summary>
+        /// Actual length of the interface endpoint's raw representation.
+        /// </summary>
         public int dataLength;
+        
+        /// <summary>
+        /// Raw representation of the interface endpoint.
+        /// </summary>
         public fixed byte data[k_MaxLength];
 
+        /// <summary>
+        /// Whether the interface endpoint is valid or not.
+        /// </summary>
         public bool IsValid => dataLength != 0;
 
         public static bool operator==(NetworkInterfaceEndPoint lhs, NetworkInterfaceEndPoint rhs)
@@ -356,12 +465,12 @@ namespace Unity.Networking.Transport
         {
             return !lhs.Equals(rhs);
         }
-
+        
         public override bool Equals(object other)
         {
             return Equals((NetworkInterfaceEndPoint)other);
         }
-
+        
         public override int GetHashCode()
         {
             fixed(byte* p = data)
@@ -377,7 +486,7 @@ namespace Unity.Networking.Transport
                 return result;
             }
         }
-
+        
         public bool Equals(NetworkInterfaceEndPoint other)
         {
             // baselib doesn't return consistent lengths under posix, so lengths can
@@ -391,6 +500,9 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <summary>
+        /// Returns the <see cref="NetworkInterfaceEndPoint"/> as a <see cref="FixedString64Bytes"/>.
+        /// </summary>
         public FixedString64Bytes ToFixedString()
         {
             if (IsValid == false)
@@ -424,6 +536,9 @@ namespace Unity.Networking.Transport
             return res;
         }
 
+        /// <summary>
+        /// Returns the <see cref="NetworkInterfaceEndPoint"/> as a <see cref="string">.
+        /// </summary>
         public override string ToString()
         {
             return ToFixedString().ToString();

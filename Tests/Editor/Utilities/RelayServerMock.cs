@@ -36,25 +36,30 @@ namespace Unity.Networking.Transport.Tests
             );
         }
 
-        public bool CompleteBind(NetworkDriver driver, int clientKey = -1)
+        public bool IsBound(int clientKey)
+        {
+            return m_ClientsAddresses.ContainsKey(GetAllocationIdForClient(clientKey));
+        }
+
+        public bool CompleteBind(NetworkDriver driver, int clientKey)
         {
             SetupForBind(clientKey);
+
+            if (driver.Bind(NetworkEndPoint.AnyIpv4) != 0)
+                return false;
 
             WaitForCondition(() =>
             {
                 driver.ScheduleUpdate().Complete();
-                return driver.Bound;
+                return IsBound(clientKey);
             });
 
-            return driver.Bound;
+            return IsBound(clientKey);
         }
 
         public bool CompleteConnect(NetworkDriver host, out (NetworkConnection hostToClient, NetworkConnection clientToHost)[] resultConnections,  params NetworkDriver[] clients)
         {
             resultConnections = new(NetworkConnection hostToClient, NetworkConnection clientToHost)[clients.Length];
-
-            if (host.Bind(NetworkEndPoint.AnyIpv4) != 0)
-                return false;
 
             if (!CompleteBind(host, 0))
                 return false;
@@ -65,9 +70,6 @@ namespace Unity.Networking.Transport.Tests
             var clientId = 0;
             foreach (var client in clients)
             {
-                if (client.Bind(NetworkEndPoint.AnyIpv4) != 0)
-                    return false;
-
                 if (!CompleteBind(client, clientId + 1))
                     return false;
 
@@ -106,13 +108,11 @@ namespace Unity.Networking.Transport.Tests
             m_ClientsAddresses[allocationId] = endpoint;
         }
 
-        public void SetupForBind(int clientKey = -1)
+        public void SetupForBind(int clientKey)
         {
             ExpectPacket(BindPacket, (endpoint, data) =>
             {
-                if (clientKey >= 0)
-                    RegisterBoundClient(GetAllocationIdForClient(clientKey), endpoint);
-
+                RegisterBoundClient(GetAllocationIdForClient(clientKey), endpoint);
                 Send(BindReceivedPacket, endpoint);
             });
         }
@@ -129,7 +129,7 @@ namespace Unity.Networking.Transport.Tests
             callback(null, null);
         }
 
-        public void SetupForBindRetry(int retryCount, Action onBindReceived)
+        public void SetupForBindRetry(int retryCount, Action onBindReceived, int clientKey)
         {
             var retriesLeft = retryCount;
             Action<EndPoint, byte[]> bindReceiveMethod = null;
@@ -143,6 +143,7 @@ namespace Unity.Networking.Transport.Tests
                 else
                 {
                     ExpectOptionalRepeatedPacket(BindPacket);
+                    RegisterBoundClient(GetAllocationIdForClient(clientKey), endpoint);
                     Send(BindReceivedPacket, endpoint);
                 }
             };
@@ -170,7 +171,7 @@ namespace Unity.Networking.Transport.Tests
                 Send(acceptedPacket, endpoint);
 
                 SetupForRelay(clientKey, 0, UdpCHeader.Length);
-                SetupForRelay(0, clientKey, UdpCHeader.Length + 2);
+                SetupForRelay(0, clientKey, UdpCHeader.Length + SessionIdToken.k_Length);
             });
         }
 
@@ -205,14 +206,21 @@ namespace Unity.Networking.Transport.Tests
                     Send(acceptedPacket, endpoint);
 
                     SetupForRelay(clientKey, 0, UdpCHeader.Length);
-                    SetupForRelay(0, clientKey, UdpCHeader.Length + 2);
+                    SetupForRelay(0, clientKey, UdpCHeader.Length + SessionIdToken.k_Length);
+
+                    // Expect to possibly get an extra set of handshake messages. For the
+                    // connection retry tests, the connect timeout is set pretty low. It's not
+                    // unusual for it to expire once while the handshake is in progress, which
+                    // causes an extra set of handshake messages to be exchanged.
+                    SetupForRelay(clientKey, 0, UdpCHeader.Length, true);
+                    SetupForRelay(0, clientKey, UdpCHeader.Length + SessionIdToken.k_Length, true);
                 }
             };
 
             ExpectPacket(connectRequestPacket, connectReceiveMethod);
         }
 
-        public unsafe void SetupForRelay(int from, int to, ushort dataLength)
+        public unsafe void SetupForRelay(int from, int to, ushort dataLength, bool optional = false)
         {
             var relayMessage = new byte[RelayPacket.Length + dataLength];
             Array.Copy(RelayPacket, relayMessage, RelayPacket.Length);
@@ -235,7 +243,7 @@ namespace Unity.Networking.Transport.Tests
                     Send(data, toEndpoint);
                 else
                     throw new Exception("Relay was not sent because destination client was not bound");
-            }, parameters);
+            }, parameters, optional);
         }
 
         public unsafe void SetupForDisconnect(int from, int to)
@@ -243,11 +251,11 @@ namespace Unity.Networking.Transport.Tests
             var disconnectPacket = DisconnectPacket;
             fixed(byte* ptr = &disconnectPacket[0])
             {
-                *(RelayAllocationId*)(ptr + 4) = GetAllocationIdForClient(from);
-                *(RelayAllocationId*)(ptr + 20) = GetAllocationIdForClient(to);
+                *(RelayAllocationId*)(ptr + 4) = GetAllocationIdForClient(to);
+                *(RelayAllocationId*)(ptr + 20) = GetAllocationIdForClient(from);
             }
 
-            SetupForRelay(from, to, 4);
+            SetupForRelay(from, to, UdpCHeader.Length);
             ExpectPacket(disconnectPacket, null);
         }
 

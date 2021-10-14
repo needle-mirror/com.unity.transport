@@ -15,15 +15,34 @@ namespace Unity.Networking.Transport.Relay
 {
     internal static class ConnectionAddressExtensions
     {
-        public static unsafe ref RelayAllocationId AsRelayAllocationId(this NetworkInterfaceEndPoint address)
+        /// <summary>
+        /// Converts the relay allocation id using the specified address
+        /// </summary>
+        /// <param name="address">The address</param>
+        /// <returns>The ref relay allocation id</returns>
+        public static unsafe ref RelayAllocationId AsRelayAllocationId(this ref NetworkInterfaceEndPoint address)
         {
-            return ref *(RelayAllocationId*)address.data;
+            fixed(byte* addressPtr = address.data)
+            {
+                return ref *(RelayAllocationId*)addressPtr;
+            }
         }
     }
 
+    /// <summary>
+    /// Relay protocol network parementers used to connect to the Unity Relay service. This data must be provided to
+    /// the <see cref="NetworkDriver.Create"/> function in order to be able to use connect to Relay.
+    /// </summary>
     public struct RelayNetworkParameter : INetworkParameter
     {
+        /// <summary>
+        /// The data that is used to describe the connection to the Relay Server.
+        /// </summary>
         public RelayServerData ServerData;
+        /// <summary>
+        /// The timeout in milliseconds after which a ping message is sent to the Relay Server
+        /// to keep the connection alive.
+        /// </summary>
         public int RelayConnectionTimeMS;
     }
 
@@ -44,8 +63,7 @@ namespace Unity.Networking.Transport.Relay
             Handshake = 1,
             Binding = 2,
             Bound = 3,
-            Connecting = 4,
-            Connected = 5,
+            Connected = 4,
         }
 
         private enum SecuredRelayConnectionState : byte
@@ -58,7 +76,7 @@ namespace Unity.Networking.Transport.Relay
         {
             public RelayConnectionState ConnectionState;
             public SecuredRelayConnectionState SecureState;
-            public ushort ConnectionReceiveToken;
+            public SessionIdToken ConnectionReceiveToken;
             public long LastConnectAttempt;
             public long LastUpdateTime;
             public long LastSentTime;
@@ -70,6 +88,10 @@ namespace Unity.Networking.Transport.Relay
 #if ENABLE_MANAGED_UNITYTLS
             public SecureClientState SecureClientState;
 #endif
+            // Used by clients to indicate that we should attempt to connect as soon as we're bound.
+            // We can't just connect unconditionnally on bind since the user might not have called
+            // Connect yet at that point.
+            public bool ConnectOnBind;
         }
 
         public IntPtr UserData;
@@ -169,27 +191,31 @@ namespace Unity.Networking.Transport.Relay
                     protocolData->ConnectionState = RelayConnectionState.Binding;
                 }
 
-                return 1; // 1 = Binding for the NetworkDriver, a full stablished bind is 2
+                return 0;
             }
         }
 
-        public unsafe int Connect(INetworkInterface networkInterface, NetworkEndPoint endPoint, out NetworkInterfaceEndPoint address)
+        public int CreateConnectionAddress(INetworkInterface networkInterface, NetworkEndPoint endPoint, out NetworkInterfaceEndPoint address)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (UnsafeUtility.SizeOf<NetworkInterfaceEndPoint>() < UnsafeUtility.SizeOf<RelayAllocationId>())
-                throw new InvalidOperationException("RelayAllocationId does not fit the ConnectionAddress size");
+                throw new InvalidOperationException("RelayAllocationId does not fit in NetworkInterfaceEndPoint");
 #endif
-
-            // We need to convert a endpoint address to a allocation id address
-            // For Relay that is always the host allocation id.
-            var protocolData = (RelayProtocolData*)UserData;
-            address = default;
-            fixed(byte* addressPtr = address.data)
+            unsafe
             {
-                *(RelayAllocationId*)addressPtr = protocolData->HostAllocationId;
-            }
+                var protocolData = (RelayProtocolData*)UserData;
 
-            return 0;
+                // The remote endpoint for clients is always the host allocation ID.
+                // Note that there's a good chance the host allocation ID is not known yet. That's
+                // fine; we update the connection's address (allocation ID) once connected.
+                address = default;
+                fixed(byte* addressPtr = address.data)
+                {
+                    *(RelayAllocationId*)addressPtr = protocolData->HostAllocationId;
+                }
+
+                return 0;
+            }
         }
 
         public NetworkEndPoint GetRemoteEndPoint(INetworkInterface networkInterface, NetworkInterfaceEndPoint address)
@@ -208,13 +234,15 @@ namespace Unity.Networking.Transport.Relay
                 processReceive: new TransportFunctionPointer<NetworkProtocol.ProcessReceiveDelegate>(ProcessReceive),
                 processSend: new TransportFunctionPointer<NetworkProtocol.ProcessSendDelegate>(ProcessSend),
                 processSendConnectionAccept: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionAcceptDelegate>(ProcessSendConnectionAccept),
-                processSendConnectionRequest: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionRequestDelegate>(ProcessSendConnectionRequest),
-                processSendDisconnect: new TransportFunctionPointer<NetworkProtocol.ProcessSendDisconnectDelegate>(ProcessSendDisconnect),
+                connect: new TransportFunctionPointer<NetworkProtocol.ConnectDelegate>(Connect),
+                disconnect: new TransportFunctionPointer<NetworkProtocol.DisconnectDelegate>(Disconnect),
+                processSendPing: new TransportFunctionPointer<NetworkProtocol.ProcessSendPingDelegate>(ProcessSendPing),
+                processSendPong: new TransportFunctionPointer<NetworkProtocol.ProcessSendPongDelegate>(ProcessSendPong),
                 update: new TransportFunctionPointer<NetworkProtocol.UpdateDelegate>(Update),
                 needsUpdate: true,
                 userData: UserData,
                 maxHeaderSize: RelayMessageRelay.Length + UdpCHeader.Length,
-                maxFooterSize: 2
+                maxFooterSize: SessionIdToken.k_Length
             );
         }
 
@@ -264,7 +292,7 @@ namespace Unity.Networking.Transport.Relay
                         bool shouldRunAgain = false;
                         do
                         {
-                            handshakeResult = SecureNetworkProtocol.UpdateSecureHandshakeState(ref protocolData->SecureClientState);
+                            handshakeResult = SecureNetworkProtocol.SecureHandshakeStep(ref protocolData->SecureClientState);
                             clientState = Binding.unitytls_client_get_state(protocolData->SecureClientState.ClientPtr);
                             shouldRunAgain = (size != 0 && secureUserData->BytesProcessed == 0 && clientState == Binding.UnityTLSClientState_Handshake);
                         }
@@ -351,15 +379,21 @@ namespace Unity.Networking.Transport.Relay
             switch (header.Type)
             {
                 case RelayMessageType.BindReceived:
+                    command.Type = ProcessPacketCommandType.Drop;
+
                     if (size != RelayMessageHeader.Length)
                     {
                         UnityEngine.Debug.LogError("Received an invalid Relay Bind Received message: Wrong length");
-                        command.Type = ProcessPacketCommandType.Drop;
                         return true;
                     }
 
                     protocolData->ConnectionState = RelayConnectionState.Bound;
-                    command.Type = ProcessPacketCommandType.BindAccept;
+
+                    if (protocolData->ConnectOnBind)
+                    {
+                        SendConnectionRequestToRelay(protocolData, ref sendInterface, ref queueHandle);
+                    }
+
                     return true;
 
                 case RelayMessageType.Accepted:
@@ -378,11 +412,11 @@ namespace Unity.Networking.Transport.Relay
                     protocolData->HostAllocationId = acceptedMessage.FromAllocationId;
 
                     command.Type = ProcessPacketCommandType.AddressUpdate;
-                    command.AsAddressUpdate.Address = default;
-                    command.AsAddressUpdate.NewAddress = default;
-                    command.AsAddressUpdate.SessionToken = protocolData->ConnectionReceiveToken;
+                    command.Address = default;
+                    command.SessionId = protocolData->ConnectionReceiveToken;
+                    command.As.AddressUpdate.NewAddress = default;
 
-                    fixed(byte* addressPtr = command.AsAddressUpdate.NewAddress.data)
+                    fixed(byte* addressPtr = command.As.AddressUpdate.NewAddress.data)
                     {
                         *(RelayAllocationId*)addressPtr = acceptedMessage.FromAllocationId;
                     }
@@ -420,11 +454,11 @@ namespace Unity.Networking.Transport.Relay
                             break;
 
                         case ProcessPacketCommandType.Data:
-                            command.AsData.Offset += RelayMessageRelay.Length;
+                            command.As.Data.Offset += RelayMessageRelay.Length;
                             break;
 
                         case ProcessPacketCommandType.DataWithImplicitConnectionAccept:
-                            command.AsDataWithImplicitConnectionAccept.Offset += RelayMessageRelay.Length;
+                            command.As.DataWithImplicitConnectionAccept.Offset += RelayMessageRelay.Length;
                             break;
 
                         case ProcessPacketCommandType.Disconnect:
@@ -433,8 +467,8 @@ namespace Unity.Networking.Transport.Relay
                             break;
                     }
 
-                    command.ConnectionAddress = default;
-                    fixed(byte* addressPtr = command.ConnectionAddress.data)
+                    command.Address = default;
+                    fixed(byte* addressPtr = command.Address.data)
                     {
                         *(RelayAllocationId*)addressPtr = relayMessage.FromAllocationId;
                     }
@@ -484,12 +518,14 @@ namespace Unity.Networking.Transport.Relay
             }
         }
 
-        private static unsafe void SendRelayDisconnect(RelayProtocolData* relayProtocolData, ref RelayAllocationId hostAllocationId,
+        private static unsafe void SendRelayDisconnect(RelayProtocolData* protocolData, ref RelayAllocationId hostAllocationId,
             ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
         {
-            if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageDisconnect.Length) != 0)
+            var result = sendInterface.BeginSendMessage.Ptr.Invoke(
+                out var sendHandle, sendInterface.UserData, RelayMessageDisconnect.Length);
+            if (result != 0)
             {
-                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
+                UnityEngine.Debug.LogError("Failed to send Disconnect message to relay.");
                 return;
             }
 
@@ -498,41 +534,17 @@ namespace Unity.Networking.Transport.Relay
             if (sendHandle.size > sendHandle.capacity)
             {
                 sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
+                UnityEngine.Debug.LogError("Failed to send Disconnect message to relay.");
                 return;
             }
 
             var disconnectMessage = (RelayMessageDisconnect*)packet;
-            *disconnectMessage = RelayMessageDisconnect.Create(relayProtocolData->ServerData.AllocationId, hostAllocationId);
-#if ENABLE_MANAGED_UNITYTLS
-            if (relayProtocolData->ServerData.IsSecure == 1 &&
-                (relayProtocolData->SecureState == SecuredRelayConnectionState.Secured))
+            *disconnectMessage = RelayMessageDisconnect.Create(protocolData->ServerData.AllocationId, hostAllocationId);
+
+            if (SendMessage(protocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
             {
-                var secureUserData =
-                    (SecureUserData*)relayProtocolData->SecureClientState.ClientConfig->transportUserData;
-                SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref relayProtocolData->ServerEndpoint,
-                    ref sendInterface, ref queueHandle, secureUserData);
-
-                var result = Binding.unitytls_client_send_data(relayProtocolData->SecureClientState.ClientPtr,
-                    (byte*)sendHandle.data,
-                    new UIntPtr((uint)sendHandle.size));
-
-                var sendSize = sendHandle.size;
-
-                // we end up having to abort this handle so we can free it up as DTSL will generate a new one
-                // based on the encrypted buffer size
-                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-
-                if (result != Binding.UNITYTLS_SUCCESS)
-                {
-                    Debug.LogError($"Secure Send failed with result {result}");
-                    return;
-                }
-            }
-            else
-#endif
-            {
-                sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref relayProtocolData->ServerEndpoint, sendInterface.UserData, ref queueHandle);
+                Debug.LogError("Failed to send Disconnect message to relay.");
+                return;
             }
         }
 
@@ -605,7 +617,7 @@ namespace Unity.Networking.Transport.Relay
             }
         }
 
-        private static unsafe int SendHeaderOnlyHostMessage(UdpCProtocol type, ushort token, RelayProtocolData* relayProtocolData,
+        private static unsafe int SendHeaderOnlyHostMessage(UdpCProtocol type, SessionIdToken token, RelayProtocolData* relayProtocolData,
             ref RelayAllocationId hostAllocationId, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
         {
             var result = sendInterface.BeginSendMessage.Ptr.Invoke(
@@ -638,40 +650,59 @@ namespace Unity.Networking.Transport.Relay
             return SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle);
         }
 
+        private static unsafe void SendConnectionRequestToRelay(RelayProtocolData* relayProtocolData,
+             ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
+        {
+            var result = sendInterface.BeginSendMessage.Ptr.Invoke(
+                out var sendHandle, sendInterface.UserData, RelayMessageConnectRequest.Length);
+            if (result != 0)
+            {
+                Debug.LogError("Failed to send ConnectRequest to relay.");
+                return;
+            }
+
+            var packet = (byte*)sendHandle.data;
+            sendHandle.size = RelayMessageConnectRequest.Length;
+            if (sendHandle.size > sendHandle.capacity)
+            {
+                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+                Debug.LogError("Failed to send ConnectRequest to relay.");
+                return;
+            }
+
+            var message = (RelayMessageConnectRequest*)packet;
+            *message = RelayMessageConnectRequest.Create(
+                relayProtocolData->ServerData.AllocationId, relayProtocolData->ServerData.HostConnectionData);
+
+            if (SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
+            {
+                Debug.LogError("Failed to send ConnectRequest to relay.");
+                return;
+            }
+        }
+
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendConnectionRequestDelegate))]
-        public static void ProcessSendConnectionRequest(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ConnectDelegate))]
+        public static void Connect(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             unsafe
             {
                 var relayProtocolData = (RelayProtocolData*)userData;
 
                 relayProtocolData->ServerData.ConnectionSessionId = connection.ReceiveToken;
-                relayProtocolData->ConnectionState = RelayConnectionState.Connecting;
                 relayProtocolData->ConnectionReceiveToken = connection.ReceiveToken;
+
+                // If we're not bound, either we're still binding (and we can't attempt to connect
+                // yet), or we're connected (and connecting is thus useless).
+                if (relayProtocolData->ConnectionState != RelayConnectionState.Bound)
+                {
+                    relayProtocolData->ConnectOnBind = true;
+                    return;
+                }
 
                 if (relayProtocolData->HostAllocationId == default)
                 {
-                    if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageConnectRequest.Length) != 0)
-                    {
-                        UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
-                        return;
-                    }
-
-                    var writeResult = WriteConnectionRequestToRelay(ref relayProtocolData->ServerData.AllocationId, ref relayProtocolData->ServerData.HostConnectionData,
-                        ref relayProtocolData->ServerEndpoint, ref sendHandle, ref queueHandle);
-
-                    if (!writeResult)
-                    {
-                        sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                        return;
-                    }
-
-                    if (SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
-                    {
-                        Debug.LogError("Failed to send Connection Request message to relay.");
-                        return;
-                    }
+                    SendConnectionRequestToRelay(relayProtocolData, ref sendInterface, ref queueHandle);
                 }
                 else
                 {
@@ -688,33 +719,12 @@ namespace Unity.Networking.Transport.Relay
             }
         }
 
-        [BurstCompatible]
-        public static unsafe bool WriteConnectionRequestToRelay(ref RelayAllocationId allocationId, ref RelayConnectionData hostConnectionData, ref NetworkInterfaceEndPoint serverEndpoint, ref NetworkInterfaceSendHandle sendHandle, ref NetworkSendQueueHandle queueHandle)
-        {
-            var packet = (byte*)sendHandle.data;
-            sendHandle.size = RelayMessageConnectRequest.Length;
-            if (sendHandle.size > sendHandle.capacity)
-            {
-                UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
-                return false;
-            }
-
-            var message = (RelayMessageConnectRequest*)packet;
-            *message = RelayMessageConnectRequest.Create(
-                allocationId,
-                hostConnectionData
-            );
-
-            return true;
-        }
-
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendDisconnectDelegate))]
-        public static unsafe void ProcessSendDisconnect(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        [MonoPInvokeCallback(typeof(NetworkProtocol.DisconnectDelegate))]
+        public static unsafe void Disconnect(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             var relayProtocolData = (RelayProtocolData*)userData;
 
-            // Host Disconnect
             var type = UdpCProtocol.Disconnect;
             var token = connection.SendToken;
             var result = SendHeaderOnlyHostMessage(
@@ -724,29 +734,38 @@ namespace Unity.Networking.Transport.Relay
                 Debug.LogError("Failed to send Disconnect message to host.");
                 return;
             }
+        }
 
-            // Relay Disconnect
-            if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessageDisconnect.Length) != 0)
+        [BurstCompile(DisableDirectCall = true)]
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendPingDelegate))]
+        public static unsafe void ProcessSendPing(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        {
+            var relayProtocolData = (RelayProtocolData*)userData;
+
+            var type = UdpCProtocol.Ping;
+            var token = connection.SendToken;
+            var result = SendHeaderOnlyHostMessage(
+                type, token, relayProtocolData, ref connection.Address.AsRelayAllocationId(), ref sendInterface, ref queueHandle);
+            if (result < 0)
             {
-                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
+                Debug.LogError("Failed to send Ping message to host.");
                 return;
             }
+        }
 
-            var packet = (byte*)sendHandle.data;
-            sendHandle.size = RelayMessageDisconnect.Length;
-            if (sendHandle.size > sendHandle.capacity)
+        [BurstCompile(DisableDirectCall = true)]
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendPingDelegate))]
+        public static unsafe void ProcessSendPong(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        {
+            var relayProtocolData = (RelayProtocolData*)userData;
+
+            var type = UdpCProtocol.Pong;
+            var token = connection.SendToken;
+            var result = SendHeaderOnlyHostMessage(
+                type, token, relayProtocolData, ref connection.Address.AsRelayAllocationId(), ref sendInterface, ref queueHandle);
+            if (result < 0)
             {
-                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                UnityEngine.Debug.LogError("Failed to send a Disconnect packet to host");
-                return;
-            }
-
-            var disconnectMessage = (RelayMessageDisconnect*)packet;
-            *disconnectMessage = RelayMessageDisconnect.Create(relayProtocolData->ServerData.AllocationId, connection.Address.AsRelayAllocationId());
-
-            if (SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
-            {
-                Debug.LogError("Failed to send Disconnect message to relay.");
+                Debug.LogError("Failed to send Pong message to host.");
                 return;
             }
         }
@@ -788,6 +807,8 @@ namespace Unity.Networking.Transport.Relay
                             config->ssl_handshake_timeout_max =
                                 SecureNetworkProtocol.DefaultParameters.SSLHandshakeTimeoutMax;
 
+                            FixedString32Bytes hostname = "relay";
+                            config->hostname = hostname.GetUnsafePtr();
 
                             config->psk = new Binding.unitytls_dataRef()
                             {
@@ -830,7 +851,7 @@ namespace Unity.Networking.Transport.Relay
                         var data = (SecureUserData*)protocolData->SecureClientState.ClientConfig->transportUserData;
 
                         SecureNetworkProtocol.SetSecureUserData(IntPtr.Zero, 0, ref protocolData->ServerEndpoint, ref sendInterface, ref queueHandle, data);
-                        var handshakeResult = SecureNetworkProtocol.UpdateSecureHandshakeState(ref protocolData->SecureClientState);
+                        var handshakeResult = SecureNetworkProtocol.SecureHandshakeStep(ref protocolData->SecureClientState);
                     }
                     break;
 #endif

@@ -9,10 +9,12 @@ namespace Unity.Networking.Transport.Protocols
         ConnectionReject,
         ConnectionAccept,
         Disconnect,
-        Data
+        Data,
+        Ping,
+        Pong,
     }
 
-    [StructLayout(LayoutKind.Explicit)]
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct UdpCHeader
     {
         [Flags]
@@ -22,10 +24,9 @@ namespace Unity.Networking.Transport.Protocols
             HasPipeline = 0x2
         }
 
-        public const int Length = 4;
-        [FieldOffset(0)] public fixed byte Data[Length];
-        [FieldOffset(0)] public byte Type;
-        [FieldOffset(1)] public HeaderFlags Flags;
-        [FieldOffset(2)] public ushort SessionToken;
+        public const int Length = 2 + SessionIdToken.k_Length;  //explanation of constant 2 in this expression = sizeof(Type) + sizeof(HeaderFlags)
+        public byte Type;
+        public HeaderFlags Flags;
+        public SessionIdToken SessionToken;
     }
 }

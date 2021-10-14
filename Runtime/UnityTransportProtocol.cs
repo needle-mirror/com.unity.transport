@@ -19,22 +19,12 @@ namespace Unity.Networking.Transport
             if (networkInterface.Bind(localEndPoint) != 0)
                 return -1;
 
-            return 2;
+            return 0;
         }
 
-        public int Connect(INetworkInterface networkInterface, NetworkEndPoint remoteEndpoint, out NetworkInterfaceEndPoint remoteAddress)
+        public int CreateConnectionAddress(INetworkInterface networkInterface, NetworkEndPoint remoteEndpoint, out NetworkInterfaceEndPoint remoteAddress)
         {
-            int result;
             remoteAddress = default;
-
-            // create local socket using same address family as remote
-            NetworkEndPoint localEndpoint = remoteEndpoint.Family == NetworkFamily.Ipv6 ? NetworkEndPoint.AnyIpv6 : NetworkEndPoint.AnyIpv4;
-
-            if ((result = networkInterface.CreateInterfaceEndPoint(localEndpoint, out var localSocketAddress)) != 0)
-                return result;
-            if ((result = networkInterface.Bind(localSocketAddress)) != 0)
-                return result;
-
             return networkInterface.CreateInterfaceEndPoint(remoteEndpoint, out remoteAddress);
         }
 
@@ -50,13 +40,15 @@ namespace Unity.Networking.Transport
                 processReceive: new TransportFunctionPointer<NetworkProtocol.ProcessReceiveDelegate>(ProcessReceive),
                 processSend: new TransportFunctionPointer<NetworkProtocol.ProcessSendDelegate>(ProcessSend),
                 processSendConnectionAccept: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionAcceptDelegate>(ProcessSendConnectionAccept),
-                processSendConnectionRequest: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionRequestDelegate>(ProcessSendConnectionRequest),
-                processSendDisconnect: new TransportFunctionPointer<NetworkProtocol.ProcessSendDisconnectDelegate>(ProcessSendDisconnect),
+                connect: new TransportFunctionPointer<NetworkProtocol.ConnectDelegate>(Connect),
+                disconnect: new TransportFunctionPointer<NetworkProtocol.DisconnectDelegate>(Disconnect),
+                processSendPing: new TransportFunctionPointer<NetworkProtocol.ProcessSendPingDelegate>(ProcessSendPing),
+                processSendPong: new TransportFunctionPointer<NetworkProtocol.ProcessSendPongDelegate>(ProcessSendPong),
                 update: new TransportFunctionPointer<NetworkProtocol.UpdateDelegate>(Update),
                 needsUpdate: false, // Update is no-op
                 userData: IntPtr.Zero,
                 maxHeaderSize: UdpCHeader.Length,
-                maxFooterSize: 2
+                maxFooterSize: SessionIdToken.k_Length
             );
         }
 
@@ -65,7 +57,7 @@ namespace Unity.Networking.Transport
         public static int ComputePacketAllocationSize(ref NetworkDriver.Connection connection, IntPtr userData, ref int dataCapacity, out int dataOffset)
         {
             dataOffset = UdpCHeader.Length;
-            var footerSize = connection.DidReceiveData == 0 ? 2 : 0;
+            var footerSize = connection.DidReceiveData == 0 ? SessionIdToken.k_Length : 0;
 
             if (dataCapacity == 0)
                 dataCapacity = NetworkParameterConstants.MTU - dataOffset - footerSize;
@@ -89,7 +81,19 @@ namespace Unity.Networking.Transport
                     return;
                 }
 
-                switch ((UdpCProtocol)header.Type)
+                var type = (UdpCProtocol)header.Type;
+
+                command.Address = endpoint;
+                command.SessionId = header.SessionToken;
+
+                if (type != UdpCProtocol.Data && (header.Flags & UdpCHeader.HeaderFlags.HasPipeline) != 0)
+                {
+                    UnityEngine.Debug.LogError("Received an invalid non-data message with a pipeline");
+                    command.Type = ProcessPacketCommandType.Drop;
+                    return;
+                }
+
+                switch (type)
                 {
                     case UdpCProtocol.ConnectionAccept:
                         if ((header.Flags & UdpCHeader.HeaderFlags.HasConnectToken) == 0)
@@ -99,24 +103,15 @@ namespace Unity.Networking.Transport
                             return;
                         }
 
-                        if ((header.Flags & UdpCHeader.HeaderFlags.HasPipeline) != 0)
+                        if (size != UdpCHeader.Length + SessionIdToken.k_Length)
                         {
-                            UnityEngine.Debug.LogError("Received an invalid ConnectionAccept with pipeline");
-                            command.Type = ProcessPacketCommandType.Drop;
-                            return;
-                        }
-
-                        if (size != UdpCHeader.Length + 2)
-                        {
-                            UnityEngine.Debug.LogError("Received an invalid ConnectionAccept with wrongh length");
+                            UnityEngine.Debug.LogError("Received an invalid ConnectionAccept with wrong length");
                             command.Type = ProcessPacketCommandType.Drop;
                             return;
                         }
 
                         command.Type = ProcessPacketCommandType.ConnectionAccept;
-                        command.AsConnectionAccept.Address = endpoint;
-                        command.AsConnectionAccept.SessionId = header.SessionToken;
-                        command.AsConnectionAccept.ConnectionToken = *(ushort*)(stream + UdpCHeader.Length);
+                        command.As.ConnectionAccept.ConnectionToken = *(SessionIdToken*)(stream + UdpCHeader.Length);
                         return;
 
                     case UdpCProtocol.ConnectionReject:
@@ -124,29 +119,19 @@ namespace Unity.Networking.Transport
                         return;
 
                     case UdpCProtocol.ConnectionRequest:
-                        if ((header.Flags & UdpCHeader.HeaderFlags.HasPipeline) != 0)
-                        {
-                            UnityEngine.Debug.LogError("Received an invalid ConnectionRequest with pipeline");
-                            command.Type = ProcessPacketCommandType.Drop;
-                            return;
-                        }
-
                         command.Type = ProcessPacketCommandType.ConnectionRequest;
-                        command.AsConnectionRequest.Address = endpoint;
-                        command.AsConnectionRequest.SessionId = header.SessionToken;
                         return;
 
                     case UdpCProtocol.Disconnect:
-                        if ((header.Flags & UdpCHeader.HeaderFlags.HasPipeline) != 0)
-                        {
-                            UnityEngine.Debug.LogError("Received an invalid Disconnect with pipeline");
-                            command.Type = ProcessPacketCommandType.Drop;
-                            return;
-                        }
-
                         command.Type = ProcessPacketCommandType.Disconnect;
-                        command.AsDisconnect.SessionId = header.SessionToken;
-                        command.AsDisconnect.Address = endpoint;
+                        return;
+
+                    case UdpCProtocol.Ping:
+                        command.Type = ProcessPacketCommandType.Ping;
+                        return;
+
+                    case UdpCProtocol.Pong:
+                        command.Type = ProcessPacketCommandType.Pong;
                         return;
 
                     case UdpCProtocol.Data:
@@ -156,30 +141,20 @@ namespace Unity.Networking.Transport
 
                         if (hasConnectionToken)
                         {
-                            payloadLength -= 2;
+                            payloadLength -= SessionIdToken.k_Length;
                             command.Type = ProcessPacketCommandType.DataWithImplicitConnectionAccept;
-                            command.AsDataWithImplicitConnectionAccept = new ProcessPacketCommandDataWithImplicitConnectionAccept
-                            {
-                                SessionId = header.SessionToken,
-                                Offset = UdpCHeader.Length,
-                                Length = payloadLength,
-                                HasPipelineByte = hasPipeline,
-                                ConnectionToken = *(ushort*)(stream + UdpCHeader.Length + payloadLength)
-                            };
-                            command.AsDataWithImplicitConnectionAccept.Address = endpoint;
+                            command.As.DataWithImplicitConnectionAccept.Offset = UdpCHeader.Length;
+                            command.As.DataWithImplicitConnectionAccept.Length = payloadLength;
+                            command.As.DataWithImplicitConnectionAccept.HasPipelineByte = hasPipeline;
+                            command.As.DataWithImplicitConnectionAccept.ConnectionToken = *(SessionIdToken*)(stream + UdpCHeader.Length + payloadLength);
                             return;
                         }
                         else
                         {
                             command.Type = ProcessPacketCommandType.Data;
-                            command.AsData = new ProcessPacketCommandData
-                            {
-                                SessionId = header.SessionToken,
-                                Offset = UdpCHeader.Length,
-                                Length = payloadLength,
-                                HasPipelineByte = hasPipeline,
-                            };
-                            command.AsData.Address = endpoint;
+                            command.As.Data.Offset = UdpCHeader.Length;
+                            command.As.Data.Length = payloadLength;
+                            command.As.Data.HasPipelineByte = hasPipeline;
                             return;
                         }
                 }
@@ -209,12 +184,12 @@ namespace Unity.Networking.Transport
                     flags |= UdpCHeader.HeaderFlags.HasConnectToken;
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    if (size + 2 > capacity)
+                    if (size + SessionIdToken.k_Length > capacity)
                         throw new InvalidOperationException("SendHandle capacity overflow");
 #endif
-                    ushort* connectionToken = (ushort*)((byte*)sendHandle.data + sendHandle.size);
+                    SessionIdToken* connectionToken = (SessionIdToken*)((byte*)sendHandle.data + sendHandle.size);
                     *connectionToken = connection.ReceiveToken;
-                    sendHandle.size += 2;
+                    sendHandle.size += SessionIdToken.k_Length;
                 }
 
                 if (hasPipeline)
@@ -241,7 +216,7 @@ namespace Unity.Networking.Transport
             unsafe
             {
                 NetworkInterfaceSendHandle sendHandle;
-                if (sendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, sendInterface.UserData, UdpCHeader.Length + 2) != 0)
+                if (sendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, sendInterface.UserData, UdpCHeader.Length + SessionIdToken.k_Length) != 0)
                 {
                     UnityEngine.Debug.LogError("Failed to send a ConnectionAccept packet");
                     return;
@@ -267,14 +242,14 @@ namespace Unity.Networking.Transport
             }
         }
 
-        internal static int GetConnectionAcceptMessageMaxLength() => UdpCHeader.Length + 2;
+        internal static int GetConnectionAcceptMessageMaxLength() => UdpCHeader.Length + SessionIdToken.k_Length;
 
         internal static unsafe int WriteConnectionAcceptMessage(ref NetworkDriver.Connection connection, byte* packet, int capacity)
         {
             var size = UdpCHeader.Length;
 
             if (connection.DidReceiveData == 0)
-                size += 2;
+                size += SessionIdToken.k_Length;
 
             if (size > capacity)
             {
@@ -293,7 +268,7 @@ namespace Unity.Networking.Transport
             if (connection.DidReceiveData == 0)
             {
                 header->Flags |= UdpCHeader.HeaderFlags.HasConnectToken;
-                *(ushort*)(packet + UdpCHeader.Length) = connection.ReceiveToken;
+                *(SessionIdToken*)(packet + UdpCHeader.Length) = connection.ReceiveToken;
             }
 
             Assert.IsTrue(size <= GetConnectionAcceptMessageMaxLength());
@@ -301,74 +276,99 @@ namespace Unity.Networking.Transport
             return size;
         }
 
+        private static unsafe int SendHeaderOnlyMessage(UdpCProtocol type, SessionIdToken token, ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
+        {
+            NetworkInterfaceSendHandle sendHandle;
+            if (sendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, sendInterface.UserData, UdpCHeader.Length) != 0)
+            {
+                return -1;
+            }
+
+            byte* packet = (byte*)sendHandle.data;
+            sendHandle.size = UdpCHeader.Length;
+            if (sendHandle.size > sendHandle.capacity)
+            {
+                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+                return -1;
+            }
+
+            var header = (UdpCHeader*)packet;
+            *header = new UdpCHeader
+            {
+                Type = (byte)type,
+                SessionToken = token,
+                Flags = 0
+            };
+
+
+            if (sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref connection.Address, sendInterface.UserData, ref queueHandle) < 0)
+            {
+                return -1;
+            }
+
+            return UdpCHeader.Length;
+        }
+
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendConnectionRequestDelegate))]
-        public static void ProcessSendConnectionRequest(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ConnectDelegate))]
+        public static void Connect(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             unsafe
             {
-                NetworkInterfaceSendHandle sendHandle;
-                if (sendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, sendInterface.UserData, UdpCHeader.Length) != 0)
+                var type = UdpCProtocol.ConnectionRequest;
+                var token = connection.ReceiveToken;
+                var res = SendHeaderOnlyMessage(type, token, ref connection, ref sendInterface, ref queueHandle);
+                if (res == -1)
                 {
-                    UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
-                    return;
-                }
-
-                byte* packet = (byte*)sendHandle.data;
-                sendHandle.size = UdpCHeader.Length;
-                if (sendHandle.size > sendHandle.capacity)
-                {
-                    sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                    UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
-                    return;
-                }
-                var header = (UdpCHeader*)packet;
-                *header = new UdpCHeader
-                {
-                    Type = (byte)UdpCProtocol.ConnectionRequest,
-                    SessionToken = connection.ReceiveToken,
-                    Flags = 0
-                };
-                if (sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref connection.Address, sendInterface.UserData, ref queueHandle) < 0)
-                {
-                    UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
-                    return;
+                    UnityEngine.Debug.LogError("Failed to send ConnectionRequest message");
                 }
             }
         }
 
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendDisconnectDelegate))]
-        public static void ProcessSendDisconnect(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        [MonoPInvokeCallback(typeof(NetworkProtocol.DisconnectDelegate))]
+        public static void Disconnect(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
         {
             unsafe
             {
-                NetworkInterfaceSendHandle sendHandle;
-                if (sendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, sendInterface.UserData, UdpCHeader.Length) != 0)
+                var type = UdpCProtocol.Disconnect;
+                var token = connection.SendToken;
+                var res = SendHeaderOnlyMessage(type, token, ref connection, ref sendInterface, ref queueHandle);
+                if (res == -1)
                 {
-                    UnityEngine.Debug.LogError("Failed to send a Disconnect packet");
-                    return;
+                    UnityEngine.Debug.LogError("Failed to send Disconnect message");
                 }
+            }
+        }
 
-                byte* packet = (byte*)sendHandle.data;
-                sendHandle.size = UdpCHeader.Length;
-                if (sendHandle.size > sendHandle.capacity)
+        [BurstCompile(DisableDirectCall = true)]
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendPingDelegate))]
+        public static void ProcessSendPing(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        {
+            unsafe
+            {
+                var type = UdpCProtocol.Ping;
+                var token = connection.SendToken;
+                var res = SendHeaderOnlyMessage(type, token, ref connection, ref sendInterface, ref queueHandle);
+                if (res == -1)
                 {
-                    sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
-                    UnityEngine.Debug.LogError("Failed to send a Disconnect packet");
-                    return;
+                    UnityEngine.Debug.LogError("Failed to send Ping message");
                 }
-                var header = (UdpCHeader*)packet;
-                *header = new UdpCHeader
+            }
+        }
+
+        [BurstCompile(DisableDirectCall = true)]
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ProcessSendPongDelegate))]
+        public static void ProcessSendPong(ref NetworkDriver.Connection connection, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData)
+        {
+            unsafe
+            {
+                var type = UdpCProtocol.Pong;
+                var token = connection.SendToken;
+                var res = SendHeaderOnlyMessage(type, token, ref connection, ref sendInterface, ref queueHandle);
+                if (res == -1)
                 {
-                    Type = (byte)UdpCProtocol.Disconnect,
-                    SessionToken = connection.SendToken,
-                    Flags = 0
-                };
-                if (sendInterface.EndSendMessage.Ptr.Invoke(ref sendHandle, ref connection.Address, sendInterface.UserData, ref queueHandle) < 0)
-                {
-                    UnityEngine.Debug.LogError("Failed to send a Disconnect packet");
-                    return;
+                    UnityEngine.Debug.LogError("Failed to send Pong message");
                 }
             }
         }

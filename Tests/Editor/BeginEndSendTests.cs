@@ -71,7 +71,7 @@ namespace Unity.Networking.Transport.Tests
         public void BeginEndSimple()
         {
             Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
-            Assert.AreEqual(NetworkParameterConstants.MTU - UdpCHeader.Length, writer.Capacity);
+            Assert.AreEqual(NetworkParameterConstants.MTU - Driver.MaxProtocolHeaderSize(), writer.Capacity);
             writer.WriteInt(42);
             Driver.EndSend(writer);
             Driver.ScheduleFlushSend(default).Complete();
@@ -87,7 +87,7 @@ namespace Unity.Networking.Transport.Tests
         {
             Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer));
             writer.WriteInt(42);
-            Assert.AreEqual(NetworkParameterConstants.MTU - UdpCHeader.Length, writer.Capacity);
+            Assert.AreEqual(NetworkParameterConstants.MTU - Driver.MaxProtocolHeaderSize(), writer.Capacity);
             Assert.AreEqual(0, Driver.BeginSend(ToRemoteConnection, out var writer2));
             writer2.WriteInt(4242);
             Driver.EndSend(writer2);
@@ -229,6 +229,16 @@ namespace Unity.Networking.Transport.Tests
         {
             var writer = new DataStreamWriter(16, Allocator.Temp);
             Assert.Throws<InvalidOperationException>(() => {Driver.EndSend(writer);});
+        }
+
+        [Test]
+        public void EndSendWithFailedWriter()
+        {
+            Driver.BeginSend(ToRemoteConnection, out var writer);
+            var buffer = new NativeArray<byte>(NetworkParameterConstants.MTU + 1, Allocator.Temp);
+            writer.WriteBytes(buffer);
+            Assert.IsTrue(writer.HasFailedWrites);
+            Assert.AreEqual((int)Error.StatusCode.NetworkPacketOverflow, Driver.EndSend(writer));
         }
     }
 

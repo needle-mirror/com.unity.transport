@@ -19,7 +19,8 @@ namespace Unity.Networking.Transport
         /// Initializes a new instance of the UnsafeBaselibNetworkArray struct.
         /// </summary>
         /// <param name="capacity"></param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if the capacity is less then 0 or if the value exceeds <see cref="int.MaxValue"/> </exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the capacity is less then 0 or if the value exceeds <see cref="int.MaxValue"/></exception>
+        /// <exception cref="Exception">Thrown on internal baselib errors</exception>
         public UnsafeBaselibNetworkArray(int capacity)
         {
             var totalSize = (long)capacity;
@@ -40,6 +41,8 @@ namespace Unity.Networking.Transport
                 pageCount = (ulong)math.ceil(totalSize / (double)defaultPageSize);
             }
 
+            m_Buffer = (Binding.Baselib_RegisteredNetwork_Buffer*)UnsafeUtility.Malloc(UnsafeUtility.SizeOf<Binding.Baselib_RegisteredNetwork_Buffer>(), UnsafeUtility.AlignOf<Binding.Baselib_RegisteredNetwork_Buffer>(), Allocator.Persistent);
+
             var error = default(ErrorState);
 
             var pageAllocation = Binding.Baselib_Memory_AllocatePages(
@@ -50,17 +53,25 @@ namespace Unity.Networking.Transport
                 &error);
 
             if (error.code != ErrorCode.Success)
-                throw new Exception();
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new Exception("Couldn't allocate baselib memory pages");
+#else
+                *m_Buffer = default;
+                return;
+#endif
+            }
 
             UnsafeUtility.MemSet((void*)pageAllocation.ptr, 0, (long)(pageAllocation.pageCount * pageAllocation.pageSize));
 
-            m_Buffer = (Binding.Baselib_RegisteredNetwork_Buffer*)UnsafeUtility.Malloc(UnsafeUtility.SizeOf<Binding.Baselib_RegisteredNetwork_Buffer>(), UnsafeUtility.AlignOf<Binding.Baselib_RegisteredNetwork_Buffer>(), Allocator.Persistent);
             *m_Buffer = Binding.Baselib_RegisteredNetwork_Buffer_Register(pageAllocation, &error);
             if (error.code != (int)ErrorCode.Success)
             {
                 Binding.Baselib_Memory_ReleasePages(pageAllocation, &error);
                 *m_Buffer = default;
-                throw new Exception();
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new Exception("Couldn't register baselib network buffer");
+#endif
             }
         }
 

@@ -1,0 +1,23 @@
+{
+    "name": "PingECS",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Burst",
+        "Unity.Entities",
+        "Unity.Collections",
+        "Unity.Networking.Transport",
+        "Unity.Jobs",
+        "Ping"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "ENABLE_ECS_SAMPLES"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

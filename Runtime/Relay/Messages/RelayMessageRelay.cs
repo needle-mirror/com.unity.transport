@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Unity.Networking.Transport.Relay
 {
     [StructLayout(LayoutKind.Sequential)]
-    public struct RelayMessageRelay
+    internal struct RelayMessageRelay
     {
         public const int Length = RelayMessageHeader.Length + RelayAllocationId.k_Length * 2 + 2; // Header + FromAllocationId + ToAllocationId + DataLength
 
@@ -13,7 +13,7 @@ namespace Unity.Networking.Transport.Relay
         public RelayAllocationId ToAllocationId;
         public ushort DataLength;
 
-        public static RelayMessageRelay Create(RelayAllocationId fromAllocationId, RelayAllocationId toAllocationId, ushort dataLength)
+        internal static RelayMessageRelay Create(RelayAllocationId fromAllocationId, RelayAllocationId toAllocationId, ushort dataLength)
         {
             return new RelayMessageRelay
             {

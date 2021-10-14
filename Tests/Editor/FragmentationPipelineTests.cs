@@ -320,7 +320,7 @@ namespace Unity.Networking.Transport.Tests
             for (int messageSize = 1380; messageSize <= 1400; ++messageSize)
             {
                 // Send message to client
-                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm, messageSize) == 0)
+                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
                 {
                     for (int i = 0; i < messageSize; ++i)
                     {
@@ -365,7 +365,7 @@ namespace Unity.Networking.Transport.Tests
             for (int messageSize = 1380; messageSize <= 1400; ++messageSize)
             {
                 // Send message to client
-                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm, messageSize) == 0)
+                if (m_ServerDriver.BeginSend(serverPipe, serverToClient, out var strm) == 0)
                 {
                     for (int i = 0; i < messageSize; ++i)
                     {

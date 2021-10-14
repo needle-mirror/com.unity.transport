@@ -6,12 +6,25 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// The SimulatorPipelineStage could be added on either the client or server to simulate bad network conditions.
+    /// It's best to add it as the last stage in the pipeline, then it will either drop the packet or add a delay right
+    /// before it would go on the wire.
+    /// </summary>
     [BurstCompile]
     public unsafe struct SimulatorPipelineStage : INetworkPipelineStage
     {
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        
+        /// <summary>
+        /// Statics the initialize using the specified static instance buffer
+        /// </summary>
+        /// <param name="staticInstanceBuffer">The static instance buffer</param>
+        /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
+        /// <param name="netParams">The net params</param>
+        /// <returns>The network pipeline stage</returns>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
             SimulatorUtility.Parameters param = default;
@@ -112,12 +125,22 @@ namespace Unity.Networking.Transport
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 
+    /// <summary>
+    /// The simulator pipeline stage in send
+    /// </summary>
     [BurstCompile]
     public unsafe struct SimulatorPipelineStageInSend : INetworkPipelineStage
     {
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+        /// <summary>
+        /// Statics the initialize using the specified static instance buffer
+        /// </summary>
+        /// <param name="staticInstanceBuffer">The static instance buffer</param>
+        /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
+        /// <param name="netParams">The net params</param>
+        /// <returns>The network pipeline stage</returns>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
         {
             SimulatorUtility.Parameters param = default;
@@ -211,6 +234,9 @@ namespace Unity.Networking.Transport
         {
         }
 
+        /// <summary>
+        /// Gets the value of the static size
+        /// </summary>
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 }

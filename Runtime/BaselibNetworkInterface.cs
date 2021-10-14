@@ -19,16 +19,35 @@ namespace Unity.Networking.Transport
     using NetworkEndpoint = Binding.Baselib_RegisteredNetwork_Endpoint;
     using NetworkSocket = Binding.Baselib_RegisteredNetwork_Socket_UDP;
 
+    /// <summary>
+    /// Network Parameters used to set queue and payload sizes for <see cref="BaselibNetworkInterface"/>
+    /// </summary>
     public struct BaselibNetworkParameter : INetworkParameter
     {
+        /// <summary>
+        /// The maximum number of receiving packets that the <see cref="BaselibNetworkInterface"/> can process in a single update iteration.
+        /// </summary>
         public int receiveQueueCapacity;
+        /// <summary>
+        /// The maximum number of sending packets that the <see cref="BaselibNetworkInterface"/> can process in a single update iteration.
+        /// </summary>
         public int sendQueueCapacity;
+        /// <summary>
+        /// The maximum payload size.
+        /// </summary>
         public uint maximumPayloadSize;
     }
 
+    /// <summary>
+    /// Default NetworkInterface implementation based on Unity's internal Baselib UDP sockets this is ensure to work on all
+    /// platforms except for Unity's WebGL.
+    /// </summary>
     [BurstCompile]
     public struct BaselibNetworkInterface : INetworkInterface
     {
+        /// <summary>
+        /// Default Parameters for <see cref="BaselibNetworkInterface"/>
+        /// </summary>
         public static BaselibNetworkParameter DefaultParameters = new BaselibNetworkParameter
         {
             receiveQueueCapacity = k_defaultRxQueueSize,
@@ -127,7 +146,7 @@ namespace Unity.Networking.Transport
         private UnsafeBaselibNetworkArray m_LocalAndTempEndpoint;
 
         /// <summary>
-        /// Returns the local endpoint.
+        /// Returns the local endpoint the <see cref="BaselibNetworkInterface"/> is bound to.
         /// </summary>
         /// <value>NetworkInterfaceEndPoint</value>
         public unsafe NetworkInterfaceEndPoint LocalEndPoint
@@ -141,27 +160,37 @@ namespace Unity.Networking.Transport
                 var ep = default(NetworkInterfaceEndPoint);
                 if (error.code != ErrorCode.Success)
                     return ep;
-                ep.dataLength = UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
-                UnsafeUtility.MemCpy(ep.data, &local, ep.dataLength);
+
+                CreateInterfaceEndPoint(local, out ep);
+
                 return ep;
             }
         }
 
+        /// <summary>
+        /// Gets if the interface has been created.
+        /// </summary>
         public bool IsCreated => m_Baselib.IsCreated;
 
         /// <summary>
-        /// Creates a interface endpoint.
+        /// Converts a generic <see cref="NetworkEndPoint"/> to its <see cref="NetworkInterfaceEndPoint"/> version for the <see cref="BaselibNetworkInterface"/>.
         /// </summary>
-        /// <value>NetworkInterfaceEndPoint</value>
+        /// <param name="address">The <see cref="NetworkEndPoint"/> endpoint to convert.</param>
+        /// <returns>returns 0 on success and sets the converted endpoint value</returns>
         public unsafe int CreateInterfaceEndPoint(NetworkEndPoint address, out NetworkInterfaceEndPoint endpoint)
         {
+            return CreateInterfaceEndPoint(address.rawNetworkAddress, out endpoint);
+        }
+
+        private unsafe int CreateInterfaceEndPoint(Binding.Baselib_NetworkAddress address, out NetworkInterfaceEndPoint endpoint)
+        {
             var slice = m_LocalAndTempEndpoint.AtIndexAsSlice(0, (uint)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
+            NetworkEndpoint local;
             var error = default(ErrorState);
             endpoint = default;
-            NetworkEndpoint local;
 
             local = Binding.Baselib_RegisteredNetwork_Endpoint_Create(
-                (Binding.Baselib_NetworkAddress*) & address.rawNetworkAddress,
+                &address,
                 slice,
                 &error);
             if (error.code != ErrorCode.Success)
@@ -175,10 +204,14 @@ namespace Unity.Networking.Transport
             return (int)Error.StatusCode.Success;
         }
 
+        /// <summary>
+        /// Converts a <see cref="NetworkInterfaceEndPoint"/> to its generic <see cref="NetworkEndPoint"/> version.
+        /// </summary>
+        /// <param name="endpoint">The <see cref="NetworkInterfaceEndPoint"/> endpoint to convert.</param>
+        /// <returns>Returns the converted endpoint value.</returns>
         public unsafe NetworkEndPoint GetGenericEndPoint(NetworkInterfaceEndPoint endpoint)
         {
-            // Set to a valid address so length is set correctly
-            var address = NetworkEndPoint.LoopbackIpv4;
+            var address = default(NetworkEndPoint);
             var error = default(ErrorState);
             var slice = m_LocalAndTempEndpoint.AtIndexAsSlice(0, (uint)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
             NetworkEndpoint local;
@@ -192,9 +225,10 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Initializes a instance of the BaselibNetworkInterface struct.
+        /// Initializes a instance of the <see cref="BaselibNetworkInterface"/> struct.
         /// </summary>
-        /// <param name="param">An array of INetworkParameter. There is currently only <see cref="BaselibNetworkParameter"/> that can be passed.</param>
+        /// <param name="param">An array of INetworkParameter. If there is no <see cref="BaselibNetworkParameter"/> present, the default values are used.</param>
+        /// <returns>Returns 0 on succees.</returns>
         public unsafe int Initialize(params INetworkParameter[] param)
         {
             if (!TryExtractParameters(out configuration, param))
@@ -216,6 +250,9 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
+        /// <summary>
+        /// Disposes this instance
+        /// </summary>
         public void Dispose()
         {
             if (m_Baselib[0].m_Socket.handle != IntPtr.Zero)
@@ -247,26 +284,41 @@ namespace Unity.Networking.Transport
             {
                 var error = default(ErrorState);
                 var pollCount = 0;
-                while (Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, &error) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending && pollCount++ < k_defaultTxQueueSize) {}
-                int count;
-                // InUse is not thread safe, needs to be called in a single threaded flush job
-                var inFlight = Tx.InUse;
-                if (inFlight > 0)
+                var status = default(Binding.Baselib_RegisteredNetwork_ProcessStatus);
+                var retryCount = 1000;
+
+                while (Tx.InUse > 0 && retryCount-- > 0)
                 {
-                    var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[inFlight];
-                    count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, (uint)inFlight, &error);
-                    if (error.code != ErrorCode.Success)
+                    while ((status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, &error)) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending
+                           && pollCount++ < Tx.Capacity) {}
+
+                    int count;
+                    // InUse is not thread safe, needs to be called in a single threaded flush job
+                    var inFlight = Tx.InUse;
+                    if (inFlight > 0)
                     {
-                        // copy recv flow? e.g. pass
-                        return;
-                    }
-                    for (int i = 0; i < count; ++i)
-                    {
-                        // return results[i].status through userdata, mask? or allocate space at beginning?
-                        // pass through a new NetworkPacketSender.?
-                        Tx.ReleaseHandle((int)results[i].requestUserdata - 1);
+                        var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[inFlight];
+                        count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, (uint)inFlight, &error);
+                        if (error.code != ErrorCode.Success)
+                        {
+                            // copy recv flow? e.g. pass
+                            return;
+                        }
+                        for (int i = 0; i < count; ++i)
+                        {
+                            // return results[i].status through userdata, mask? or allocate space at beginning?
+                            // pass through a new NetworkPacketSender.?
+                            Tx.ReleaseHandle((int)results[i].requestUserdata - 1);
+                        }
                     }
                 }
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                if (Tx.InUse > 0)
+                {
+                    UnityEngine.Debug.LogWarning("There are pending send packets after the baselib process send");
+                }
+#endif
             }
         }
         [BurstCompile]
@@ -287,9 +339,16 @@ namespace Unity.Networking.Transport
                 if (outstanding > 0)
                 {
                     var pollCount = 0;
-                    while (Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(Baselib[0].m_Socket, &error) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending && pollCount++ < k_defaultRxQueueSize)
+                    var status = default(Binding.Baselib_RegisteredNetwork_ProcessStatus);
+                    while ((status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(Baselib[0].m_Socket, &error)) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending
+                           && pollCount++ < Rx.Capacity) {}
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    if (status == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
                     {
+                        UnityEngine.Debug.LogWarning("There are pending receive packets after the baselib process receive");
                     }
+#endif
 
                     var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[outstanding];
 
@@ -352,6 +411,13 @@ namespace Unity.Networking.Transport
         }
         #endregion
 
+        /// <summary>
+        /// Schedule a ReceiveJob. This is used to read data from your supported medium and pass it to the AppendData function
+        /// supplied by <see cref="NetworkDriver"/>
+        /// </summary>
+        /// <param name="receiver">A <see cref="NetworkDriver"/> used to parse the data received.</param>
+        /// <param name="dep">A <see cref="JobHandle"/> to any dependency we might have.</param>
+        /// <returns>A <see cref="JobHandle"/> to our newly created ScheduleReceive Job.</returns>
         public JobHandle ScheduleReceive(NetworkPacketReceiver receiver, JobHandle dep)
         {
             var job = new ReceiveJob
@@ -363,6 +429,12 @@ namespace Unity.Networking.Transport
             return job.Schedule(dep);
         }
 
+        /// <summary>
+        /// Schedule a SendJob. This is used to flush send queues to your supported medium
+        /// </summary>
+        /// <param name="sendQueue">The send queue which can be used to emulate parallel send.</param>
+        /// <param name="dep">A <see cref="JobHandle"/> to any dependency we might have.</param>
+        /// <returns>A <see cref="JobHandle"/> to our newly created ScheduleSend Job.</returns>
         public JobHandle ScheduleSend(NativeQueue<QueuedSendMessage> sendQueue, JobHandle dep)
         {
             var job = new FlushSendJob
@@ -374,10 +446,12 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Binds the BaselibNetworkInterface to the endpoint passed.
+        /// Binds the medium to a specific endpoint.
         /// </summary>
-        /// <param name="endpoint">A valid ipv4 or ipv6 address</param>
-        /// <value>int</value>
+        /// <param name="endpoint">
+        /// A valid <see cref="NetworkInterfaceEndPoint"/>.
+        /// </param>
+        /// <returns>Returns 0 on success.</returns>
         public unsafe int Bind(NetworkInterfaceEndPoint endpoint)
         {
             var baselib = m_Baselib[0];
@@ -447,6 +521,10 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
+        /// <summary>
+        /// Listens on the socket, currently this Interface doesn't support listening as its UDP based.
+        /// </summary>
+        /// <returns>Returns 0</returns>
         public int Listen()
         {
             return 0;
@@ -456,6 +534,10 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkSendInterface.EndSendMessageDelegate> EndSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.EndSendMessageDelegate>(EndSendMessage);
         static TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate> AbortSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate>(AbortSendMessage);
 
+        /// <summary>
+        /// Creates the send interface
+        /// </summary>
+        /// <returns>The network send interface</returns>
         public unsafe NetworkSendInterface CreateSendInterface()
         {
             return new NetworkSendInterface
@@ -548,12 +630,6 @@ namespace Unity.Networking.Transport
             return true;
         }
 
-        /// <summary>
-        /// Tries to extract the BaselibNetworkParameter from the param's passed.
-        /// </summary>
-        /// <param name="config"></param>
-        /// <param name="param"></param>
-        /// <value>boolean indicating if the extration was successful or not.</value>
         bool TryExtractParameters(out BaselibNetworkParameter config, params INetworkParameter[] param)
         {
             for (int i = 0; i < param.Length; ++i)

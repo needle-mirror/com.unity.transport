@@ -98,12 +98,13 @@ namespace Unity.Networking.Transport.Tests
             var fromEndPoint = IPCManager.Instance.CreateEndPoint(from.Port);
             Assert.True(
                 IPCManager.Instance.PeekNext(localEndPoint, m_LocalData.GetUnsafePtr(), out length, out remote) >=
-                sizeof(UdpCHeader));
+                UdpCHeader.Length);
 
             UdpCHeader header = new UdpCHeader();
-            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
+            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, UdpCHeader.Length));
             Assert.True(reader.IsCreated);
-            reader.ReadBytes(header.Data, sizeof(UdpCHeader));
+
+            reader.ReadBytes((byte*)&header, UdpCHeader.Length);
             Assert.AreEqual((int)UdpCProtocol.ConnectionRequest, header.Type);
 
             Assert.True(remote == fromEndPoint);
@@ -127,12 +128,12 @@ namespace Unity.Networking.Transport.Tests
             var fromEndPoint = IPCManager.Instance.CreateEndPoint(from.Port);
             Assert.True(
                 IPCManager.Instance.PeekNext(localEndPoint, m_LocalData.GetUnsafePtr(), out length, out remote) >=
-                sizeof(UdpCHeader));
+                UdpCHeader.Length);
 
             UdpCHeader header = new UdpCHeader();
-            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, sizeof(UdpCHeader)));
+            var reader = new DataStreamReader(m_LocalData.GetSubArray(0, UdpCHeader.Length));
             Assert.True(reader.IsCreated);
-            reader.ReadBytes(header.Data, sizeof(UdpCHeader));
+            reader.ReadBytes((byte*)&header, UdpCHeader.Length);
             Assert.True(header.Type == (int)UdpCProtocol.Disconnect);
 
             Assert.True(remote == fromEndPoint);
@@ -141,7 +142,7 @@ namespace Unity.Networking.Transport.Tests
         public unsafe void Assert_GotDataRequest(NetworkEndPoint from, byte[] dataToCompare)
         {
             NetworkInterfaceEndPoint remote = default;
-            int headerLen = sizeof(UdpCHeader);
+            int headerLen = UdpCHeader.Length;
             void* packetData = (byte*)m_LocalData.GetUnsafePtr();
             int payloadLen = NetworkParameterConstants.MTU;
             int dataLen = 0;
@@ -160,7 +161,7 @@ namespace Unity.Networking.Transport.Tests
             UdpCHeader header = new UdpCHeader();
             var reader = new DataStreamReader(m_LocalData.GetSubArray(0, headerLen));
             Assert.True(reader.IsCreated);
-            reader.ReadBytes(header.Data, headerLen);
+            reader.ReadBytes((byte*)&header, headerLen);
             Assert.True(header.Type == (int)UdpCProtocol.Data);
 
             Assert.True(remote == fromEndPoint);
@@ -629,12 +630,47 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        public void ReceiverIgnoresSenderDataPacketsAfterDisconnect()
+        {
+            using (var host = new LocalDriverHelper(default))
+            using (var client0 = new LocalDriverHelper(default))
+            {
+                host.Host();
+                client0.Connect(host.EndPoint);
+
+                client0.Update();
+                host.Update();
+                client0.Update();
+                client0.Assert_PopEvent(out var clientToHostConnection, NetworkEvent.Type.Connect);
+
+                var hostToClientConnection = host.Accept();
+
+                //Disconnect client, but don't send disconnect packet yet
+                host.m_LocalDriver.Disconnect(hostToClientConnection);
+
+                //Client still thinks it's connected and is able to send data
+                byte[] testBytesDiscarded = Encoding.ASCII.GetBytes("host should ignore this Data packet");
+                if (client0.m_LocalDriver.BeginSend(NetworkPipeline.Null, clientToHostConnection, out var writer) == 0)
+                {
+                    writer.WriteBytes(new NativeArray<byte>(testBytesDiscarded, Allocator.Temp));
+                    client0.m_LocalDriver.EndSend(writer);
+                }
+
+                client0.Update();
+                host.Update();
+
+                host.Assert_PopEventForConnection(hostToClientConnection, NetworkEvent.Type.Empty);
+            }
+        }
+
+
+        [Test]
         public void FillInternalBitStreamBuffer()
         {
             const int k_InternalBufferSize = 1000;
             const int k_PacketCount = 21; // Exactly enough to fill the receive buffer + 1 too much
             const int k_PacketSize = 50;
-            const int k_PacketHeaderSize = 4; // The header also goes to the buffer
+            const int k_PacketHeaderSize = UdpCHeader.Length; // The header also goes to the buffer
             const int k_PayloadSize = k_PacketSize - k_PacketHeaderSize;
 
             using (var host = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = k_InternalBufferSize}))
@@ -729,9 +765,11 @@ namespace Unity.Networking.Transport.Tests
             var eventId = clientDriver.PopEventForConnection(clientToServerId, out stream);
             Assert.That(eventId == NetworkEvent.Type.Connect, $"Expected Connect but got {eventId} using {backend}");
 
+            //52 bytes of data below:
             int testInt = 100;
             float testFloat = 555.5f;
             byte[] testByteArray = Encoding.ASCII.GetBytes("Some bytes blablabla 1111111111111111111");
+
             var sentBytes = 0;
             if (clientDriver.BeginSend(NetworkPipeline.Null, clientToServerId, out var clientSendData) == 0)
             {
@@ -762,6 +800,10 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(testByteArray, receivedBytes);
         }
 
+        //Note for the below 3 tests:
+        //SendAndReceiveMessage() as currently written sends 52 + sizeof(UdpCHeader) bytes.
+        //If the size of UdpCHeader goes over 12 bytes in the future (currently 10 bytes at time of writing),
+        //NetworkDataStreamParameter.size in these below tests will need to be increased accordingly.
         [Test]
         public void SendAndReceiveMessage_RealNetwork()
         {

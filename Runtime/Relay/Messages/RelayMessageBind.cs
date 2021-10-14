@@ -3,7 +3,7 @@ using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Networking.Transport.Relay
 {
-    public static class RelayMessageBind
+    internal static class RelayMessageBind
     {
         private const byte k_ConnectionDataLength = 255;
         private const byte k_HMACLength = 32;
@@ -16,7 +16,7 @@ namespace Unity.Networking.Transport.Relay
         // public fixed byte ConnectionData[k_ConnectionDataLength];
         // public fixed byte HMAC[k_HMACLength];
 
-        public static unsafe void Write(DataStreamWriter writer, byte acceptMode, ushort nonce, byte* connectionDataPtr, byte* hmac)
+        internal static unsafe void Write(DataStreamWriter writer, byte acceptMode, ushort nonce, byte* connectionDataPtr, byte* hmac)
         {
             var header = RelayMessageHeader.Create(RelayMessageType.Bind);
 

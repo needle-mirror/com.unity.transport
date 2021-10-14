@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Unity.Networking.Transport.Relay
 {
     [StructLayout(LayoutKind.Sequential)]
-    public struct RelayMessageHeader
+    internal struct RelayMessageHeader
     {
         public const int Length = 4;
 
@@ -16,7 +16,7 @@ namespace Unity.Networking.Transport.Relay
             return Signature == 0x72DA && Version == 0;
         }
 
-        public static RelayMessageHeader Create(RelayMessageType type)
+        internal static RelayMessageHeader Create(RelayMessageType type)
         {
             return new RelayMessageHeader
             {
@@ -27,7 +27,7 @@ namespace Unity.Networking.Transport.Relay
         }
     }
 
-    public enum RelayMessageType : byte
+    internal enum RelayMessageType : byte
     {
         Bind = 0,
         BindReceived = 1,

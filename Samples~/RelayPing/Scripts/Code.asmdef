@@ -1,0 +1,28 @@
+{
+    "name": "Code",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Jobs",
+        "Unity.Burst",
+        "Unity.Services.Authentication",
+        "Unity.Services.Core",
+        "Unity.Services.Relay",
+        "Unity.Networking.Transport",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.services.relay",
+            "expression": "",
+            "define": "ENABLE_RELAY"
+        }
+    ],
+    "noEngineReferences": false
+}

@@ -6,6 +6,11 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// The ReliableSequencedPipelineStage is used to send packets reliably and retain the order in which they are sent.
+    /// This PipelineStage has a hardcoded WindowSize of 32 inflight packets and will drop packets if its unable to
+    /// track them. 
+    /// </summary>
     [BurstCompile]
     public unsafe struct ReliableSequencedPipelineStage : INetworkPipelineStage
     {
@@ -23,7 +28,14 @@ namespace Unity.Networking.Transport
             if (param.WindowSize == 0)
                 param = new ReliableUtility.Parameters {WindowSize = ReliableUtility.ParameterConstants.WindowSize};
             if (param.WindowSize <= 0 || param.WindowSize > 32)
-                throw new System.ArgumentOutOfRangeException("The reliability pipeline does not support negative WindowSize nor WindowSizes larger than 32");
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new System.ArgumentOutOfRangeException("The reliability pipeline only supports window sizes between 0 and 32.");
+#else
+                UnityEngine.Debug.LogError("The reliability pipeline only supports window sizes between 0 and 32.");
+                param.WindowSize = 32;
+#endif
+            }
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
