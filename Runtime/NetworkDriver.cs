@@ -191,27 +191,50 @@ namespace Unity.Networking.Transport
 
                 var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) + 1 : 0;
                 var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
-                var payloadCapacity = requiredPayloadSize > 0 ? math.min(requiredPayloadSize + pipelineHeader, pipelinePayloadCapacity) : pipelinePayloadCapacity;
 
-                // This will set the payloadCapacity value to the actual capacity provided by the protocol
-                var packetAllocationSize = m_NetworkProtocolInterface.ComputePacketAllocationSize.Ptr.Invoke(ref connection, m_NetworkProtocolInterface.UserData, ref payloadCapacity, out var payloadOffset);
+                var protocolOverhead = m_NetworkProtocolInterface.ComputePacketOverhead.Ptr.Invoke(ref connection, out var payloadOffset);
 
-                payloadCapacity -= pipelineHeader;
+                // If the pipeline doesn't have an explicity payload capacity, then use whatever
+                // will fit inside the MTU (considering protocol and pipeline overhead). If there is
+                // an explicity pipeline payload capacity we use that directly. Right now only
+                // fragmented pipelines have an explicity capacity, and we want users to be able to
+                // rely on this configured value.
+                var payloadCapacity = pipelinePayloadCapacity == 0
+                    ? NetworkParameterConstants.MTU - protocolOverhead - pipelineHeader
+                    : pipelinePayloadCapacity;
 
+                // Total capacity is the full size of the buffer we'll allocate. Without an explicit
+                // pipeline payload capacity, this is the MTU. Otherwise it's the pipeline payload
+                // capacity plus whatever overhead we need to transmit the packet.
+                var totalCapacity = pipelinePayloadCapacity == 0
+                    ? NetworkParameterConstants.MTU
+                    : pipelinePayloadCapacity + protocolOverhead + pipelineHeader;
+
+                // Check if we can accomodate the user's required payload size.
                 if (payloadCapacity < requiredPayloadSize)
+                {
                     return (int)Error.StatusCode.NetworkPacketOverflow;
+                }
+
+                // Allocate less memory if user doesn't require our full capacity.
+                if (requiredPayloadSize > 0 && payloadCapacity > requiredPayloadSize)
+                {
+                    var extraCapacity = payloadCapacity - requiredPayloadSize;
+                    payloadCapacity -= extraCapacity;
+                    totalCapacity -= extraCapacity;
+                }
 
                 var result = 0;
-                if ((result = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, m_NetworkSendInterface.UserData, packetAllocationSize)) != 0)
+                if ((result = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, m_NetworkSendInterface.UserData, totalCapacity)) != 0)
                 {
-                    sendHandle.data = (IntPtr)UnsafeUtility.Malloc(packetAllocationSize, 8, Allocator.Temp);
-                    sendHandle.capacity = packetAllocationSize;
+                    sendHandle.data = (IntPtr)UnsafeUtility.Malloc(totalCapacity, 8, Allocator.Temp);
+                    sendHandle.capacity = totalCapacity;
                     sendHandle.id = 0;
                     sendHandle.size = 0;
                     sendHandle.flags = SendHandleFlags.AllocatedByDriver;
                 }
 
-                if (sendHandle.capacity < packetAllocationSize)
+                if (sendHandle.capacity < totalCapacity)
                     return (int)Error.StatusCode.NetworkPacketOverflow;
 
                 var slice = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>((byte*)sendHandle.data + payloadOffset + pipelineHeader, payloadCapacity, Allocator.Invalid);
@@ -620,7 +643,7 @@ namespace Unity.Networking.Transport
 
             m_NetworkSendInterface = netIf.CreateSendInterface();
 
-            m_PipelineProcessor = new NetworkPipelineProcessor(NetworkParameterConstants.MTU - m_NetworkProtocolInterface.PaddingSize, param);
+            m_PipelineProcessor = new NetworkPipelineProcessor(param);
             m_ParallelSendQueue = new NativeQueue<QueuedSendMessage>(Allocator.Persistent);
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_PendingBeginSend = new NativeArray<int>(JobsUtility.MaxJobThreadCount * JobsUtility.CacheLineSize / 4, Allocator.Persistent);

@@ -5,7 +5,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// Utility class that provides the ability to generate a SHA256 Hash
     /// </summary>
-    public static class SHA256
+    internal static class SHA256
     {
         internal unsafe struct SHA256State
         {

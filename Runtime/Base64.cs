@@ -8,7 +8,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// Utility class used to Decode a base64 string
     /// </summary>
-    public static class Base64
+    internal static class Base64
     {
         /// <summary>
         /// Decode characters representing a Base64 encoding into bytes.

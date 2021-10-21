@@ -426,7 +426,7 @@ namespace Unity.Networking.Transport
                 var p = m_Pipelines[pipeline.Id - 1];
                 return p.payloadCapacity;
             }
-            return m_MTU;
+            return 0;
         }
 
         public Concurrent ToConcurrent()
@@ -443,7 +443,6 @@ namespace Unity.Networking.Transport
                 sendBuffer = m_SendBuffer,
                 sharedBuffer = m_SharedBuffer,
                 m_timestamp = m_timestamp,
-                m_MTU = m_MTU,
             };
             return concurrent;
         }
@@ -461,7 +460,6 @@ namespace Unity.Networking.Transport
             [ReadOnly] internal NativeList<byte> sharedBuffer;
             [ReadOnly] internal NativeList<byte> sendBuffer;
             [ReadOnly] internal NativeArray<long> m_timestamp;
-            [ReadOnly] internal int m_MTU;
 
             public int SendHeaderCapacity(NetworkPipeline pipeline)
             {
@@ -476,7 +474,7 @@ namespace Unity.Networking.Transport
                     var p = m_Pipelines[pipeline.Id - 1];
                     return p.payloadCapacity;
                 }
-                return m_MTU;
+                return 0;
             }
 
             public unsafe int Send(NetworkDriver.Concurrent driver, NetworkPipeline pipeline, NetworkConnection connection, NetworkInterfaceSendHandle sendHandle, int headerSize)
@@ -724,8 +722,6 @@ namespace Unity.Networking.Transport
 
         private NativeArray<long> m_timestamp;
 
-        private int m_MTU;
-
         private const int SendSizeOffset = 0;
         private const int RecveiveSizeOffset = 1;
         private const int SharedSizeOffset = 2;
@@ -742,8 +738,7 @@ namespace Unity.Networking.Transport
             public int payloadCapacity;
         }
 
-        // The mtu parameter should already consider the protocol part, removing its header/footer
-        public unsafe NetworkPipelineProcessor(int mtu, params INetworkParameter[] param)
+        public unsafe NetworkPipelineProcessor(params INetworkParameter[] param)
         {
             NetworkPipelineParams config = default(NetworkPipelineParams);
             for (int i = 0; i < param.Length; ++i)
@@ -771,7 +766,6 @@ namespace Unity.Networking.Transport
                 staticBufferSize = (staticBufferSize + 15) & (~15);
             }
 
-            m_MTU = mtu;
             m_StageList = new NativeList<int>(16, Allocator.Persistent);
             m_AccumulatedHeaderCapacity = new NativeList<int>(16, Allocator.Persistent);
             m_Pipelines = new NativeList<PipelineImpl>(16, Allocator.Persistent);
@@ -917,8 +911,7 @@ namespace Unity.Networking.Transport
             sizePerConnection[SharedSizeOffset] = sizePerConnection[SharedSizeOffset] + sharedCap;
 
             pipeline.headerCapacity = headerCap;
-            // If no stage explicitly supports more tha MTU the pipeline as a whole does not support more than one MTU
-            pipeline.payloadCapacity = (payloadCap != 0) ? payloadCap : m_MTU;
+            pipeline.payloadCapacity = payloadCap;
 
             m_Pipelines.Add(pipeline);
             return new NetworkPipeline {Id = m_Pipelines.Length};

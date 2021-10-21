@@ -230,7 +230,7 @@ namespace Unity.Networking.Transport.Relay
         public NetworkProtocol CreateProtocolInterface()
         {
             return new NetworkProtocol(
-                computePacketAllocationSize: new TransportFunctionPointer<NetworkProtocol.ComputePacketAllocationSizeDelegate>(ComputePacketAllocationSize),
+                computePacketOverhead: new TransportFunctionPointer<NetworkProtocol.ComputePacketOverheadDelegate>(ComputePacketOverhead),
                 processReceive: new TransportFunctionPointer<NetworkProtocol.ProcessReceiveDelegate>(ProcessReceive),
                 processSend: new TransportFunctionPointer<NetworkProtocol.ProcessSendDelegate>(ProcessSend),
                 processSendConnectionAccept: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionAcceptDelegate>(ProcessSendConnectionAccept),
@@ -247,18 +247,12 @@ namespace Unity.Networking.Transport.Relay
         }
 
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ComputePacketAllocationSizeDelegate))]
-        public static int ComputePacketAllocationSize(ref NetworkDriver.Connection connection, IntPtr userData, ref int dataCapacity, out int dataOffset)
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ComputePacketOverheadDelegate))]
+        public static int ComputePacketOverhead(ref NetworkDriver.Connection connection, out int dataOffset)
         {
-            var capacityCost = dataCapacity == 0 ? RelayMessageRelay.Length : 0;
-            var extraSize = dataCapacity == 0 ? 0 : RelayMessageRelay.Length;
-
-            var size = UnityTransportProtocol.ComputePacketAllocationSize(ref connection, userData, ref dataCapacity, out dataOffset);
-
+            var utpOverhead = UnityTransportProtocol.ComputePacketOverhead(ref connection, out dataOffset);
             dataOffset += RelayMessageRelay.Length;
-            dataCapacity -= capacityCost;
-
-            return size + extraSize;
+            return utpOverhead + RelayMessageRelay.Length;
         }
 
         [BurstCompile(DisableDirectCall = true)]
@@ -688,8 +682,6 @@ namespace Unity.Networking.Transport.Relay
             unsafe
             {
                 var relayProtocolData = (RelayProtocolData*)userData;
-
-                relayProtocolData->ServerData.ConnectionSessionId = connection.ReceiveToken;
                 relayProtocolData->ConnectionReceiveToken = connection.ReceiveToken;
 
                 // If we're not bound, either we're still binding (and we can't attempt to connect

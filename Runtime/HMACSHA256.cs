@@ -5,7 +5,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// Utility class used to compute HMACSHA256 hash
     /// </summary>
-    public static class HMACSHA256
+    internal static class HMACSHA256
     {
         /// <summary>
         /// Writes 32 bytes to result using key and message

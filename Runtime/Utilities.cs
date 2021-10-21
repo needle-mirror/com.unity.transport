@@ -9,7 +9,7 @@ namespace Unity.Networking.Transport.Utilities
     /// Each bucket has its own first and last item, and each bucket can have
     /// items pushed and popped individually.
     /// </summary>
-    public struct NativeMultiQueue<T> : IDisposable where T : unmanaged
+    internal struct NativeMultiQueue<T> : IDisposable where T : unmanaged
     {
         private NativeList<T> m_Queue;
         private NativeList<int> m_QueueHeadTail;

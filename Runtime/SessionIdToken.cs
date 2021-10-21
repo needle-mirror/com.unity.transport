@@ -5,7 +5,7 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace Unity.Networking.Transport
 {
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct SessionIdToken : IEquatable<SessionIdToken>, IComparable<SessionIdToken>
+    internal unsafe struct SessionIdToken : IEquatable<SessionIdToken>, IComparable<SessionIdToken>
     {
         public const int k_Length = 8;
         [FieldOffset(0)] public fixed byte Value[k_Length];

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Unity.Networking.Transport.Protocols
 {
-    public enum UdpCProtocol
+    internal enum UdpCProtocol
     {
         ConnectionRequest,
         ConnectionReject,
@@ -15,7 +15,7 @@ namespace Unity.Networking.Transport.Protocols
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct UdpCHeader
+    internal unsafe struct UdpCHeader
     {
         [Flags]
         public enum HeaderFlags : byte

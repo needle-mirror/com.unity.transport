@@ -1,9 +1,18 @@
 # Change log
 
+## [1.0.0-pre.7] - 2021-10-21
+
+### Changes
+* Some public APIs that should have always been internal are now internal (`Base64`, `SHA256`, `HMACSHA256`, `NetworkEventQueue`, `UdpCHeader`, `UdpCProtocol`, `SessionIdToken`, `NativeMultiQueue`).
+
+### Fixes
+* Fixed: Couldn't send a payload of the configured payload size on fragmented pipelines
+
 ## [1.0.0-pre.6] - 2021-10-14
 
 ### New features
 * Added heartbeats functionality to all protocols (enabled by default). If there's no traffic on a connection for some time, a heartbeat is automatically sent to keep the connection alive. The inactivity timeout is controlled by the new parameter `heartbeatTimeoutMS` in `NetworkConfigParameter`. Setting it to 0 disables the feature.
+
 ### Changes
 * Added `heartbeatTimeoutMS` in `NetworkConfigParameter` to support heartbeats (see above).
 * `NetworkDriver.Bind` is now synchronous when using Relay (matches behavior of other protocols).
@@ -12,12 +21,14 @@
 * MTU decreased to 1384 (from 1400) on Xbox platforms.
 * `Connect` will automatically bind the driver if not already bound. This was already done implicitly before, but now it's explicit (the `NetworkDriver.Bound` property will be true after a successful call to `Connect`).
 * Added `DataStream.ReadLong`
+
 ### Fixes
 * Fixed: Receiving a Disconnect message on DTLS would crash the receive job
 * Fixed: TLS server name might be set to nothing in Relay+DTLS, causing the handshake to fail
 * Fixed: Couldn't send large messages on fragmented pipeline if `requiredPayloadSize` was not provided to `BeginSend`
 * Fixed: DTLS handshake messages were never resent if lost
 * Fixed: Clients wouldn't honor the endpoint their were bound to
+
 ### Known issues
 * Function pointers (for instance in `BeginSend` and `EndSend`) generate GC allocations in non-Burst use cases. The issue will be fixed in the next releases
 * XboxOne(S/X) crash when using fragmentation pipeline when the size of the packet is within 100 bytes of the MTU. This will be fixed in the next release

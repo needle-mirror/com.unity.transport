@@ -19,10 +19,6 @@ namespace Unity.Networking.Transport.Relay
         /// </summary>
         public ushort Nonce;
         /// <summary>
-        /// The Session Id for the connection with the Relay Server.
-        /// </summary>
-        public SessionIdToken ConnectionSessionId;
-        /// <summary>
         /// The data that describes the client presence on the Relay Server.
         /// </summary>
         public RelayConnectionData ConnectionData;
@@ -62,7 +58,6 @@ namespace Unity.Networking.Transport.Relay
             Endpoint = endpoint;
             AllocationId = allocationId;
             Nonce = nonce;
-            ConnectionSessionId = default;
 
             IsSecure = isSecure ? (byte)1 : (byte)0;
 
@@ -102,8 +97,6 @@ namespace Unity.Networking.Transport.Relay
             HMACKey = key;
 
             IsSecure = isSecure ? (byte)1 : (byte)0;
-
-            ConnectionSessionId = default;
 
             fixed(byte* hmacPtr = HMAC)
             {

@@ -24,26 +24,26 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>The type of the event.</summary>
-        [FieldOffset(0)] public Type type;
+        [FieldOffset(0)] internal Type type;
         
         /// <summary>The pipeline on which the event was received (for Data events).</summary>
-        [FieldOffset(2)] public short pipelineId;
+        [FieldOffset(2)] internal short pipelineId;
         
         /// <summary>Internal ID of the connection.</summary>
-        [FieldOffset(4)] public int connectionId;
+        [FieldOffset(4)] internal int connectionId;
 
         /// <summary>Status of the event. Used to store the Disconnect reason.</summary>
-        [FieldOffset(8)] public int status;
+        [FieldOffset(8)] internal int status;
 
         /// <summary>Offset of the event's data in the internal data stream.</summary>
-        [FieldOffset(8)] public int offset;
+        [FieldOffset(8)] internal int offset;
         
         /// <summary>Size of the event's data.</summary>
-        [FieldOffset(12)] public int size;
+        [FieldOffset(12)] internal int size;
     }
 
     /// <summary>A queue to store <see cref="NetworkEvent"> per connection.</summary>
-    public struct NetworkEventQueue : IDisposable
+    internal struct NetworkEventQueue : IDisposable
     {
         private int MaxEvents
         {

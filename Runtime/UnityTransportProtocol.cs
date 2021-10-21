@@ -36,7 +36,7 @@ namespace Unity.Networking.Transport
         public NetworkProtocol CreateProtocolInterface()
         {
             return new NetworkProtocol(
-                computePacketAllocationSize: new TransportFunctionPointer<NetworkProtocol.ComputePacketAllocationSizeDelegate>(ComputePacketAllocationSize),
+                computePacketOverhead: new TransportFunctionPointer<NetworkProtocol.ComputePacketOverheadDelegate>(ComputePacketOverhead),
                 processReceive: new TransportFunctionPointer<NetworkProtocol.ProcessReceiveDelegate>(ProcessReceive),
                 processSend: new TransportFunctionPointer<NetworkProtocol.ProcessSendDelegate>(ProcessSend),
                 processSendConnectionAccept: new TransportFunctionPointer<NetworkProtocol.ProcessSendConnectionAcceptDelegate>(ProcessSendConnectionAccept),
@@ -53,16 +53,12 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile(DisableDirectCall = true)]
-        [MonoPInvokeCallback(typeof(NetworkProtocol.ComputePacketAllocationSizeDelegate))]
-        public static int ComputePacketAllocationSize(ref NetworkDriver.Connection connection, IntPtr userData, ref int dataCapacity, out int dataOffset)
+        [MonoPInvokeCallback(typeof(NetworkProtocol.ComputePacketOverheadDelegate))]
+        public static int ComputePacketOverhead(ref NetworkDriver.Connection connection, out int dataOffset)
         {
             dataOffset = UdpCHeader.Length;
             var footerSize = connection.DidReceiveData == 0 ? SessionIdToken.k_Length : 0;
-
-            if (dataCapacity == 0)
-                dataCapacity = NetworkParameterConstants.MTU - dataOffset - footerSize;
-
-            return dataOffset + dataCapacity + footerSize;
+            return dataOffset + footerSize;
         }
 
         [BurstCompile(DisableDirectCall = true)]

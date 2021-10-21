@@ -46,7 +46,7 @@ namespace Unity.Networking.Transport
         /// to be stored in the packet.
         /// </summary>
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate int ComputePacketAllocationSizeDelegate(ref NetworkDriver.Connection connection, IntPtr userData, ref int dataCapacity, out int payloadOffset);
+        public delegate int ComputePacketOverheadDelegate(ref NetworkDriver.Connection connection, out int payloadOffset);
 
         /// <summary>
         /// Process a receiving packet and returns a ProcessPacketCommand that will indicate to the NetworkDriver what actions
@@ -100,7 +100,7 @@ namespace Unity.Networking.Transport
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void UpdateDelegate(long updateTime, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle, IntPtr userData);
 
-        public TransportFunctionPointer<ComputePacketAllocationSizeDelegate> ComputePacketAllocationSize;
+        public TransportFunctionPointer<ComputePacketOverheadDelegate> ComputePacketOverhead;
         public TransportFunctionPointer<ProcessReceiveDelegate> ProcessReceive;
         public TransportFunctionPointer<ProcessSendDelegate> ProcessSend;
         public TransportFunctionPointer<ProcessSendConnectionAcceptDelegate> ProcessSendConnectionAccept;
@@ -136,7 +136,7 @@ namespace Unity.Networking.Transport
         public bool NeedsUpdate;
 
         public NetworkProtocol(
-            TransportFunctionPointer<ComputePacketAllocationSizeDelegate> computePacketAllocationSize,
+            TransportFunctionPointer<ComputePacketOverheadDelegate> computePacketOverhead,
             TransportFunctionPointer<ProcessReceiveDelegate> processReceive,
             TransportFunctionPointer<ProcessSendDelegate> processSend,
             TransportFunctionPointer<ProcessSendConnectionAcceptDelegate> processSendConnectionAccept,
@@ -151,7 +151,7 @@ namespace Unity.Networking.Transport
             int maxFooterSize
         )
         {
-            ComputePacketAllocationSize = computePacketAllocationSize;
+            ComputePacketOverhead = computePacketOverhead;
             ProcessReceive = processReceive;
             ProcessSend = processSend;
             ProcessSendConnectionAccept = processSendConnectionAccept;

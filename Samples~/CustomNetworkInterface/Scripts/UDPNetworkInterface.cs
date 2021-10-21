@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using AOT;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
@@ -28,7 +27,6 @@ namespace Unity.Networking.Transport
     }
 #endif
 
-    [BurstCompile]
     public struct UDPNetworkInterface : INetworkInterface
     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -142,7 +140,6 @@ namespace Unity.Networking.Transport
             m_UserData.Dispose();
         }
 
-        [BurstCompile]
         struct ReceiveJob : IJob
         {
             public NetworkPacketReceiver receiver;
@@ -260,7 +257,6 @@ namespace Unity.Networking.Transport
             };
         }
 
-        [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkSendInterface.BeginSendMessageDelegate))]
         public static unsafe int BeginSendMessage(out NetworkInterfaceSendHandle handle, IntPtr userData, int requiredPayloadSize)
         {
@@ -272,7 +268,6 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
-        [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkSendInterface.EndSendMessageDelegate))]
         public static unsafe int EndSendMessage(ref NetworkInterfaceSendHandle handle, ref NetworkInterfaceEndPoint address, IntPtr userData, ref NetworkSendQueueHandle sendQueue)
         {
@@ -284,7 +279,6 @@ namespace Unity.Networking.Transport
             return NativeBindings.network_sendmsg(*(long*)userData, &iov, 1, ref *(network_address*)addr.data, ref errorcode);
         }
 
-        [BurstCompile]
         [MonoPInvokeCallback(typeof(NetworkSendInterface.AbortSendMessageDelegate))]
         private static void AbortSendMessage(ref NetworkInterfaceSendHandle handle, IntPtr userData)
         {
