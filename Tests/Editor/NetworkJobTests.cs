@@ -26,7 +26,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void ScheduleUpdateWorks()
         {
-            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var driver = new NetworkDriver(new IPCNetworkInterface());
             var updateHandle = driver.ScheduleUpdate();
             updateHandle.Complete();
             driver.Dispose();
@@ -35,7 +35,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void ScheduleUpdateWithMissingDependencyThrowsException()
         {
-            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var driver = new NetworkDriver(new IPCNetworkInterface());
             var updateHandle = driver.ScheduleUpdate();
             Assert.Throws<InvalidOperationException>(() => { driver.ScheduleUpdate().Complete(); });
             updateHandle.Complete();
@@ -45,10 +45,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void DataStremReaderIsOnlyUsableUntilUpdate()
         {
-            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var serverDriver = new NetworkDriver(new IPCNetworkInterface());
             serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = new NetworkDriver(new IPCNetworkInterface());
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
 
@@ -86,10 +86,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void AcceptInJobWorks()
         {
-            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var serverDriver = new NetworkDriver(new IPCNetworkInterface());
             serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = new NetworkDriver(new IPCNetworkInterface());
             /*var clientToServer =*/ clientDriver.Connect(serverDriver.LocalEndPoint());
             clientDriver.ScheduleUpdate().Complete();
 
@@ -120,10 +120,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void ReceiveInJobWorks()
         {
-            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var serverDriver = new NetworkDriver(new IPCNetworkInterface());
             serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = new NetworkDriver(new IPCNetworkInterface());
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
 
@@ -164,10 +164,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void SendInJobWorks()
         {
-            var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var serverDriver = new NetworkDriver(new IPCNetworkInterface());
             serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             serverDriver.Listen();
-            var clientDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var clientDriver = new NetworkDriver(new IPCNetworkInterface());
             var clientToServer = clientDriver.Connect(serverDriver.LocalEndPoint());
             WaitForConnected(clientDriver, serverDriver, clientToServer);
             var sendJob = new SendJob {driver = clientDriver, connection = clientToServer};
@@ -203,9 +203,9 @@ namespace Unity.Networking.Transport.Tests
         public void SendReceiveInParallelJobWorks()
         {
             NativeArray<NetworkConnection> serverToClient;
-            using (var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
-            using (var clientDriver0 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
-            using (var clientDriver1 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var serverDriver = new NetworkDriver(new IPCNetworkInterface()))
+            using (var clientDriver0 = new NetworkDriver(new IPCNetworkInterface()))
+            using (var clientDriver1 = new NetworkDriver(new IPCNetworkInterface()))
             using (serverToClient = new NativeArray<NetworkConnection>(2, Allocator.Persistent))
             {
                 serverDriver.Bind(NetworkEndPoint.LoopbackIpv4);
@@ -268,17 +268,13 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void SendReceiveWithPipelineInParallelJobWorks()
         {
-            var timeoutParam = new NetworkConfigParameter
-            {
-                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
-                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                disconnectTimeoutMS = 90 * 1000,
-                maxFrameTimeMS = 16
-            };
+            var settings = new NetworkSettings();
+            settings.WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, maxFrameTimeMS: 16);
+
             NativeArray<NetworkConnection> serverToClient;
-            using (var serverDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam))
-            using (var clientDriver0 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam))
-            using (var clientDriver1 = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam))
+            using (var serverDriver = new NetworkDriver(new IPCNetworkInterface(), settings))
+            using (var clientDriver0 = new NetworkDriver(new IPCNetworkInterface(), settings))
+            using (var clientDriver1 = new NetworkDriver(new IPCNetworkInterface(), settings))
             using (serverToClient = new NativeArray<NetworkConnection>(2, Allocator.Persistent))
             {
                 var serverPipeline = serverDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
@@ -323,13 +319,14 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void ParallelSendReceiveStressTest()
         {
-            var timeoutParam = new NetworkConfigParameter
-            {
-                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
-                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                disconnectTimeoutMS = 90 * 1000,
-                maxFrameTimeMS = 16
-            };
+            var clientSettings = new NetworkSettings();
+            clientSettings.WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, maxFrameTimeMS: 16);
+
+            var serverSettings = new NetworkSettings();
+            serverSettings
+                .WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, maxFrameTimeMS: 16)
+                .WithBaselibNetworkInterfaceParameters(maximumPayloadSize: 64, receiveQueueCapacity: 250, sendQueueCapacity: 150);
+
             NativeArray<NetworkConnection> serverToClient;
             var clientDrivers = new List<NetworkDriver>();
             var clientPipelines = new List<NetworkPipeline>();
@@ -338,10 +335,10 @@ namespace Unity.Networking.Transport.Tests
             {
                 for (int i = 0; i < 250; ++i)
                 {
-                    clientDrivers.Add(TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}, timeoutParam));
+                    clientDrivers.Add(new NetworkDriver(new IPCNetworkInterface(), clientSettings));
                     clientPipelines.Add(clientDrivers[i].CreatePipeline(typeof(ReliableSequencedPipelineStage)));
                 }
-                using (var serverDriver = TestNetworkDriver.Create(new BaselibNetworkParameter {maximumPayloadSize = 64, receiveQueueCapacity = clientDrivers.Count, sendQueueCapacity = clientDrivers.Count }, timeoutParam))
+                using (var serverDriver = new NetworkDriver(new IPCNetworkInterface(), serverSettings))
                 using (serverToClient = new NativeArray<NetworkConnection>(clientDrivers.Count, Allocator.Persistent))
                 {
                     var serverPipeline = serverDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));

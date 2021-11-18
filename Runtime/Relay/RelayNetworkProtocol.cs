@@ -29,12 +29,53 @@ namespace Unity.Networking.Transport.Relay
         }
     }
 
+    public static class RelayParameterExtensions
+    {
+        /// <summary>
+        /// Sets the <see cref="RelayNetworkParameter"/> values for the <see cref="NetworkSettings"/>
+        /// </summary>
+        /// <param name="serverData"><seealso cref="RelayNetworkParameter.ServerData"/></param>
+        /// <param name="relayConnectionTimeMS"><seealso cref="RelayNetworkParameter.RelayConnectionTimeMS"/></param>
+        public static ref NetworkSettings WithRelayParameters(
+            ref this NetworkSettings settings,
+            ref RelayServerData serverData,
+            int relayConnectionTimeMS = RelayNetworkParameter.k_DefaultConnectionTimeMS
+        )
+        {
+            var parameter = new RelayNetworkParameter
+            {
+                ServerData = serverData,
+                RelayConnectionTimeMS = relayConnectionTimeMS,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="RelayNetworkParameter"/>
+        /// </summary>
+        /// <returns>Returns the <see cref="RelayNetworkParameter"/> values for the <see cref="NetworkSettings"/></returns>
+        public static RelayNetworkParameter GetRelayParameters(ref this NetworkSettings settings)
+        {
+            if (!settings.TryGet<RelayNetworkParameter>(out var parameters))
+            {
+                throw new System.InvalidOperationException($"Can't extract Relay parameters: {nameof(RelayNetworkParameter)} must be provided to the {nameof(NetworkSettings)}");
+            }
+
+            return parameters;
+        }
+    }
+
     /// <summary>
     /// Relay protocol network parementers used to connect to the Unity Relay service. This data must be provided to
     /// the <see cref="NetworkDriver.Create"/> function in order to be able to use connect to Relay.
     /// </summary>
-    public struct RelayNetworkParameter : INetworkParameter
+    public struct RelayNetworkParameter : INetworkParameter, IValidatableNetworkParameter
     {
+        internal const int k_DefaultConnectionTimeMS = 9000;
+
         /// <summary>
         /// The data that is used to describe the connection to the Relay Server.
         /// </summary>
@@ -44,6 +85,34 @@ namespace Unity.Networking.Transport.Relay
         /// to keep the connection alive.
         /// </summary>
         public int RelayConnectionTimeMS;
+
+        public unsafe bool Validate()
+        {
+            var valid = true;
+
+            if (ServerData.Endpoint == default)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(ServerData.Endpoint)} value ({ServerData.Endpoint}) must be a valid value");
+            }
+            if (ServerData.Nonce == default)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(ServerData.Nonce)} value ({ServerData.Nonce}) must be a valid value");
+            }
+            if (ServerData.AllocationId == default)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(ServerData.AllocationId)} value ({ServerData.AllocationId}) must be a valid value");
+            }
+            if (RelayConnectionTimeMS < 0)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(RelayConnectionTimeMS)} value({RelayConnectionTimeMS}) must be greater or equal to 0");
+            }
+
+            return valid;
+        }
     }
 
     [BurstCompile]
@@ -96,25 +165,10 @@ namespace Unity.Networking.Transport.Relay
 
         public IntPtr UserData;
 
-        public void Initialize(INetworkParameter[] parameters)
+        public void Initialize(NetworkSettings settings)
         {
-            if (!TryExtractParameters<RelayNetworkParameter>(out var relayConfig, parameters))
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                UnityEngine.Debug.LogWarning("No Relay Protocol configuration parameters were provided");
-#endif
-            }
-
-            var connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS;
-            if (TryExtractParameters<NetworkConfigParameter>(out var config, parameters))
-            {
-                connectTimeoutMS = config.connectTimeoutMS;
-            }
-            var relayConnectionTimeMS = 9000;
-            if (relayConfig.RelayConnectionTimeMS != 0)
-            {
-                relayConnectionTimeMS = relayConfig.RelayConnectionTimeMS;
-            }
+            var relayConfig = settings.GetRelayParameters();
+            var config = settings.GetNetworkConfigParameters();
 
 #if ENABLE_MANAGED_UNITYTLS
             if (relayConfig.ServerData.IsSecure == 1)
@@ -129,8 +183,8 @@ namespace Unity.Networking.Transport.Relay
                 {
                     ServerData = relayConfig.ServerData,
                     ConnectionState = RelayConnectionState.Unbound,
-                    ConnectTimeoutMS = connectTimeoutMS,
-                    RelayConnectionTimeMS = relayConnectionTimeMS,
+                    ConnectTimeoutMS = config.connectTimeoutMS,
+                    RelayConnectionTimeMS = relayConfig.RelayConnectionTimeMS,
                     SecureState = SecuredRelayConnectionState.Unsecure
                 };
             }
@@ -645,7 +699,7 @@ namespace Unity.Networking.Transport.Relay
         }
 
         private static unsafe void SendConnectionRequestToRelay(RelayProtocolData* relayProtocolData,
-             ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
+            ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)
         {
             var result = sendInterface.BeginSendMessage.Ptr.Invoke(
                 out var sendHandle, sendInterface.UserData, RelayMessageConnectRequest.Length);

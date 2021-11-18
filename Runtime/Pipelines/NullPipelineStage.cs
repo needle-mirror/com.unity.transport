@@ -15,13 +15,13 @@ namespace Unity.Networking.Transport
         {
             return (int)Error.StatusCode.Success;
         }
-        
+
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
         private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
         }
-        
+
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
         private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
@@ -29,14 +29,14 @@ namespace Unity.Networking.Transport
             byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
         }
-        
+
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
 
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
 
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings netParams)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -48,7 +48,7 @@ namespace Unity.Networking.Transport
                 SharedStateCapacity: 0
             );
         }
-        
+
         public int StaticSize => 0;
     }
 }

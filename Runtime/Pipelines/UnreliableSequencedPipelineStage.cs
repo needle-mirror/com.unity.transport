@@ -7,7 +7,7 @@ using Unity.Networking.Transport.Utilities;
 namespace Unity.Networking.Transport
 {
     /// <summary>
-    /// The UnreliableSequencedPipelineStage is used to send unreliable packets in order. 
+    /// The UnreliableSequencedPipelineStage is used to send unreliable packets in order.
     /// </summary>
     [BurstCompile]
     public unsafe struct UnreliableSequencedPipelineStage : INetworkPipelineStage
@@ -20,9 +20,9 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="staticInstanceBuffer">The static instance buffer</param>
         /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
-        /// <param name="netParams">The net params</param>
+        /// <param name="settings">The net params</param>
         /// <returns>The network pipeline stage</returns>
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,

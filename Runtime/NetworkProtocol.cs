@@ -10,7 +10,7 @@ namespace Unity.Networking.Transport
         /// This is call when initializing the NetworkDriver. If the protocol requires custom paramters, they can be passed
         /// to the NetworkDriver initialization.
         /// </summary>
-        void Initialize(INetworkParameter[] parameters);
+        void Initialize(NetworkSettings settings);
 
         /// <summary>
         /// Returns a burst compatible NetworkProtocol struct containing the function pointers and custom UserData for the protocol.

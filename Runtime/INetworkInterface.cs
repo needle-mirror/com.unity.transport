@@ -143,9 +143,8 @@ namespace Unity.Networking.Transport
     /// </summary>
     public struct NetworkSendQueueHandle
     {
-       
         private IntPtr handle;
-      
+
         internal static unsafe NetworkSendQueueHandle ToTempHandle(NativeQueue<QueuedSendMessage>.ParallelWriter sendQueue)
         {
             void* ptr = UnsafeUtility.Malloc(UnsafeUtility.SizeOf<NativeQueue<QueuedSendMessage>.ParallelWriter>(), UnsafeUtility.AlignOf<NativeQueue<QueuedSendMessage>.ParallelWriter>(), Allocator.Temp);
@@ -219,7 +218,7 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="param">The param</param>
         /// <returns>The int</returns>
-        int Initialize(params INetworkParameter[] param);
+        int Initialize(NetworkSettings settings);
 
         /// <summary>
         /// Schedule a ReceiveJob. This is used to read data from your supported medium and pass it to the AppendData function
@@ -266,7 +265,7 @@ namespace Unity.Networking.Transport
         /// <param name="endpoint">The endpoint</param>
         /// <returns>The int</returns>
         int CreateInterfaceEndPoint(NetworkEndPoint address, out NetworkInterfaceEndPoint endpoint);
-        
+
         /// <summary>
         /// Gets the generic end point using the specified endpoint
         /// </summary>

@@ -20,22 +20,22 @@ namespace Unity.Networking.Transport
         /// The buffer
         /// </summary>
         public byte* buffer;
-        
+
         /// <summary>
         /// The buffer with headers
         /// </summary>
         public byte* bufferWithHeaders;
-        
+
         /// <summary>
         /// The buffer length
         /// </summary>
         public int bufferLength;
-        
+
         /// <summary>
         /// The buffer with headers length
         /// </summary>
         public int bufferWithHeadersLength;
-        
+
         /// <summary>
         /// The header padding
         /// </summary>
@@ -63,7 +63,7 @@ namespace Unity.Networking.Transport
         /// The buffer
         /// </summary>
         public byte* buffer;
-        
+
         /// <summary>
         /// The buffer length
         /// </summary>
@@ -95,42 +95,42 @@ namespace Unity.Networking.Transport
         /// The static instance buffer
         /// </summary>
         public byte* staticInstanceBuffer;
-        
+
         /// <summary>
         /// The internal shared process buffer
         /// </summary>
         public byte* internalSharedProcessBuffer;
-        
+
         /// <summary>
         /// The internal process buffer
         /// </summary>
         public byte* internalProcessBuffer;
-        
+
         /// <summary>
         /// The header
         /// </summary>
         public DataStreamWriter header;
-        
+
         /// <summary>
         /// The timestamp
         /// </summary>
         public long timestamp;
-        
+
         /// <summary>
         /// The static instance buffer length
         /// </summary>
         public int staticInstanceBufferLength;
-        
+
         /// <summary>
         /// The internal shared process buffer length
         /// </summary>
         public int internalSharedProcessBufferLength;
-        
+
         /// <summary>
         /// The internal process buffer length
         /// </summary>
         public int internalProcessBufferLength;
-        
+
         /// <summary>
         /// The accumulated header capacity
         /// </summary>
@@ -149,13 +149,13 @@ namespace Unity.Networking.Transport
         /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
         /// <param name="param">The param</param>
         /// <returns>The network pipeline stage</returns>
-        NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] param);
+        NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings);
         /// <summary>
         /// Gets the value of the static size
         /// </summary>
         int StaticSize { get; }
     }
-    
+
     /// <summary>
     /// The network pipeline stage
     /// </summary>
@@ -244,12 +244,12 @@ namespace Unity.Networking.Transport
         /// Receive function pointer
         /// </summary>
         public TransportFunctionPointer<ReceiveDelegate> Receive;
-        
+
         /// <summary>
         /// Send function pointer
         /// </summary>
         public TransportFunctionPointer<SendDelegate> Send;
-        
+
         /// <summary>
         /// InitializeConnection function pointer
         /// </summary>
@@ -259,22 +259,22 @@ namespace Unity.Networking.Transport
         /// The receive capacity
         /// </summary>
         public readonly int ReceiveCapacity;
-        
+
         /// <summary>
         /// The send capacity
         /// </summary>
         public readonly int SendCapacity;
-        
+
         /// <summary>
         /// The header capacity
         /// </summary>
         public readonly int HeaderCapacity;
-        
+
         /// <summary>
         /// The shared state capacity
         /// </summary>
         public readonly int SharedStateCapacity;
-        
+
         /// <summary>
         /// The payload capacity
         /// </summary>
@@ -289,7 +289,7 @@ namespace Unity.Networking.Transport
         internal int Index;
         internal int IsValid;
     }
-    
+
     /// <summary>
     /// The network pipeline stage collection class
     /// </summary>
@@ -371,46 +371,83 @@ namespace Unity.Networking.Transport
         {
             return lhs.Id != rhs.Id;
         }
-        
+
         public override bool Equals(object compare)
         {
             return this == (NetworkPipeline)compare;
         }
-        
+
         public override int GetHashCode()
         {
             return Id;
         }
-        
+
         public bool Equals(NetworkPipeline connection)
         {
             return connection.Id == Id;
         }
     }
 
+
+    public static class NetworkPipelineParametersExtensions
+    {
+        /// <summary>
+        /// Sets the <see cref="NetworkPipelineParams"/> values for the <see cref="NetworkSettings"/>
+        /// </summary>
+        /// <param name="initialCapacity"><seealso cref="NetworkPipelineParams.initialCapacity"/></param>
+        public static ref NetworkSettings WithPipelineParameters(
+            ref this NetworkSettings settings,
+            int initialCapacity = NetworkPipelineParams.k_DefaultInitialCapacity
+        )
+        {
+            var parameter = new NetworkPipelineParams
+            {
+                initialCapacity = initialCapacity,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="NetworkPipelineParams"/>
+        /// </summary>
+        /// <returns>Returns the <see cref="NetworkPipelineParams"/> values for the <see cref="NetworkSettings"/></returns>
+        public static NetworkPipelineParams GetPipelineParameters(ref this NetworkSettings settings)
+        {
+            if (!settings.TryGet<NetworkPipelineParams>(out var parameters))
+            {
+                parameters.initialCapacity = NetworkPipelineParams.k_DefaultInitialCapacity;
+            }
+
+            return parameters;
+        }
+    }
+
     /// <summary>
     /// The network pipeline params
     /// </summary>
-    public struct NetworkPipelineParams : INetworkParameter
+    public struct NetworkPipelineParams : INetworkParameter, IValidatableNetworkParameter
     {
+        internal const int k_DefaultInitialCapacity = 0;
+
         /// <summary>
         /// The initial capacity
         /// </summary>
         public int initialCapacity;
 
-        /// <summary>
-        /// Validates the parameters using the specified params
-        /// </summary>
-        /// <param name="param">The param</param>
-        /// <exception cref="ArgumentException">Value for NetworkPipelineParams.initialCapacity must be larger then zero.</exception>
-        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        public static void ValidateParameters(params INetworkParameter[] param)
+        public bool Validate()
         {
-            foreach (var parameter in param)
+            var valid = true;
+
+            if (initialCapacity < 0)
             {
-                if (parameter is NetworkPipelineParams @params && @params.initialCapacity < 0)
-                    throw new ArgumentException($"Value for NetworkPipelineParams.initialCapacity must be larger then zero.");
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(initialCapacity)} value ({initialCapacity}) must be greater or equal to 0");
             }
+
+            return valid;
         }
     }
 
@@ -738,14 +775,9 @@ namespace Unity.Networking.Transport
             public int payloadCapacity;
         }
 
-        public unsafe NetworkPipelineProcessor(params INetworkParameter[] param)
+        public unsafe NetworkPipelineProcessor(NetworkSettings settings)
         {
-            NetworkPipelineParams config = default(NetworkPipelineParams);
-            for (int i = 0; i < param.Length; ++i)
-            {
-                if (param[i] is NetworkPipelineParams)
-                    config = (NetworkPipelineParams)param[i];
-            }
+            NetworkPipelineParams config = settings.GetPipelineParameters();
 
             int staticBufferSize = 0;
             for (int i = 0; i < NetworkPipelineStageCollection.m_stages.Count; ++i)
@@ -758,7 +790,7 @@ namespace Unity.Networking.Transport
             staticBufferSize = 0;
             for (int i = 0; i < NetworkPipelineStageCollection.m_stages.Count; ++i)
             {
-                var stageStruct = NetworkPipelineStageCollection.m_stages[i].StaticInitialize((byte*)m_StaticInstanceBuffer.GetUnsafePtr() + staticBufferSize, NetworkPipelineStageCollection.m_stages[i].StaticSize, param);
+                var stageStruct = NetworkPipelineStageCollection.m_stages[i].StaticInitialize((byte*)m_StaticInstanceBuffer.GetUnsafePtr() + staticBufferSize, NetworkPipelineStageCollection.m_stages[i].StaticSize, settings);
                 stageStruct.StaticStateStart = staticBufferSize;
                 stageStruct.StaticStateCapcity = NetworkPipelineStageCollection.m_stages[i].StaticSize;
                 m_StageCollection[i] = stageStruct;
@@ -860,6 +892,18 @@ namespace Unity.Networking.Transport
             }
         }
 
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void ValidateStages(params Type[] stages)
+        {
+            var reliableIndex = Array.IndexOf(stages, typeof(ReliableSequencedPipelineStage));
+            var fragmentedIndex = Array.IndexOf(stages, typeof(FragmentationPipelineStage));
+
+            // Check that fragmentation doesn't follow the reliability pipeline. This order is not
+            // supported since the reliability pipeline can't handle packets larger than the MTU.
+            if (reliableIndex >= 0 && fragmentedIndex >= 0 && fragmentedIndex > reliableIndex)
+                throw new InvalidOperationException("Cannot create pipeline with ReliableSequenced followed by Fragmentation stage. Should reverse their order.");
+        }
+
         /// <summary>
         /// Create a new NetworkPipeline.
         /// </summary>
@@ -872,6 +916,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (m_Pipelines.Length > 255)
                 throw new InvalidOperationException("Cannot create more than 255 pipelines on a single driver");
+            ValidateStages(stages);
 #endif
             var receiveCap = 0;
             var sharedCap = 0;
@@ -1084,7 +1129,7 @@ namespace Unity.Networking.Transport
             int resumeQStart = 0;
 
             var systemHeaderSize = driver.MaxProtocolHeaderSize();
-            
+
             var inboundBuffer = buffer;
 
             var ctx = new NetworkPipelineContext

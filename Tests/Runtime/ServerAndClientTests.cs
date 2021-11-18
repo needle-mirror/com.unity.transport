@@ -48,10 +48,12 @@ namespace Tests
 
         public void SetupServerAndClientAndConnectThem(NetworkEndPoint nep, int bufferSize, NetworkConfigParameter configParams)
         {
-            var streamParams = new NetworkDataStreamParameter { size = bufferSize };
-
             //setup server
-            server_driver = NetworkDriver.Create(streamParams, configParams);
+            var settings = new NetworkSettings();
+            settings.WithDataStreamParameters(bufferSize)
+                .AddRawParameterStruct(ref configParams);
+
+            server_driver = NetworkDriver.Create(settings);
             NetworkEndPoint server_endpoint = nep;
             server_endpoint.Port = 1337;
             var ret = server_driver.Bind(server_endpoint);
@@ -65,7 +67,7 @@ namespace Tests
             server_driver.Listen();
 
             //setup client
-            client_driver = NetworkDriver.Create(streamParams, configParams);
+            client_driver = NetworkDriver.Create(settings);
             clientToServerConnection = client_driver.Connect(server_endpoint);
 
             //update drivers
@@ -136,7 +138,7 @@ namespace Tests
 
             //setup server
             connectionToClientArray = new NativeArray<NetworkConnection>(numberOfClients, Allocator.Persistent);
-            server_driver = NetworkDriver.Create(new NetworkDataStreamParameter { size = 0 });
+            server_driver = NetworkDriver.Create();
             NetworkEndPoint server_endpoint = nep;
             server_endpoint.Port = 1337;
             server_driver.Bind(server_endpoint);
@@ -147,7 +149,7 @@ namespace Tests
 
             for (int i = 0; i < numberOfClients; i++)
             {
-                client_driversArray[i] = NetworkDriver.Create(new NetworkDataStreamParameter { size = 0 });
+                client_driversArray[i] = NetworkDriver.Create();
                 clientToServerConnectionsArray[i] = client_driversArray[i].Connect(server_endpoint);
             }
 

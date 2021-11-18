@@ -112,7 +112,7 @@ namespace Unity.Networking.Transport
             return address;
         }
 
-        public unsafe int Initialize(params INetworkParameter[] param)
+        public unsafe int Initialize(NetworkSettings settings)
         {
             NativeBindings.network_initialize();
 

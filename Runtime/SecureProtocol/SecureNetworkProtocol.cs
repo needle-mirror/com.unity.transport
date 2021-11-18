@@ -171,6 +171,105 @@ namespace Unity.Networking.Transport.TLS
         Required = 2,
     }
 
+    public static class SecureParameterExtensions
+    {
+        /// <summary>
+        /// Sets the <see cref="SecureNetworkProtocolParameter"/> values for the <see cref="NetworkSettings"/>
+        /// </summary>
+        /// <param name="pem"><seealso cref="SecureNetworkProtocolParameter.Pem"/></param>
+        /// <param name="hostname"><seealso cref="SecureNetworkProtocolParameter.Hostname"/></param>
+        /// <param name="protocol"><seealso cref="SecureNetworkProtocolParameter.Protocol"/></param>
+        /// <param name="clientAuthenticationPolicy"><seealso cref="SecureNetworkProtocolParameter.ClientAuthenticationPolicy"/></param>
+        /// <param name="sslReadTimeoutMs"><seealso cref="SecureNetworkProtocolParameter.SSLReadTimeoutMs"/></param>
+        /// <param name="sslHandshakeTimeoutMax"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMax"/></param>
+        /// <param name="sslHandshakeTimeoutMin"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMin"/></param>
+        public static ref NetworkSettings WithSecureParameters(
+            ref this NetworkSettings    settings,
+            ref FixedString4096Bytes    pem,
+            ref FixedString32Bytes      hostname,
+            SecureTransportProtocol     protocol                        = SecureTransportProtocol.DTLS,
+            SecureClientAuthPolicy      clientAuthenticationPolicy      = SecureClientAuthPolicy.Optional,
+            uint                        sslReadTimeoutMs                = 0,
+            uint                        sslHandshakeTimeoutMax          = 60000,
+            uint                        sslHandshakeTimeoutMin          = 1000
+        )
+        {
+            var parameter = new SecureNetworkProtocolParameter
+            {
+                Pem                         = pem,
+                Rsa                         = default,
+                RsaKey                      = default,
+                Hostname                    = hostname,
+                Protocol                    = protocol,
+                ClientAuthenticationPolicy  = clientAuthenticationPolicy,
+                SSLReadTimeoutMs            = sslReadTimeoutMs,
+                SSLHandshakeTimeoutMax      = sslHandshakeTimeoutMax,
+                SSLHandshakeTimeoutMin      = sslHandshakeTimeoutMin,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>
+        /// Sets the <see cref="SecureNetworkProtocolParameter"/> values for the <see cref="NetworkSettings"/>
+        /// </summary>
+        /// <param name="pem"><seealso cref="SecureNetworkProtocolParameter.Pem"/></param>
+        /// <param name="rsa"><seealso cref="SecureNetworkProtocolParameter.Rsa"/></param>
+        /// <param name="rsaKey"><seealso cref="SecureNetworkProtocolParameter.RsaKey"/></param>
+        /// <param name="hostname"><seealso cref="SecureNetworkProtocolParameter.Hostname"/></param>
+        /// <param name="protocol"><seealso cref="SecureNetworkProtocolParameter.Protocol"/></param>
+        /// <param name="clientAuthenticationPolicy"><seealso cref="SecureNetworkProtocolParameter.ClientAuthenticationPolicy"/></param>
+        /// <param name="sslReadTimeoutMs"><seealso cref="SecureNetworkProtocolParameter.SSLReadTimeoutMs"/></param>
+        /// <param name="sslHandshakeTimeoutMax"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMax"/></param>
+        /// <param name="sslHandshakeTimeoutMin"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMin"/></param>
+        public static ref NetworkSettings WithSecureParameters(
+            ref this NetworkSettings    settings,
+            ref FixedString4096Bytes    pem,
+            ref FixedString4096Bytes    rsa,
+            ref FixedString4096Bytes    rsaKey,
+            ref FixedString32Bytes      hostname,
+            SecureTransportProtocol     protocol                        = SecureTransportProtocol.DTLS,
+            SecureClientAuthPolicy      clientAuthenticationPolicy      = SecureClientAuthPolicy.Optional,
+            uint                        sslReadTimeoutMs                = 0,
+            uint                        sslHandshakeTimeoutMax          = 60000,
+            uint                        sslHandshakeTimeoutMin          = 1000
+        )
+        {
+            var parameter = new SecureNetworkProtocolParameter
+            {
+                Pem                         = pem,
+                Rsa                         = rsa,
+                RsaKey                      = rsaKey,
+                Hostname                    = hostname,
+                Protocol                    = protocol,
+                ClientAuthenticationPolicy  = clientAuthenticationPolicy,
+                SSLReadTimeoutMs            = sslReadTimeoutMs,
+                SSLHandshakeTimeoutMax      = sslHandshakeTimeoutMax,
+                SSLHandshakeTimeoutMin      = sslHandshakeTimeoutMin,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="SecureNetworkProtocolParameter"/>
+        /// </summary>
+        /// <returns>Returns the <see cref="SecureNetworkProtocolParameter"/> values for the <see cref="NetworkSettings"/></returns>
+        public static SecureNetworkProtocolParameter GetSecureParameters(ref this NetworkSettings settings)
+        {
+            if (!settings.TryGet<SecureNetworkProtocolParameter>(out var parameters))
+            {
+                throw new System.InvalidOperationException($"Can't extract Secure parameters: {nameof(SecureNetworkProtocolParameter)} must be provided to the {nameof(NetworkSettings)}");
+            }
+
+            return parameters;
+        }
+    }
+
     /// <summary>
     /// The SecureNetworkProtocolParameter are settings used to provide configuration to the underlying
     /// security implementation.
@@ -250,44 +349,32 @@ namespace Unity.Networking.Transport.TLS
             return config;
         }
 
-        public void Initialize(INetworkParameter[] parameters)
+        public void Initialize(NetworkSettings settings)
         {
             unsafe
             {
                 ManagedSecureFunctions.Initialize();
 
+                // we need Secure Transport related configs because we need the user to pass int he keys?
+                var secureConfig = settings.GetSecureParameters();
+
                 //TODO: We need to validate that you have a config that makes sense for what you are trying to do
                 // should this be something we allow for expressing in the config? like which role you are?
 
-                // we need Secure Transport related configs because we need the user to pass int he keys?
-                if (!TryExtractParameters<SecureNetworkProtocolParameter>(out var secureConfig, parameters))
-                {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    UnityEngine.Debug.LogWarning("No Secure Protocol configuration parameters were provided");
-#endif
-                    secureConfig = DefaultParameters;
-                }
-
                 // If we have baselib configs we need to make sure they are of proper size
-                if (TryExtractParameters<BaselibNetworkParameter>(out var config, parameters))
+                if (settings.TryGet<BaselibNetworkParameter>(out var baselibConfig))
                 {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
                     // TODO: We do not support fragmented messages at the moment :(
                     // and the largest packet that mbedTLS sends is 1800 which is the key
                     // exchange..
-                    if (config.maximumPayloadSize <= 2000)
+                    if (baselibConfig.maximumPayloadSize <= 2000)
                     {
                         UnityEngine.Debug.LogWarning(
                             "Secure Protocol Requires the payload size for the Baselib Interface to be at least 2000KB");
                     }
-#endif
                 }
-
-                if (secureConfig.SSLHandshakeTimeoutMin == 0)
-                    secureConfig.SSLHandshakeTimeoutMin = DefaultParameters.SSLHandshakeTimeoutMin;
-
-                if (secureConfig.SSLHandshakeTimeoutMax == 0)
-                    secureConfig.SSLHandshakeTimeoutMax = DefaultParameters.SSLHandshakeTimeoutMax;
+#endif
 
                 UserData = (IntPtr)UnsafeUtility.Malloc(UnsafeUtility.SizeOf<SecureNetworkProtocolData>(),
                     UnsafeUtility.AlignOf<SecureNetworkProtocolData>(), Allocator.Persistent);
@@ -830,7 +917,6 @@ namespace Unity.Networking.Transport.TLS
 
             return size;
         }
-
 
         private static unsafe void SendConnectionRequest(SessionIdToken token, SecureClientState secureClient,
             ref NetworkInterfaceEndPoint address, ref NetworkSendInterface sendInterface, ref NetworkSendQueueHandle queueHandle)

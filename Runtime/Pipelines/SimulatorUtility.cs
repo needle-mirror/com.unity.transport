@@ -4,6 +4,64 @@ using Random = Unity.Mathematics.Random;
 
 namespace Unity.Networking.Transport.Utilities
 {
+    public static class SimulatorStageParameterExtensions
+    {
+        /// <summary>
+        /// Sets the <see cref="SimulatorUtility.Parameters"/> values for the <see cref="NetworkSettings"/>
+        /// </summary>
+        /// <param name="maxPacketCount"><seealso cref="SimulatorUtility.Parameters.MaxPacketCount"/></param>
+        /// <param name="maxPacketSize"><seealso cref="SimulatorUtility.Parameters.MaxPacketSize"/></param>
+        /// <param name="packetDelayMs"><seealso cref="SimulatorUtility.Parameters.PacketDelayMs"/></param>
+        /// <param name="packetJitterMs"><seealso cref="SimulatorUtility.Parameters.PacketJitterMs"/></param>
+        /// <param name="packetDropInterval"><seealso cref="SimulatorUtility.Parameters.PacketDropInterval"/></param>
+        /// <param name="packetDropPercentage"><seealso cref="SimulatorUtility.Parameters.PacketDropPercentage"/></param>
+        /// <param name="fuzzFactor"><seealso cref="SimulatorUtility.Parameters.FuzzFactor"/></param>
+        /// <param name="fuzzOffset"><seealso cref="SimulatorUtility.Parameters.FuzzOffset"/></param>
+        /// <param name="randomSeed"><seealso cref="SimulatorUtility.Parameters.RandomSeed"/></param>
+        public static ref NetworkSettings WithSimulatorStageParameters(
+            ref this NetworkSettings settings,
+            int maxPacketCount,
+            int maxPacketSize,
+            int packetDelayMs = 0,
+            int packetJitterMs = 0,
+            int packetDropInterval = 0,
+            int packetDropPercentage = 0,
+            int fuzzFactor = 0,
+            int fuzzOffset = 0,
+            uint randomSeed = 0
+        )
+        {
+            var parameter = new SimulatorUtility.Parameters
+            {
+                MaxPacketCount = maxPacketCount,
+                MaxPacketSize = maxPacketSize,
+                PacketDelayMs = packetDelayMs,
+                PacketJitterMs = packetJitterMs,
+                PacketDropInterval = packetDropInterval,
+                PacketDropPercentage = packetDropPercentage,
+                FuzzFactor = fuzzFactor,
+                FuzzOffset = fuzzOffset,
+                RandomSeed = randomSeed,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="SimulatorUtility.Parameters"/>
+        /// </summary>
+        /// <returns>Returns the <see cref="SimulatorUtility.Parameters"/> values for the <see cref="NetworkSettings"/></returns>
+        public static SimulatorUtility.Parameters GetSimulatorStageParameters(ref this NetworkSettings settings)
+        {
+            // TODO: Pipelines need to store always all possible pipeline parameters, even when they are not used.
+            // That means that we always need to provide a parameter for every pipeline.
+            settings.TryGet<SimulatorUtility.Parameters>(out var parameters);
+            return parameters;
+        }
+    }
+
     public struct SimulatorUtility
     {
         private int m_PacketCount;

@@ -14,6 +14,42 @@ namespace Unity.Networking.Transport.Utilities
         public uint LastAckMask;
     }
 
+    public static class ReliableStageParameterExtensions
+    {
+        /// <summary>
+        /// Sets the <see cref="ReliableUtility.Parameters"/> values for the <see cref="NetworkSettings"/>
+        /// </summary>
+        /// <param name="windowSize"><seealso cref="ReliableUtility.Parameters.WindowSize"/></param>
+        public static ref NetworkSettings WithReliableStageParameters(
+            ref this NetworkSettings settings,
+            int windowSize = ReliableUtility.ParameterConstants.WindowSize
+        )
+        {
+            var parameter = new ReliableUtility.Parameters
+            {
+                WindowSize = windowSize,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="ReliableUtility.Parameters"/>
+        /// </summary>
+        /// <returns>Returns the <see cref="ReliableUtility.Parameters"/> values for the <see cref="NetworkSettings"/></returns>
+        public static ReliableUtility.Parameters GetReliableStageParameters(ref this NetworkSettings settings)
+        {
+            if (!settings.TryGet<ReliableUtility.Parameters>(out var parameters))
+            {
+                parameters.WindowSize = ReliableUtility.ParameterConstants.WindowSize;
+            }
+
+            return parameters;
+        }
+    }
+
     public struct ReliableUtility
     {
         public struct Statistics
@@ -96,9 +132,22 @@ namespace Unity.Networking.Transport.Utilities
             public long PreviousTimestamp;
         }
 
-        public struct Parameters : INetworkParameter
+        public struct Parameters : INetworkParameter, IValidatableNetworkParameter
         {
             public int WindowSize;
+
+            public bool Validate()
+            {
+                var valid = true;
+
+                if (WindowSize < 0 || WindowSize > 32)
+                {
+                    valid = false;
+                    UnityEngine.Debug.LogError($"{nameof(WindowSize)} value ({WindowSize}) must be greater than 0 and smaller or equal to 32");
+                }
+
+                return valid;
+            }
         }
 
         public struct ParameterConstants

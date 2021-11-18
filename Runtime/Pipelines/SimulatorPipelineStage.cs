@@ -17,22 +17,17 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        
+
         /// <summary>
         /// Statics the initialize using the specified static instance buffer
         /// </summary>
         /// <param name="staticInstanceBuffer">The static instance buffer</param>
         /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
-        /// <param name="netParams">The net params</param>
+        /// <param name="settings">The net params</param>
         /// <returns>The network pipeline stage</returns>
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
-            SimulatorUtility.Parameters param = default;
-            foreach (var netParam in netParams)
-            {
-                if (netParam is SimulatorUtility.Parameters)
-                    param = (SimulatorUtility.Parameters)netParam;
-            }
+            SimulatorUtility.Parameters param = settings.GetSimulatorStageParameters();
 
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<SimulatorUtility.Parameters>());
 
@@ -139,16 +134,11 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="staticInstanceBuffer">The static instance buffer</param>
         /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
-        /// <param name="netParams">The net params</param>
+        /// <param name="settings">The net params</param>
         /// <returns>The network pipeline stage</returns>
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
-            SimulatorUtility.Parameters param = default;
-            foreach (var netParam in netParams)
-            {
-                if (netParam is SimulatorUtility.Parameters parameters)
-                    param = parameters;
-            }
+            SimulatorUtility.Parameters param = settings.GetSimulatorStageParameters();
 
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<SimulatorUtility.Parameters>());
 

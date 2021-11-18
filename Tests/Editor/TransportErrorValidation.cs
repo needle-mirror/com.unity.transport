@@ -16,8 +16,6 @@ namespace Unity.Networking.Transport.ErrorValidation
 {
     public class TransportErrorValidation
     {
-        private const string backend = "baselib";
-
         // -- NetworkDriver ----------------------------------------------------
 
         // - NullReferenceException : If the NetworkInterface is invalid for some reason
@@ -33,9 +31,12 @@ namespace Unity.Networking.Transport.ErrorValidation
         {
             Assert.Throws<ArgumentException>(() =>
             {
-                var param = new NetworkDataStreamParameter() { size = -1 };
-                var driver = new NetworkDriver(new BaselibNetworkInterface(), param);
+                var settings = new NetworkSettings();
+                settings.WithDataStreamParameters(size: -1);
+                var driver = new NetworkDriver(new BaselibNetworkInterface(), settings);
             });
+
+            LogAssert.Expect(LogType.Error, "size value (-1) must be greater or equal to 0");
         }
 
         // -- NetworkPipeline --------------------------------------------------
@@ -44,33 +45,42 @@ namespace Unity.Networking.Transport.ErrorValidation
         [Test]
         public void Given_PiplineParametersOutsideSpecifiedRange_Throws_ArgumentException()
         {
-            var param = new NetworkPipelineParams() { initialCapacity = -1 };
             Assert.Throws<ArgumentException>(() =>
             {
-                var driver = new NetworkDriver(new BaselibNetworkInterface(), param);
+                var settings = new NetworkSettings();
+                settings.WithPipelineParameters(initialCapacity: -1);
+                var driver = new NetworkDriver(new BaselibNetworkInterface(), settings);
             });
+
+            LogAssert.Expect(LogType.Error, "initialCapacity value (-1) must be greater or equal to 0");
         }
 
         // -- BaselibNetworkInterface ------------------------------------------
 
         [Test]
-        public void Given_BaselibReceiveParametersOutsideSpecifiedRange_LogsWarning()
+        public void Given_BaselibReceiveParametersOutsideSpecifiedRange_Throws_ArgumentException()
         {
-            var param = new BaselibNetworkParameter() {receiveQueueCapacity = -1, sendQueueCapacity = 1};
-            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), param))
+            Assert.Throws<ArgumentException>(() =>
             {
-                LogAssert.Expect(LogType.Warning, "Value for receiveQueueCapacity must be larger then zero.");
-            }
+                var settings = new NetworkSettings();
+                settings.WithBaselibNetworkInterfaceParameters(receiveQueueCapacity: -1, sendQueueCapacity: 1);
+                var driver = new NetworkDriver(new BaselibNetworkInterface(), settings);
+            });
+
+            LogAssert.Expect(LogType.Error, "receiveQueueCapacity value (-1) must be greater than 0");
         }
 
         [Test]
-        public void Given_BaselibSendParametersOutsideSpecifiedRange_LogsWarning()
+        public void Given_BaselibSendParametersOutsideSpecifiedRange_Throws_ArgumentException()
         {
-            var param = new BaselibNetworkParameter() { sendQueueCapacity = -1 , receiveQueueCapacity = 1};
-            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), param))
+            Assert.Throws<ArgumentException>(() =>
             {
-                LogAssert.Expect(LogType.Warning, "Value for sendQueueCapacity must be larger then zero.");
-            }
+                var settings = new NetworkSettings();
+                settings.WithBaselibNetworkInterfaceParameters(receiveQueueCapacity: 1, sendQueueCapacity: -1);
+                var driver = new NetworkDriver(new BaselibNetworkInterface(), settings);
+            });
+
+            LogAssert.Expect(LogType.Error, "sendQueueCapacity value (-1) must be greater than 0");
         }
     }
 }

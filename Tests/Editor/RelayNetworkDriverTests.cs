@@ -42,8 +42,13 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void RelayNetworkDriver_Bind_Succeed()
         {
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData = server.GetRelayConnectionData(0);
+            var settings = new NetworkSettings();
+            settings.WithRelayParameters(serverData: ref serverData, relayConnectionTimeMS: 10000000);
+
+            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
             {
                 server.SetupForBind(0);
 
@@ -65,16 +70,14 @@ namespace Unity.Networking.Transport.Tests
         {
             const int k_RetryCount = 10;
 
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),
-                new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0)},
-                new NetworkConfigParameter
-                {
-                    maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                    connectTimeoutMS = 50,
-                    disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
-                    maxFrameTimeMS = 0
-                }))
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData = server.GetRelayConnectionData(0);
+            var settings = new NetworkSettings();
+            settings.WithRelayParameters(ref serverData)
+                .WithNetworkConfigParameters(connectTimeoutMS: 50);
+
+            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
             {
                 var retriesLeft = k_RetryCount;
                 server.SetupForBindRetry(k_RetryCount, () => -- retriesLeft, 0);
@@ -96,8 +99,13 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void RelayNetworkDriver_Listen_Succeed()
         {
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData = server.GetRelayConnectionData(0);
+            var settings = new NetworkSettings();
+            settings.WithRelayParameters(ref serverData, 10000000);
+
+            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
             {
                 Assert.True(server.CompleteBind(host, 0));
                 Assert.Zero(host.Listen());
@@ -107,9 +115,17 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void RelayNetworkDriver_Connect_Succeed()
         {
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
-            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(1), RelayConnectionTimeMS = 10000000 }))
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData0 = server.GetRelayConnectionData(0);
+            var serverData1 = server.GetRelayConnectionData(1);
+            var settings0 = new NetworkSettings();
+            settings0.WithRelayParameters(ref serverData0, 10000000);
+            var settings1 = new NetworkSettings();
+            settings1.WithRelayParameters(ref serverData1, 10000000);
+
+            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings0))
+            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings1))
             {
                 Assert.True(server.CompleteBind(host, 0));
                 Assert.True(server.CompleteBind(client, 1));
@@ -149,17 +165,18 @@ namespace Unity.Networking.Transport.Tests
         {
             const int k_RetryCount = 10;
 
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData0 = server.GetRelayConnectionData(0);
+            var serverData1 = server.GetRelayConnectionData(1);
+            var settings0 = new NetworkSettings();
+            var settings1 = new NetworkSettings();
+
+            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),
+                settings0.WithRelayParameters(ref serverData0, 10000000)))
             using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),
-                new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(1)},
-                new NetworkConfigParameter
-                {
-                    maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                    connectTimeoutMS = 50,
-                    disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
-                    maxFrameTimeMS = 0
-                }))
+                settings1.WithRelayParameters(ref serverData1)
+                    .WithNetworkConfigParameters(connectTimeoutMS: 50)))
             {
                 Assert.True(server.CompleteBind(host, 0));
                 Assert.True(server.CompleteBind(client, 1));
@@ -200,29 +217,36 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void RelayNetworkDriver_Disconnect_Succeed()
         {
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0) }))
-            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(),new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(1) })) {
-               Assert.True(server.CompleteConnect(host, out var connections, client));
-               var connection = connections[0];
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
 
-               server.SetupForDisconnect(1, 0);
+            var serverData0 = server.GetRelayConnectionData(0);
+            var serverData1 = server.GetRelayConnectionData(1);
+            var settings0 = new NetworkSettings();
+            var settings1 = new NetworkSettings();
 
-               Assert.AreEqual(NetworkConnection.State.Connected, client.GetConnectionState(connection.clientToHost));
-               Assert.AreEqual(NetworkConnection.State.Connected, host.GetConnectionState(connection.hostToClient));
+            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings0.WithRelayParameters(ref serverData0)))
+            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings1.WithRelayParameters(ref serverData1)))
+            {
+                Assert.True(server.CompleteConnect(host, out var connections, client));
+                var connection = connections[0];
 
-               Assert.Zero(client.Disconnect(connection.clientToHost));
+                server.SetupForDisconnect(1, 0);
 
-               RelayServerMock.WaitForCondition(() =>
-               {
-                   client.ScheduleUpdate(default).Complete();
-                   host.ScheduleUpdate(default).Complete();
+                Assert.AreEqual(NetworkConnection.State.Connected, client.GetConnectionState(connection.clientToHost));
+                Assert.AreEqual(NetworkConnection.State.Connected, host.GetConnectionState(connection.hostToClient));
 
-                   return host.GetConnectionState(connection.hostToClient) == NetworkConnection.State.Disconnected;
-               });
+                Assert.Zero(client.Disconnect(connection.clientToHost));
 
-               Assert.AreEqual(NetworkConnection.State.Disconnected, client.GetConnectionState(connection.clientToHost));
-               Assert.AreEqual(NetworkConnection.State.Disconnected, host.GetConnectionState(connection.hostToClient));
+                RelayServerMock.WaitForCondition(() =>
+                {
+                    client.ScheduleUpdate(default).Complete();
+                    host.ScheduleUpdate(default).Complete();
+
+                    return host.GetConnectionState(connection.hostToClient) == NetworkConnection.State.Disconnected;
+                });
+
+                Assert.AreEqual(NetworkConnection.State.Disconnected, client.GetConnectionState(connection.clientToHost));
+                Assert.AreEqual(NetworkConnection.State.Disconnected, host.GetConnectionState(connection.hostToClient));
             }
         }
 
@@ -231,9 +255,15 @@ namespace Unity.Networking.Transport.Tests
         {
             const int k_PayloadSize = 100;
 
-            using (var server = new RelayServerMock("127.0.0.1", m_port++))
-            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(0), RelayConnectionTimeMS = 10000000 }))
-            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), new RelayNetworkParameter { ServerData = server.GetRelayConnectionData(1), RelayConnectionTimeMS = 10000000 }))
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData0 = server.GetRelayConnectionData(0);
+            var serverData1 = server.GetRelayConnectionData(1);
+            var settings0 = new NetworkSettings();
+            var settings1 = new NetworkSettings();
+
+            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings0.WithRelayParameters(ref serverData0, 10000000)))
+            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings1.WithRelayParameters(ref serverData1, 10000000)))
             {
                 Assert.True(server.CompleteConnect(host, out var connections, client));
 

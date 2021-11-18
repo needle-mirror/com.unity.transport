@@ -15,16 +15,16 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     public struct IPCNetworkInterface : INetworkInterface
     {
-        /// <summary> 
+        /// <summary>
         /// The localendpoint
         /// </summary>
         [ReadOnly] private NativeArray<NetworkInterfaceEndPoint> m_LocalEndPoint;
-        
+
         /// <summary>
         /// Gets the value of the local end point
         /// </summary>
         public NetworkInterfaceEndPoint LocalEndPoint => m_LocalEndPoint[0];
-        
+
         /// <summary>
         /// Creates an interface end point. Only available for loopback addresses.
         /// </summary>
@@ -46,11 +46,11 @@ namespace Unity.Networking.Transport
             endpoint = IPCManager.Instance.CreateEndPoint(address.Port);
             return (int)Error.StatusCode.Success;
         }
-        
-		/// <summary>
+
+        /// <summary>
         /// Retrieves an already created endpoint with port or creates one.
         /// </summary>
-		/// <param name="endpoint">The loopback endpoint</param>
+        /// <param name="endpoint">The loopback endpoint</param>
         /// <returns>NetworkEndPoint</returns>
         public NetworkEndPoint GetGenericEndPoint(NetworkInterfaceEndPoint endpoint)
         {
@@ -58,13 +58,13 @@ namespace Unity.Networking.Transport
                 return default;
             return NetworkEndPoint.LoopbackIpv4.WithPort(port);
         }
-        
+
         /// <summary>
         /// Initializes the interface passing in optional <see cref="INetworkParameter"/>
         /// </summary>
         /// <param name="param">The param</param>
         /// <returns>The status code of the result, 0 being a success.</returns>
-        public int Initialize(params INetworkParameter[] param)
+        public int Initialize(NetworkSettings settings)
         {
             IPCManager.Instance.AddRef();
             m_LocalEndPoint = new NativeArray<NetworkInterfaceEndPoint>(1, Allocator.Persistent);
@@ -150,7 +150,7 @@ namespace Unity.Networking.Transport
                 return ipcManager.ReceiveMessageEx(localEndPoint, data, length, ref address);
             }
         }
-        
+
         /// <summary>
         /// Schedule a ReceiveJob. This is used to read data from your supported medium and pass it to the AppendData function
         /// supplied by <see cref="NetworkDriver"/>
@@ -170,7 +170,7 @@ namespace Unity.Networking.Transport
             IPCManager.ManagerAccessHandle = dep;
             return dep;
         }
-        
+
         /// <summary>
         /// Schedule a SendJob. This is used to flush send queues to your supported medium
         /// </summary>
@@ -184,7 +184,7 @@ namespace Unity.Networking.Transport
             IPCManager.ManagerAccessHandle = dep;
             return dep;
         }
-        
+
         /// <summary>
         /// Binds the medium to a specific endpoint.
         /// </summary>
@@ -201,7 +201,7 @@ namespace Unity.Networking.Transport
             m_LocalEndPoint[0] = endpoint;
             return 0;
         }
-        
+
         /// <summary>
         /// Start listening for incoming connections. This is normally a no-op for real UDP sockets.
         /// </summary>
@@ -223,7 +223,7 @@ namespace Unity.Networking.Transport
         /// Burst function pointer called if a scheduled message is aborted.
         /// </summary>
         static TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate> AbortSendMessageFunctionPointer = new TransportFunctionPointer<NetworkSendInterface.AbortSendMessageDelegate>(AbortSendMessage);
-        
+
         /// <summary>
         /// Creates the send interface
         /// </summary>

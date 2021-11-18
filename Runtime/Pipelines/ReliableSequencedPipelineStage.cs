@@ -9,7 +9,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// The ReliableSequencedPipelineStage is used to send packets reliably and retain the order in which they are sent.
     /// This PipelineStage has a hardcoded WindowSize of 32 inflight packets and will drop packets if its unable to
-    /// track them. 
+    /// track them.
     /// </summary>
     [BurstCompile]
     public unsafe struct ReliableSequencedPipelineStage : INetworkPipelineStage
@@ -17,25 +17,10 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
-            ReliableUtility.Parameters param = default;
-            foreach (var netParam in netParams)
-            {
-                if (netParam.GetType() == typeof(ReliableUtility.Parameters))
-                    param = (ReliableUtility.Parameters)netParam;
-            }
-            if (param.WindowSize == 0)
-                param = new ReliableUtility.Parameters {WindowSize = ReliableUtility.ParameterConstants.WindowSize};
-            if (param.WindowSize <= 0 || param.WindowSize > 32)
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new System.ArgumentOutOfRangeException("The reliability pipeline only supports window sizes between 0 and 32.");
-#else
-                UnityEngine.Debug.LogError("The reliability pipeline only supports window sizes between 0 and 32.");
-                param.WindowSize = 32;
-#endif
-            }
+            ReliableUtility.Parameters param = settings.GetReliableStageParameters();
+
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -44,8 +29,7 @@ namespace Unity.Networking.Transport
                 ReceiveCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 SendCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 HeaderCapacity: UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(),
-                SharedStateCapacity: ReliableUtility.SharedCapacityNeeded(param),
-                NetworkParameterConstants.MTU
+                SharedStateCapacity: ReliableUtility.SharedCapacityNeeded(param)
             );
         }
 

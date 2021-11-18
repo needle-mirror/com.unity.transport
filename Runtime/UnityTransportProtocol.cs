@@ -11,7 +11,7 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     internal struct UnityTransportProtocol : INetworkProtocol
     {
-        public void Initialize(INetworkParameter[] netParams) {}
+        public void Initialize(NetworkSettings settings) {}
         public void Dispose() {}
 
         public int Bind(INetworkInterface networkInterface, ref NetworkInterfaceEndPoint localEndPoint)

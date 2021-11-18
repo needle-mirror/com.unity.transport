@@ -25,12 +25,10 @@ public class SoakClient : IDisposable
 
     public SoakClient(double sendInterval, int packetSize, int duration)
     {
-        DriverHandle = NetworkDriver.Create(
-            new SimulatorUtility.Parameters
-            {
-                MaxPacketSize = packetSize, MaxPacketCount = 30, PacketDelayMs = 25,
-                PacketDropPercentage = 10 /*PacketDropInterval = 100*/
-            }, new ReliableUtility.Parameters {WindowSize = 32});
+        var settings = new NetworkSettings();
+        settings.WithSimulatorStageParameters(
+            maxPacketSize: packetSize, maxPacketCount: 30, packetDelayMs: 25, packetDropPercentage: 10);
+        DriverHandle = NetworkDriver.Create(settings);
         //Pipeline = DriverHandle.CreatePipeline(typeof(UnreliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
         Pipeline = DriverHandle.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
         ReliableStageId = NetworkPipelineStageCollection.GetStageId(typeof(ReliableSequencedPipelineStage));

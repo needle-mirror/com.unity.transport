@@ -14,7 +14,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -62,7 +62,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -112,7 +112,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -165,7 +165,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -217,7 +217,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -268,7 +268,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -353,7 +353,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -455,22 +455,20 @@ namespace Unity.Networking.Transport.Tests
         [SetUp]
         public void IPC_Setup()
         {
-            var timeoutParam = new NetworkConfigParameter
-            {
-                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
-                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
-                fixedFrameTimeMS = 16
-            };
-            // NOTE: MaxPacketSize should be 64 for all the tests using simulator except needs to account for header size as well (one test has 2x UdpCHeader.Length headers)
-            var simulatorParams = new SimulatorUtility.Parameters()
-            {MaxPacketSize = 64 + (2 * UdpCHeader.Length), MaxPacketCount = 30, PacketDelayMs = 100};
+            // NOTE: MaxPacketSize should be 64 for all the tests using simulator except needs to
+            // account for header size as well (one test has 2x UdpCHeader.Length headers)
+            var settings = new NetworkSettings();
+            settings
+                .WithNetworkConfigParameters(fixedFrameTimeMS: 16)
+                .WithSimulatorStageParameters(maxPacketSize: 64 + (2 * UdpCHeader.Length), maxPacketCount: 30, packetDelayMs: 100);
+
             TestNetworkPipelineStageCollection.Register();
-            m_ServerDriver = TestNetworkDriver.Create(timeoutParam, simulatorParams);
+
+            m_ServerDriver = new NetworkDriver(new IPCNetworkInterface(), settings);
             m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             m_ServerDriver.Listen();
-            m_ClientDriver = TestNetworkDriver.Create(timeoutParam, simulatorParams);
-            m_ClientDriver2 = TestNetworkDriver.Create(timeoutParam, simulatorParams);
+            m_ClientDriver = new NetworkDriver(new IPCNetworkInterface(), settings);
+            m_ClientDriver2 = new NetworkDriver(new IPCNetworkInterface(), settings);
         }
 
         [TearDown]
@@ -500,6 +498,15 @@ namespace Unity.Networking.Transport.Tests
         public void NetworkPipeline_CreatePipelineWithInvalidStageFails()
         {
             Assert.Throws<InvalidOperationException>(() => { m_ClientDriver.CreatePipeline(typeof(NetworkPipelineTest)); });
+        }
+
+        [Test]
+        public void NetworkPipeline_CreatePipelineWithFragmentationAfterReliabilityFails()
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                m_ClientDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(FragmentationPipelineStage));
+            });
         }
 
         [Test]

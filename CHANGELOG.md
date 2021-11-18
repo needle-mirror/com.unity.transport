@@ -1,5 +1,22 @@
 # Change log
 
+## [1.0.0-pre.8] - 2021-11-18
+
+### Changes
+* Creating a pipeline with `FragmentationPipelineStage` _after_ `ReliableSequencedPipelineStage` is now forbidden (will throw an exception if collections checks are enabled). That order never worked properly to begin with. The reverse order is fully supported and is the recommended way to configure a reliable pipeline with support for large packets.
+* Added `NetworkSettings` struct and API for defining network parameters. See [NetworkSettings documentation](https://docs-multiplayer.unity3d.com/transport/1.0.0/network-settings) for more information.
+* Added Roslyn Analyzers for ensuring proper extension of NetworkParameters and NetworkSettings API.
+* Update Collections package to 1.1.0
+
+### Fixes
+* Fixed: Error message when scheduling an update on an unbound `NetworkDriver` (case 1370584)
+* Fixed: `BeginSend` wouldn't return an error if the required payload size was larger than the supported payload size when close to the MTU
+* Fixed: Removed boxing in `NetworkDriver` initialization by passing `NetworkSettings` parameter instead of `INetworkParameter[]`
+* Fixed a crash on XboxOne(X/S) when using the fragmentation pipeline (case 1370473)
+
+### Upgrade guide
+* `INetworkPipelineStage` and `INetworkInterface` initialization methods now receive a `NetworkSettings` parameter instead of `INetworkParameter[]`.
+
 ## [1.0.0-pre.7] - 2021-10-21
 
 ### Changes

@@ -224,34 +224,12 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="staticInstanceBuffer">The static instance buffer</param>
         /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
-        /// <param name="netParams">The net params</param>
+        /// <param name="settings">The NetworkSettings</param>
         /// <exception cref="InvalidOperationException">Please specify a FragmentationUtility.Parameters with a PayloadCapacity greater than MTU, which is {NetworkParameterConstants.MTU}</exception>
         /// <returns>The network pipeline stage</returns>
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
-            FragmentationUtility.Parameters param = default;
-            foreach (var netParam in netParams)
-            {
-                if (netParam is FragmentationUtility.Parameters)
-                    param = (FragmentationUtility.Parameters)netParam;
-            }
-
-            var payloadCapacity = param.PayloadCapacity;
-
-            if (payloadCapacity == 0)
-                payloadCapacity = 4 * 1024;
-
-            if (payloadCapacity <= NetworkParameterConstants.MTU)
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException($"Please specify a FragmentationUtility.Parameters with a PayloadCapacity greater than MTU, which is {NetworkParameterConstants.MTU}");
-#else
-                UnityEngine.Debug.LogError($"Please a FragmentationUtility.Parameters with a PayloadCapacity greater than MTU, which is {NetworkParameterConstants.MTU}. Default to 4KB.");
-                payloadCapacity = 4 * 1024;
-#endif
-            }
-
-            param.PayloadCapacity = payloadCapacity;
+            FragmentationUtility.Parameters param = settings.GetFragmentationStageParameters();
 
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<FragmentationUtility.Parameters>());
 
@@ -259,8 +237,8 @@ namespace Unity.Networking.Transport
                 Receive: ReceiveFunctionPointer,
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
-                ReceiveCapacity: sizeof(FragContext) + payloadCapacity,
-                SendCapacity: sizeof(FragContext) + payloadCapacity,
+                ReceiveCapacity: sizeof(FragContext) + param.PayloadCapacity,
+                SendCapacity: sizeof(FragContext) + param.PayloadCapacity,
                 HeaderCapacity: FragHeaderCapacity,
                 SharedStateCapacity: 0,
                 param.PayloadCapacity

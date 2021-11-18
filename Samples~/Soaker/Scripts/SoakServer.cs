@@ -21,7 +21,7 @@ public class SoakServer : IDisposable
     public void Start()
     {
         m_Connections = new NativeList<SoakClientCtx>(1, Allocator.Persistent);
-        m_ServerDriver = NetworkDriver.Create(new ReliableUtility.Parameters { WindowSize = 32 });
+        m_ServerDriver = NetworkDriver.Create();
         //m_Pipeline = m_ServerDriver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
         m_Pipeline = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
         m_ReliableStageId = NetworkPipelineStageCollection.GetStageId(typeof(ReliableSequencedPipelineStage));

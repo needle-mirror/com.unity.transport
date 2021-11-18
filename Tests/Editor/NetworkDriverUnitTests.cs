@@ -37,13 +37,9 @@ namespace Unity.Networking.Transport.Tests
         public NetworkConnection Connection { get; internal set; }
         public List<NetworkConnection> ClientConnections;
 
-        public LocalDriverHelper(NetworkEndPoint endpoint, params INetworkParameter[] networkParams)
+        public LocalDriverHelper(NetworkEndPoint endpoint, NetworkSettings settings = default)
         {
-            if (networkParams.Length == 0)
-                m_LocalDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter
-                    {size = NetworkParameterConstants.MTU});
-            else
-                m_LocalDriver = new NetworkDriver(new IPCNetworkInterface(), networkParams);
+            m_LocalDriver = new NetworkDriver(new IPCNetworkInterface(), settings);
             m_LocalData = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Persistent);
 
             if (endpoint.IsValid)
@@ -198,23 +194,30 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void InitializeAndDestroyDriver()
         {
-            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var driver = new NetworkDriver(new IPCNetworkInterface());
             driver.Dispose();
         }
 
         [Test]
         public void BindDriverToAEndPoint()
         {
-            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var driver = new NetworkDriver(new IPCNetworkInterface());
 
             driver.Bind(NetworkEndPoint.LoopbackIpv4);
             driver.Dispose();
         }
 
         [Test]
+        public void NoErrorOnUnboundUpdate()
+        {
+            using var driver = NetworkDriver.Create();
+            driver.ScheduleUpdate().Complete();
+        }
+
+        [Test]
         public void ListenOnDriver()
         {
-            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var driver = new NetworkDriver(new IPCNetworkInterface());
 
             // Make sure we Bind before we Listen.
             driver.Bind(NetworkEndPoint.LoopbackIpv4);
@@ -227,7 +230,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void AcceptNewConnectionsOnDriver()
         {
-            var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            var driver = new NetworkDriver(new IPCNetworkInterface());
 
             // Make sure we Bind before we Listen.
             driver.Bind(NetworkEndPoint.LoopbackIpv4);
@@ -248,7 +251,7 @@ namespace Unity.Networking.Transport.Tests
         public void ConnectToARemoteEndPoint()
         {
             using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
+            using (var driver = new NetworkDriver(new IPCNetworkInterface()))
             {
                 host.Host();
 
@@ -264,7 +267,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void GetNotValidConnectionState()
         {
-            using (var driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var driver = new NetworkDriver(new IPCNetworkInterface()))
             {
                 Assert.AreEqual(NetworkConnection.State.Disconnected, driver.GetConnectionState(new NetworkConnection() {m_NetworkId = Int16.MaxValue}));
                 Assert.AreEqual(NetworkConnection.State.Disconnected, driver.GetConnectionState(new NetworkConnection() {m_NetworkId = -1}));
@@ -283,9 +286,11 @@ namespace Unity.Networking.Transport.Tests
             NetworkEvent.Type eventType = 0;
             DataStreamReader reader;
 
+            var settings = new NetworkSettings();
+            settings.WithNetworkConfigParameters(connectTimeoutMS: 15, maxConnectAttempts: 10, fixedFrameTimeMS: 10);
+
             // Tiny connect timeout for this test to be quicker
-            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64},
-                new NetworkConfigParameter {connectTimeoutMS = 15, maxConnectAttempts = 10, fixedFrameTimeMS = 10}))
+            using (var client = new NetworkDriver(new IPCNetworkInterface(), settings))
             {
                 var hostAddress = NetworkEndPoint.LoopbackIpv4.WithPort(1);
                 client.Connect(hostAddress);
@@ -322,7 +327,7 @@ namespace Unity.Networking.Transport.Tests
         public void DisconnectFromARemoteEndPoint()
         {
             using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
+            using (var driver = new NetworkDriver(new IPCNetworkInterface()))
             {
                 host.Host();
 
@@ -349,9 +354,10 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void DisconnectTimeoutOnServer()
         {
-            using (var host = new LocalDriverHelper(default(NetworkEndPoint),
-                new NetworkConfigParameter {disconnectTimeoutMS = 40, fixedFrameTimeMS = 10}))
-            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkConfigParameter {disconnectTimeoutMS = 40, fixedFrameTimeMS = 10}))
+            var settings = new NetworkSettings();
+            settings.WithNetworkConfigParameters(disconnectTimeoutMS: 40, fixedFrameTimeMS: 10);
+            using (var host = new LocalDriverHelper(default(NetworkEndPoint), settings))
+            using (var client = new NetworkDriver(new IPCNetworkInterface(), settings))
             {
                 NetworkConnection id;
                 NetworkEvent.Type popEvent = NetworkEvent.Type.Empty;
@@ -421,8 +427,11 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void DisconnectByMaxConnectionAttempts()
         {
+            var settings = new NetworkSettings();
+            settings.WithNetworkConfigParameters(maxConnectAttempts: 1, fixedFrameTimeMS: 10, connectTimeoutMS: 25);
+
             using (var host = new LocalDriverHelper(default(NetworkEndPoint)))
-            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkConfigParameter {maxConnectAttempts = 1, fixedFrameTimeMS = 10, connectTimeoutMS = 25}))
+            using (var client = new NetworkDriver(new IPCNetworkInterface(), settings))
             {
                 host.Host();
                 var popEvent = NetworkEvent.Type.Empty;
@@ -451,7 +460,7 @@ namespace Unity.Networking.Transport.Tests
             using (var host = new LocalDriverHelper(default))
             {
                 host.Host();
-                var driver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64});
+                var driver = new NetworkDriver(new IPCNetworkInterface());
 
                 // Need to be connected in order to be able to send a disconnect packet.
                 NetworkConnection connectionId = driver.Connect(host.EndPoint);
@@ -663,7 +672,6 @@ namespace Unity.Networking.Transport.Tests
             }
         }
 
-
         [Test]
         public void FillInternalBitStreamBuffer()
         {
@@ -673,8 +681,11 @@ namespace Unity.Networking.Transport.Tests
             const int k_PacketHeaderSize = UdpCHeader.Length; // The header also goes to the buffer
             const int k_PayloadSize = k_PacketSize - k_PacketHeaderSize;
 
-            using (var host = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = k_InternalBufferSize}))
-            using (var client = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
+            var hostSettings = new NetworkSettings();
+            hostSettings.WithDataStreamParameters(size: k_InternalBufferSize);
+
+            using (var host = new NetworkDriver(new IPCNetworkInterface(), hostSettings))
+            using (var client = new NetworkDriver(new IPCNetworkInterface()))
             {
                 host.Bind(NetworkEndPoint.LoopbackIpv4);
 
@@ -807,8 +818,8 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void SendAndReceiveMessage_RealNetwork()
         {
-            using (var serverDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
-            using (var clientDriver = NetworkDriver.Create(new NetworkDataStreamParameter {size = 64}))
+            using (var serverDriver = NetworkDriver.Create())
+            using (var clientDriver = NetworkDriver.Create())
             {
                 SendAndReceiveMessage(serverDriver, clientDriver);
             }
@@ -817,8 +828,8 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void SendAndReceiveMessage()
         {
-            using (var serverDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
-            using (var clientDriver = new NetworkDriver(new IPCNetworkInterface(), new NetworkDataStreamParameter {size = 64}))
+            using (var serverDriver = new NetworkDriver(new IPCNetworkInterface()))
+            using (var clientDriver = new NetworkDriver(new IPCNetworkInterface()))
             {
                 SendAndReceiveMessage(serverDriver, clientDriver);
             }

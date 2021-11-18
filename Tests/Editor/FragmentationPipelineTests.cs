@@ -14,7 +14,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             s_StaticInstanceBuffer = staticInstanceBuffer;
             *staticInstanceBuffer = 0;
@@ -76,28 +76,21 @@ namespace Unity.Networking.Transport.Tests
         public void IPC_Setup()
         {
             TempDropPacketPipelineStageCollection.Register();
-            var timeoutParam = new NetworkConfigParameter
-            {
-                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
-                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                disconnectTimeoutMS = 90 * 1000,
-                fixedFrameTimeMS = 16
-            };
-            m_ServerDriver =
-                TestNetworkDriver.Create(
-                    new NetworkDataStreamParameter {size = 0},
-                    timeoutParam,
-                    new ReliableUtility.Parameters { WindowSize = 32 },
-                    new FragmentationUtility.Parameters { PayloadCapacity = 4 * 1024 });
+
+            var serverSettings = new NetworkSettings();
+            serverSettings
+                .WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, fixedFrameTimeMS: 16)
+                .WithFragmentationStageParameters(payloadCapacity: 4 * 1024);
+            m_ServerDriver = new NetworkDriver(new IPCNetworkInterface(), serverSettings);
             m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             m_ServerDriver.Listen();
-            m_ClientDriver =
-                TestNetworkDriver.Create(
-                    new NetworkDataStreamParameter {size = 0},
-                    timeoutParam,
-                    new ReliableUtility.Parameters { WindowSize = 32 },
-                    new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, /*PacketDropInterval = 8,*/ PacketDropPercentage = 10},
-                    new FragmentationUtility.Parameters { PayloadCapacity = 4 * 1024 });
+
+            var clientSettings = new NetworkSettings();
+            clientSettings
+                .WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, fixedFrameTimeMS: 16)
+                .WithFragmentationStageParameters(payloadCapacity: 4 * 1024)
+                .WithSimulatorStageParameters(maxPacketCount: 30, maxPacketSize: 16, packetDelayMs: 0, packetDropPercentage: 10);
+            m_ClientDriver = new NetworkDriver(new IPCNetworkInterface(), clientSettings);
         }
 
         [TearDown]

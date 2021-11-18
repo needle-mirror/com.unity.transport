@@ -254,7 +254,7 @@ namespace Unity.Networking.Transport
             [NativeContainerIsAtomicWriteOnly]
             internal unsafe struct ConcurrentConnectionQueue
             {
-                [NativeDisableUnsafePtrRestriction] private UnsafeList* m_ConnectionEventHeadTail;
+                [NativeDisableUnsafePtrRestriction] private UnsafeList<int>* m_ConnectionEventHeadTail;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 private AtomicSafetyHandle m_Safety;
 #endif
@@ -264,7 +264,7 @@ namespace Unity.Networking.Transport
                     m_Safety = NativeListUnsafeUtility.GetAtomicSafetyHandle(ref queue);
                     AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
-                    m_ConnectionEventHeadTail = (UnsafeList*)NativeListUnsafeUtility.GetInternalListDataPtrUnchecked(ref queue);
+                    m_ConnectionEventHeadTail = (UnsafeList<int>*)NativeListUnsafeUtility.GetInternalListDataPtrUnchecked(ref queue);
                 }
 
                 public int Length

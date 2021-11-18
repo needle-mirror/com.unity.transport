@@ -19,10 +19,58 @@ namespace Unity.Networking.Transport
     using NetworkEndpoint = Binding.Baselib_RegisteredNetwork_Endpoint;
     using NetworkSocket = Binding.Baselib_RegisteredNetwork_Socket_UDP;
 
+    public static class BaselibNetworkParameterExtensions
+    {
+        internal const int k_defaultRxQueueSize = 64;
+        internal const int k_defaultTxQueueSize = 64;
+        internal const uint k_defaultMaximumPayloadSize = 2000;
+
+        /// <summary>
+        /// Sets the <see cref="BaselibNetworkParameter"/> values for the <see cref="NetworkSettings"/>
+        /// </summary>
+        /// <param name="receiveQueueCapacity"><seealso cref="BaselibNetworkParameter.receiveQueueCapacity"/></param>
+        /// <param name="sendQueueCapacity"><seealso cref="BaselibNetworkParameter.sendQueueCapacity"/></param>
+        /// <param name="maximumPayloadSize"><seealso cref="BaselibNetworkParameter.maximumPayloadSize"/></param>
+        public static ref NetworkSettings WithBaselibNetworkInterfaceParameters(
+            ref this NetworkSettings settings,
+            int receiveQueueCapacity    = k_defaultRxQueueSize,
+            int sendQueueCapacity       = k_defaultTxQueueSize,
+            uint maximumPayloadSize     = k_defaultMaximumPayloadSize
+        )
+        {
+            var parameter = new BaselibNetworkParameter
+            {
+                receiveQueueCapacity = receiveQueueCapacity,
+                sendQueueCapacity = sendQueueCapacity,
+                maximumPayloadSize = maximumPayloadSize,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="BaselibNetworkParameter"/>
+        /// </summary>
+        /// <returns>Returns the <see cref="BaselibNetworkParameter"/> values for the <see cref="NetworkSettings"/></returns>
+        public static BaselibNetworkParameter GetBaselibNetworkInterfaceParameters(ref this NetworkSettings settings)
+        {
+            if (!settings.TryGet<BaselibNetworkParameter>(out var baselibParameters))
+            {
+                baselibParameters.receiveQueueCapacity  = k_defaultRxQueueSize;
+                baselibParameters.sendQueueCapacity     = k_defaultTxQueueSize;
+                baselibParameters.maximumPayloadSize    = k_defaultMaximumPayloadSize;
+            }
+
+            return baselibParameters;
+        }
+    }
+
     /// <summary>
     /// Network Parameters used to set queue and payload sizes for <see cref="BaselibNetworkInterface"/>
     /// </summary>
-    public struct BaselibNetworkParameter : INetworkParameter
+    public struct BaselibNetworkParameter : INetworkParameter, IValidatableNetworkParameter
     {
         /// <summary>
         /// The maximum number of receiving packets that the <see cref="BaselibNetworkInterface"/> can process in a single update iteration.
@@ -36,6 +84,29 @@ namespace Unity.Networking.Transport
         /// The maximum payload size.
         /// </summary>
         public uint maximumPayloadSize;
+
+        public bool Validate()
+        {
+            var valid = true;
+
+            if (receiveQueueCapacity <= 0)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(receiveQueueCapacity)} value ({receiveQueueCapacity}) must be greater than 0");
+            }
+            if (sendQueueCapacity <= 0)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(sendQueueCapacity)} value ({sendQueueCapacity}) must be greater than 0");
+            }
+            if (maximumPayloadSize <= 0)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(maximumPayloadSize)} value ({maximumPayloadSize}) must be greater than 0");
+            }
+
+            return valid;
+        }
     }
 
     /// <summary>
@@ -88,8 +159,8 @@ namespace Unity.Networking.Transport
             {
                 m_PayloadSize = maxPayloadSize;
                 m_Handles = new UnsafeAtomicFreeList(capacity, Allocator.Persistent);
-                m_PayloadArray = new UnsafeBaselibNetworkArray(capacity * (int)maxPayloadSize);
-                m_EndpointArray = new UnsafeBaselibNetworkArray(capacity * (int)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
+                m_PayloadArray = new UnsafeBaselibNetworkArray(capacity, (int)maxPayloadSize);
+                m_EndpointArray = new UnsafeBaselibNetworkArray(capacity, (int)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
             }
 
             public bool IsCreated => m_Handles.IsCreated;
@@ -229,19 +300,16 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="param">An array of INetworkParameter. If there is no <see cref="BaselibNetworkParameter"/> present, the default values are used.</param>
         /// <returns>Returns 0 on succees.</returns>
-        public unsafe int Initialize(params INetworkParameter[] param)
+        public unsafe int Initialize(NetworkSettings settings)
         {
-            if (!TryExtractParameters(out configuration, param))
-            {
-                configuration = DefaultParameters;
-            }
+            configuration = settings.GetBaselibNetworkInterfaceParameters();
 
             m_Baselib = new NativeArray<BaselibData>(1, Allocator.Persistent);
             var baselib = default(BaselibData);
 
             m_PayloadsTx = new Payloads(configuration.sendQueueCapacity, configuration.maximumPayloadSize);
             m_PayloadsRx = new Payloads(configuration.receiveQueueCapacity, configuration.maximumPayloadSize);
-            m_LocalAndTempEndpoint = new UnsafeBaselibNetworkArray(2 * (int)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
+            m_LocalAndTempEndpoint = new UnsafeBaselibNetworkArray(2,  (int)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
 
             baselib.m_PayloadsTx = m_PayloadsTx;
 

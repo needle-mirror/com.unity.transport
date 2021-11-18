@@ -16,7 +16,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             s_StaticInstanceBuffer = staticInstanceBuffer;
             *staticInstanceBuffer = 1;
@@ -65,7 +65,7 @@ namespace Unity.Networking.Transport.Tests
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, INetworkParameter[] netParams)
+        public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             s_StaticInstanceBuffer = staticInstanceBuffer;
             *staticInstanceBuffer = 1;
@@ -156,7 +156,8 @@ namespace Unity.Networking.Transport.Tests
             var ep1Buffer = new NativeArray<byte>(ep1Owner.StaticSize, Allocator.Persistent);
             var ep2Buffer = new NativeArray<byte>(ep2Owner.StaticSize, Allocator.Persistent);
 
-            var paramList = new INetworkParameter[] {parameters};
+            var paramList = new NetworkSettings();
+            paramList.AddRawParameterStruct(ref parameters);
             var ep1 = ep1Owner.StaticInitialize((byte*)ep1Buffer.GetUnsafePtr(), ep1Buffer.Length, paramList);
             var ep2 = ep1Owner.StaticInitialize((byte*)ep2Buffer.GetUnsafePtr(), ep2Buffer.Length, paramList);
             ep1.InitializeConnection.Ptr.Invoke((byte*)ep1Buffer.GetUnsafePtr(), ep1Buffer.Length,
@@ -903,7 +904,7 @@ namespace Unity.Networking.Transport.Tests
             var staticBuffer = new NativeArray<byte>(reliablePipelineStage.StaticSize, Allocator.Temp);
             pipelineContext.staticInstanceBuffer = (byte*)staticBuffer.GetUnsafePtr();
             pipelineContext.staticInstanceBufferLength = staticBuffer.Length;
-            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new INetworkParameter[0]);
+            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new NetworkSettings());
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             var inboundStream = new DataStreamWriter(4, Allocator.Temp);
@@ -991,7 +992,7 @@ namespace Unity.Networking.Transport.Tests
             var staticBuffer = new NativeArray<byte>(reliablePipelineStage.StaticSize, Allocator.Temp);
             pipelineContext.staticInstanceBuffer = (byte*)staticBuffer.GetUnsafePtr();
             pipelineContext.staticInstanceBufferLength = staticBuffer.Length;
-            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new INetworkParameter[0]);
+            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new NetworkSettings());
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
@@ -1078,7 +1079,7 @@ namespace Unity.Networking.Transport.Tests
             var staticBuffer = new NativeArray<byte>(reliablePipelineStage.StaticSize, Allocator.Temp);
             pipelineContext.staticInstanceBuffer = (byte*)staticBuffer.GetUnsafePtr();
             pipelineContext.staticInstanceBufferLength = staticBuffer.Length;
-            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new INetworkParameter[0]);
+            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new NetworkSettings());
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             {
@@ -1179,7 +1180,7 @@ namespace Unity.Networking.Transport.Tests
             var staticBuffer = new NativeArray<byte>(reliablePipelineStage.StaticSize, Allocator.Temp);
             pipelineContext.staticInstanceBuffer = (byte*)staticBuffer.GetUnsafePtr();
             pipelineContext.staticInstanceBufferLength = staticBuffer.Length;
-            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new INetworkParameter[0]);
+            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new NetworkSettings());
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             pipelineContext.header = new DataStreamWriter(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(), Allocator.Temp);
@@ -1267,7 +1268,7 @@ namespace Unity.Networking.Transport.Tests
             var staticBuffer = new NativeArray<byte>(reliablePipelineStage.StaticSize, Allocator.Temp);
             pipelineContext.staticInstanceBuffer = (byte*)staticBuffer.GetUnsafeReadOnlyPtr();
             pipelineContext.staticInstanceBufferLength = staticBuffer.Length;
-            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafeReadOnlyPtr(), staticBuffer.Length, new INetworkParameter[0]);
+            var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafeReadOnlyPtr(), staticBuffer.Length, new NetworkSettings());
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
             pipelineContext.header = new DataStreamWriter(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(), Allocator.Temp);
@@ -1336,24 +1337,20 @@ namespace Unity.Networking.Transport.Tests
         public void IPC_Setup()
         {
             TempDisconnectPipelineStageCollection.Register();
-            var timeoutParam = new NetworkConfigParameter
-            {
-                connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
-                maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                disconnectTimeoutMS = 90 * 1000,
-                fixedFrameTimeMS = 16
-            };
-            m_ServerDriver =
-                TestNetworkDriver.Create(new NetworkDataStreamParameter
-                    {size = 0}, timeoutParam,
-                    new ReliableUtility.Parameters { WindowSize = 32});
+
+            var serverSettings = new NetworkSettings();
+            serverSettings.WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, fixedFrameTimeMS: 16);
+
+            var clientSettings = new NetworkSettings();
+            clientSettings
+                .WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, fixedFrameTimeMS: 16)
+                .WithSimulatorStageParameters(maxPacketCount: 30, maxPacketSize: 16, packetDelayMs: 0, packetDropPercentage: 10);
+
+            m_ServerDriver = new NetworkDriver(new IPCNetworkInterface(), serverSettings);
             m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             m_ServerDriver.Listen();
-            m_ClientDriver =
-                TestNetworkDriver.Create(new NetworkDataStreamParameter
-                    {size = 0}, timeoutParam,
-                    new ReliableUtility.Parameters { WindowSize = 32},
-                    new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, /*PacketDropInterval = 8,*/ PacketDropPercentage = 10});
+
+            m_ClientDriver = new NetworkDriver(new IPCNetworkInterface(), clientSettings);
             m_ReliableStageId = NetworkPipelineStageCollection.GetStageId(typeof(ReliableSequencedPipelineStage));
             m_SimulatorStageId = NetworkPipelineStageCollection.GetStageId(typeof(SimulatorPipelineStage));
         }
@@ -1852,18 +1849,14 @@ namespace Unity.Networking.Transport.Tests
                 disconnectTimeoutMS = 90 * 1000,
                 fixedFrameTimeMS = 16
             };
-            m_ServerDriver =
-                TestNetworkDriver.Create(new NetworkDataStreamParameter
-                    {size = 0}, timeoutParam,
-                    new ReliableUtility.Parameters { WindowSize = 32},
-                    new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropPercentage = 0});
+            var settings = new NetworkSettings();
+            settings
+                .WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, fixedFrameTimeMS: 16)
+                .WithSimulatorStageParameters(maxPacketCount: 30, maxPacketSize: 16, packetDelayMs: 0, packetDropPercentage: 0);
+            m_ServerDriver = new NetworkDriver(new IPCNetworkInterface(), settings);
             m_ServerDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             m_ServerDriver.Listen();
-            m_ClientDriver =
-                TestNetworkDriver.Create(new NetworkDataStreamParameter
-                    {size = 0}, timeoutParam,
-                    new ReliableUtility.Parameters { WindowSize = 32},
-                    new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropPercentage = 0});
+            m_ClientDriver = new NetworkDriver(new IPCNetworkInterface(), settings);
 
             var clientPipe = m_ClientDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
             var serverPipe = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
@@ -1935,11 +1928,11 @@ namespace Unity.Networking.Transport.Tests
                 disconnectTimeoutMS = 90 * 1000,
                 fixedFrameTimeMS = 16
             };
-            m_ClientDriver =
-                TestNetworkDriver.Create(new NetworkDataStreamParameter
-                    {size = 0}, timeoutParam,
-                    new ReliableUtility.Parameters { WindowSize = 32},
-                    new SimulatorUtility.Parameters { MaxPacketCount = 30, MaxPacketSize = 16, PacketDelayMs = 0, PacketDropInterval = 10});
+            var settings = new NetworkSettings();
+            settings
+                .WithNetworkConfigParameters(disconnectTimeoutMS: 90 * 1000, fixedFrameTimeMS: 16)
+                .WithSimulatorStageParameters(maxPacketCount: 30, maxPacketSize: 16, packetDelayMs: 0, packetDropInterval: 10);
+            m_ClientDriver = new NetworkDriver(new IPCNetworkInterface(), settings);
 
             var clientPipe = m_ClientDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
             var serverPipe = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));

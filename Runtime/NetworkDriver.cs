@@ -133,7 +133,7 @@ namespace Unity.Networking.Transport
 
                 return headerSize;
             }
-            
+
             internal int MaxProtocolHeaderSize()
             {
                 return m_NetworkProtocolInterface.PaddingSize;
@@ -438,14 +438,14 @@ namespace Unity.Networking.Transport
             {
                 return lhs.Id != rhs.Id || lhs.Version != rhs.Version || lhs.Address != rhs.Address;
             }
-            
+
             public override bool Equals(object compare)
             {
                 return this == (Connection)compare;
             }
 
             /// <summary>
-            /// Null Connection 
+            /// Null Connection
             /// </summary>
             public static Connection Null => new Connection() {Id = 0, Version = 0};
 
@@ -481,7 +481,10 @@ namespace Unity.Networking.Transport
         NativeQueue<int> m_FreeList;
         NativeQueue<int> m_NetworkAcceptQueue;
         NativeList<Connection> m_ConnectionList;
+
+        [NativeDisableContainerSafetyRestriction]
         NativeArray<int> m_InternalState;
+
         NativeQueue<int> m_PendingFree;
         NativeArray<int> m_ErrorCodes;
 
@@ -498,32 +501,10 @@ namespace Unity.Networking.Transport
             public NetworkDataStreamParameter dataStream;
             public NetworkConfigParameter config;
 
-            public Parameters(params INetworkParameter[] param)
+            public Parameters(NetworkSettings settings)
             {
-                config = new NetworkConfigParameter
-                {
-                    maxConnectAttempts = NetworkParameterConstants.MaxConnectAttempts,
-                    connectTimeoutMS = NetworkParameterConstants.ConnectTimeoutMS,
-                    disconnectTimeoutMS = NetworkParameterConstants.DisconnectTimeoutMS,
-                    heartbeatTimeoutMS = NetworkParameterConstants.HeartbeatTimeoutMS,
-                    maxFrameTimeMS = 0
-                };
-                dataStream = default;
-
-                for (int i = 0; i < param.Length; ++i)
-                {
-                    if (param[i] is NetworkConfigParameter)
-                        config = (NetworkConfigParameter)param[i];
-                    else if (param[i] is NetworkDataStreamParameter)
-                        dataStream = (NetworkDataStreamParameter)param[i];
-                }
-            }
-
-            [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-            public static void ValidateParameters(Parameters param)
-            {
-                if (param.dataStream.size < 0)
-                    throw new ArgumentException($"Value for NetworkDataStreamParameter.size must be larger then zero.");
+                dataStream = settings.GetDataStreamParameters();
+                config = settings.GetNetworkConfigParameters();
             }
         }
 #pragma warning restore 649
@@ -538,7 +519,7 @@ namespace Unity.Networking.Transport
         private long m_UpdateTimeAdjustment;
 
         private Unity.Mathematics.Random m_Rand;
-        
+
         /// <summary>
         /// Gets the value of the last update time
         /// </summary>
@@ -549,12 +530,12 @@ namespace Unity.Networking.Transport
         private const int InternalStateBound = 1;
 
         /// <summary>
-        /// Gets or sets if the driver is Listening 
+        /// Gets or sets if the driver is Listening
         /// </summary>
         public bool Listening
         {
             get { return (m_InternalState[InternalStateListening] != 0); }
-            internal set { m_InternalState[InternalStateListening] = value ? 1 : 0; }
+            private set { m_InternalState[InternalStateListening] = value ? 1 : 0; }
         }
 
         public bool Bound => m_InternalState[InternalStateBound] == 1;
@@ -567,14 +548,35 @@ namespace Unity.Networking.Transport
         /// the <see cref="NetworkDataStreamParameter"/> and the <see cref="NetworkConfigParameter"/>.
         /// </param>
         /// <exception cref="InvalidOperationException"></exception>
-        public static NetworkDriver Create(params INetworkParameter[] param)
+        public static NetworkDriver Create(NetworkSettings settings)
         {
 #if UNITY_WEBGL
-            return new NetworkDriver(new IPCNetworkInterface(), param);
+            return new NetworkDriver(new IPCNetworkInterface(), settings);
 #else
-            return new NetworkDriver(new BaselibNetworkInterface(), param);
+            return new NetworkDriver(new BaselibNetworkInterface(), settings);
 #endif
         }
+
+        public static NetworkDriver Create() => Create(new NetworkSettings());
+
+        public NetworkDriver(INetworkInterface netIf)
+            : this(netIf, new NetworkSettings()) {}
+
+#if !UNITY_DOTSRUNTIME
+        [Obsolete("Use Create(NetworkSettings) instead", false)]
+        public static NetworkDriver Create(params INetworkParameter[] param)
+        {
+            return Create(NetworkSettings.FromArray(param));
+        }
+
+        [Obsolete("Use NetworkDriver(INetworkInterface, NetworkSettings) instead", false)]
+        public NetworkDriver(INetworkInterface netIf, params INetworkParameter[] param)
+            : this(netIf, NetworkSettings.FromArray(param)) {}
+
+        [Obsolete("Use NetworkDriver(INetworkInterface, NetworkSettings) instead", false)]
+        internal NetworkDriver(INetworkInterface netIf, INetworkProtocol netProtocol, params INetworkParameter[] param)
+            : this(netIf, netProtocol, NetworkSettings.FromArray(param)) {}
+#endif
 
         private static int InsertInAvailableIndex<T>(List<T> list, T element)
         {
@@ -592,23 +594,19 @@ namespace Unity.Networking.Transport
             return n;
         }
 
-        private static INetworkProtocol GetProtocolForParameters(INetworkParameter[] parameters)
+        private static INetworkProtocol GetProtocolForParameters(NetworkSettings settings)
         {
-            foreach (var parameter in parameters)
-            {
-                if (parameter is Unity.Networking.Transport.Relay.RelayNetworkParameter)
-                    return new Relay.RelayNetworkProtocol();
+            if (settings.TryGet<Relay.RelayNetworkParameter>(out _))
+                return new Relay.RelayNetworkProtocol();
 #if ENABLE_MANAGED_UNITYTLS
-                if (parameter is TLS.SecureNetworkProtocolParameter)
-                    return new TLS.SecureNetworkProtocol();
+            if (settings.TryGet<TLS.SecureNetworkProtocolParameter>(out _))
+                return new TLS.SecureNetworkProtocol();
 #endif
-            }
             return new UnityTransportProtocol();
         }
-        
-        public NetworkDriver(INetworkInterface netIf, params INetworkParameter[] param) : this(netIf, GetProtocolForParameters(param), param)
-        {
-        }
+
+        public NetworkDriver(INetworkInterface netIf, NetworkSettings settings)
+            : this(netIf, GetProtocolForParameters(settings), settings) {}
 
         /// <summary>
         /// Constructor for NetworkDriver.
@@ -619,19 +617,17 @@ namespace Unity.Networking.Transport
         /// </param>
         /// <exception cref="ArgumentException">Thrown if the value for NetworkDataStreamParameter.size is smaller then zero.</exception>
         /// <exception cref="InvalidOperationException">Thrown if network interface couldn't be initialized.</exception>
-        internal NetworkDriver(INetworkInterface netIf, INetworkProtocol netProtocol, params INetworkParameter[] param)
+        internal NetworkDriver(INetworkInterface netIf, INetworkProtocol netProtocol, NetworkSettings settings)
         {
-            m_NetworkParams = new Parameters(param);
-            Parameters.ValidateParameters(m_NetworkParams);
-            NetworkPipelineParams.ValidateParameters(param);
+            m_NetworkParams = new Parameters(settings);
 
-            netProtocol.Initialize(param);
+            netProtocol.Initialize(settings);
             m_NetworkProtocolIndex = InsertInAvailableIndex(s_NetworkProtocols, netProtocol);
             m_NetworkProtocolInterface = netProtocol.CreateProtocolInterface();
 
             m_NetworkInterfaceIndex = InsertInAvailableIndex(s_NetworkInterfaces, netIf);
 
-            var result = netIf.Initialize(param);
+            var result = netIf.Initialize(settings);
             if (0 != result)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -643,7 +639,7 @@ namespace Unity.Networking.Transport
 
             m_NetworkSendInterface = netIf.CreateSendInterface();
 
-            m_PipelineProcessor = new NetworkPipelineProcessor(param);
+            m_PipelineProcessor = new NetworkPipelineProcessor(settings);
             m_ParallelSendQueue = new NativeQueue<QueuedSendMessage>(Allocator.Persistent);
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_PendingBeginSend = new NativeArray<int>(JobsUtility.MaxJobThreadCount * JobsUtility.CacheLineSize / 4, Allocator.Persistent);
@@ -817,23 +813,34 @@ namespace Unity.Networking.Transport
         {
             UpdateLastUpdateTime();
 
-            var job = new UpdateJob {driver = this};
-            var clearJob = new ClearEventQueue
+            var updateJob = new UpdateJob {driver = this};
+
+            // Clearing the event queue and receiving/sending data only makes sense if we're bound.
+            if (Bound)
             {
-                dataStream = m_DataStream,
-                dataStreamHead = m_DataStreamHead,
-                eventQueue = m_EventQueue,
+                var clearJob = new ClearEventQueue
+                {
+                    dataStream = m_DataStream,
+                    dataStreamHead = m_DataStreamHead,
+                    eventQueue = m_EventQueue,
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                pendingSend = m_PendingBeginSend,
-                connectionList = m_ConnectionList,
-                internalState = m_InternalState
+                    pendingSend = m_PendingBeginSend,
+                    connectionList = m_ConnectionList,
+                    internalState = m_InternalState
 #endif
-            };
-            var handle = clearJob.Schedule(dep);
-            handle = job.Schedule(handle);
-            handle = s_NetworkInterfaces[m_NetworkInterfaceIndex].ScheduleReceive(new NetworkPacketReceiver {m_Driver = this}, handle);
-            handle = s_NetworkInterfaces[m_NetworkInterfaceIndex].ScheduleSend(m_ParallelSendQueue, handle);
-            return handle;
+                };
+
+                var handle = clearJob.Schedule(dep);
+                handle = updateJob.Schedule(handle);
+                handle = s_NetworkInterfaces[m_NetworkInterfaceIndex].ScheduleReceive(new NetworkPacketReceiver {m_Driver = this}, handle);
+                handle = s_NetworkInterfaces[m_NetworkInterfaceIndex].ScheduleSend(m_ParallelSendQueue, handle);
+
+                return handle;
+            }
+            else
+            {
+                return updateJob.Schedule(dep);
+            }
         }
 
         /// <summary>
@@ -1111,7 +1118,7 @@ namespace Unity.Networking.Transport
                 return NetworkConnection.State.Disconnected;
             return connection.State;
         }
-        
+
         public NetworkEndPoint RemoteEndPoint(NetworkConnection id)
         {
             if (id == default)

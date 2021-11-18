@@ -30,8 +30,8 @@ namespace Unity.Networking.Transport.Tests
         [SetUp]
         public void IPC_Setup()
         {
-            Driver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
-            RemoteDriver = TestNetworkDriver.Create(new NetworkDataStreamParameter {size = 64});
+            Driver = new NetworkDriver(new IPCNetworkInterface());
+            RemoteDriver = new NetworkDriver(new IPCNetworkInterface());
 
             RemoteDriver.Bind(NetworkEndPoint.LoopbackIpv4);
             RemoteDriver.Listen();
