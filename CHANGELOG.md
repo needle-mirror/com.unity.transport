@@ -1,5 +1,13 @@
 # Change log
 
+## [1.0.0-pre.9] - 2021-11-26
+
+### Changes
+* Disabled Roslyn Analyzers provisionally
+
+### Fixes
+* Fixed: Compiler error due to Roslyn Analyzers causing a wrong compiler argument
+
 ## [1.0.0-pre.8] - 2021-11-18
 
 ### Changes
