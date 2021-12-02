@@ -1,7 +1,9 @@
 {
     "name": "Unity.Networking.Transport.PlayTests",
-    "references": [        
-        "Unity.Networking.Transport"
+    "references": [
+        "Unity.Collections",
+        "Unity.Networking.Transport",
+        "Unity.Burst"
     ],
     "optionalUnityReferences": [
         "TestAssemblies"

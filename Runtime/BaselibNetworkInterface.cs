@@ -350,23 +350,38 @@ namespace Unity.Networking.Transport
             public NativeArray<BaselibData> Baselib;
             public unsafe void Execute()
             {
+                // We process the results in batches because if we allocate a big number of results here,
+                // it can cause a stack overflow
+                const uint k_ResultsBufferSize = 64;
+                const int  k_MaxIterations = 500;
+                var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[(int)k_ResultsBufferSize];
+
                 var error = default(ErrorState);
                 var pollCount = 0;
-                var status = default(Binding.Baselib_RegisteredNetwork_ProcessStatus);
-                var retryCount = 1000;
+                var pendingSend = Tx.InUse > 0;
+                var maxIterations = k_MaxIterations;
 
-                while (Tx.InUse > 0 && retryCount-- > 0)
+                while (pendingSend)
                 {
-                    while ((status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, &error)) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending
-                           && pollCount++ < Tx.Capacity) {}
-
-                    int count;
-                    // InUse is not thread safe, needs to be called in a single threaded flush job
-                    var inFlight = Tx.InUse;
-                    if (inFlight > 0)
+                    // We ensure we never process more than the actual capacity to prevent unexpected deadlocks
+                    while (pollCount++ < Tx.Capacity)
                     {
-                        var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[inFlight];
-                        count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, (uint)inFlight, &error);
+                        if (Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, &error) != Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
+                            break;
+                    }
+
+                    // At this point all the packets have been processed or the network can't send a packet right now
+                    // so we yield execution to give the opportunity to other threads to process as the potential network
+                    // pressure releases.
+                    Binding.Baselib_Thread_YieldExecution();
+                    // Next step we wait until processing sends complete.
+                    // The timeout was arbitrarily chosen as it seems to be enough for sending 5000 packets in our tests.
+                    Binding.Baselib_RegisteredNetwork_Socket_UDP_WaitForCompletedSend(Baselib[0].m_Socket, 20, &error);
+
+                    var count = 0;
+                    var resultBatchesCount = Tx.Capacity / k_ResultsBufferSize + 1;
+                    while ((count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, k_ResultsBufferSize, &error)) > 0)
+                    {
                         if (error.code != ErrorCode.Success)
                         {
                             // copy recv flow? e.g. pass
@@ -378,13 +393,24 @@ namespace Unity.Networking.Transport
                             // pass through a new NetworkPacketSender.?
                             Tx.ReleaseHandle((int)results[i].requestUserdata - 1);
                         }
+
+                        if (resultBatchesCount-- < 0) // Deadlock guard
+                            break;
                     }
+
+                    // We set the pollCount to zero that way we try and process any previous packets that may have failed because
+                    // internal buffers were full via a EAGAIN error which we don't actually know happened but assume it may have happen
+                    pollCount = 0;
+
+                    // InUse is not thread safe, needs to be called in a single threaded flush job
+                    // We ensure we never process more than the actual capacity to prevent unexpected deadlocks
+                    pendingSend = Tx.InUse > 0 && maxIterations-- > 0;
                 }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (Tx.InUse > 0)
                 {
-                    UnityEngine.Debug.LogWarning("There are pending send packets after the baselib process send");
+                    UnityEngine.Debug.LogWarning(string.Format("There are {0} pending send packets after the baselib process send", Tx.InUse));
                 }
 #endif
             }

@@ -560,12 +560,14 @@ namespace Unity.Networking.Transport
                 var connectionId = connection.m_NetworkId;
                 var systemHeaderSize = driver.MaxProtocolHeaderSize();
 
+                // If the call comes from update, the sendHandle is set to default.
+                bool inUpdateCall = sendHandle.data == IntPtr.Zero;
+
                 var resumeQ = new NativeList<int>(16, Allocator.Temp);
                 int resumeQStart = 0;
 
-                // If the call comes from update, the sendHandle is set to default.
                 var inboundBuffer = default(InboundSendBuffer);
-                if (sendHandle.data != IntPtr.Zero)
+                if (!inUpdateCall)
                 {
                     inboundBuffer.bufferWithHeaders = (byte*)sendHandle.data + initialHeaderSize + 1;
                     inboundBuffer.bufferWithHeadersLength = sendHandle.size - initialHeaderSize - 1;
@@ -625,7 +627,7 @@ namespace Unity.Networking.Transport
 
                         if (inboundBuffer.bufferWithHeadersLength == 0)
                         {
-                            if ((requests & NetworkPipelineStage.Requests.Error) != 0 && sendHandle.data != IntPtr.Zero)
+                            if ((requests & NetworkPipelineStage.Requests.Error) != 0 && !inUpdateCall)
                                 retval = sendResult;
                             break;
                         }

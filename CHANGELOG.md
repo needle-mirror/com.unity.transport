@@ -1,5 +1,11 @@
 # Change log
 
+## [1.0.0-pre.10] - 2021-12-02
+
+### Fixes
+* On fragmented and reliable pipelines, sending a large packet when the reliable window was almost full could result in the packet being lost.
+* Fixed "pending sends" warning being emitted very often when sending to remote hosts.
+
 ## [1.0.0-pre.9] - 2021-11-26
 
 ### Changes

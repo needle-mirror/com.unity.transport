@@ -775,7 +775,7 @@ namespace Unity.Networking.Transport
         private SessionIdToken GenerateRandomSessionIdToken(ref SessionIdToken token)
         {
             //SessionIdToken token = new SessionIdToken();
-            for (uint i = 0; i <= SessionIdToken.k_Length; ++i)
+            for (uint i = 0; i < SessionIdToken.k_Length; ++i)
             {
                 unsafe
                 {
