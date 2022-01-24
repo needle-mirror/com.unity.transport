@@ -8,7 +8,7 @@ using Unity.Networking.Transport;
 using Unity.Networking.Transport.Protocols;
 using Unity.Burst;
 
-namespace Tests
+namespace Unity.Networking.Transport.Tests
 {
     [TestFixture]
     public class ServerAndClientTests
@@ -373,8 +373,8 @@ namespace Tests
         [UnityTest]
         public IEnumerator ServerAndClient_DisconnectTimeout_ReachedOnCommLoss()
         {
-            const int DisconnectTimeout = 200;
-            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+            const int DisconnectTimeout = 1000;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.15f;
 
             var config = defaultConfigParams;
             config.disconnectTimeoutMS = DisconnectTimeout;
@@ -407,8 +407,8 @@ namespace Tests
         [UnityTest]
         public IEnumerator ServerAndClient_DisconnectTimeout_ReachedWithDisabledHeartbeats()
         {
-            const int DisconnectTimeout = 200;
-            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+            const int DisconnectTimeout = 1000;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.15f;
 
             var config = defaultConfigParams;
             config.disconnectTimeoutMS = DisconnectTimeout;
@@ -442,8 +442,8 @@ namespace Tests
         [UnityTest]
         public IEnumerator ServerAndClient_DisconnectTimeout_ReachedWithInfrequentHeartbeats()
         {
-            const int DisconnectTimeout = 200;
-            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+            const int DisconnectTimeout = 1000;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.15f;
 
             var config = defaultConfigParams;
             config.disconnectTimeoutMS = DisconnectTimeout;
@@ -477,8 +477,8 @@ namespace Tests
         [UnityTest]
         public IEnumerator ServerAndClient_DisconnectTimeout_NotReachedWithFrequentHeartbeats()
         {
-            const int DisconnectTimeout = 200;
-            const float WaitTime = (DisconnectTimeout / 1000f) + 0.05f;
+            const int DisconnectTimeout = 1000;
+            const float WaitTime = (DisconnectTimeout / 1000f) + 0.15f;
 
             var config = defaultConfigParams;
             config.disconnectTimeoutMS = DisconnectTimeout;

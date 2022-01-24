@@ -1,10 +1,28 @@
 # Change log
 
+## [1.0.0-pre.12] - 2022-01-24
+
+### Fixes
+* Clean up changelog for package promotion.
+
+## [1.0.0-pre.11] - 2022-01-24
+
+### Changes
+* Updated to Burst 1.6.4.
+* Updated to Mathematics 1.2.5.
+* Documentation has been moved to the [offical multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/1.0.0/introduction).
+
+### Fixes
+* Fixed a division by zero in `SimulatorPipelineStage` when `PacketDropInterval` is set.
+* Don't warn when receiving repeated connection accept messages (case 1370591).
+* Fixed an exception when receiving a data message from an unknown connection.
+
 ## [1.0.0-pre.10] - 2021-12-02
 
 ### Fixes
 * On fragmented and reliable pipelines, sending a large packet when the reliable window was almost full could result in the packet being lost.
 * Fixed "pending sends" warning being emitted very often when sending to remote hosts.
+* Revert decrease of MTU to 1384 on Xbox platforms (now back at 1400). It would cause issues for cross-platform communications.
 
 ## [1.0.0-pre.9] - 2021-11-26
 

@@ -49,12 +49,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// The max size of any packet that can be sent
         /// </summary>
-#if (UNITY_GAMECORE || UNITY_XBOXONE)
-        // Microsoft recommends all Xbox games should be made to work with a MTU of 1384.
-        public const int MTU = 1384;
-#else
         public const int MTU = 1400;
-#endif
     }
 
     /// <summary>

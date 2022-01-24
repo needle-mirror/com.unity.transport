@@ -1,41 +1,44 @@
 using Unity.Entities;
 using Unity.Networking.Transport;
 
-[UpdateInGroup(typeof(SimulationSystemGroup))]
-public partial class PingServerSystem : SystemBase
+namespace Unity.Networking.Transport.Samples
 {
-    private PingDriverSystem m_ServerDriverSystem;
-
-    protected override void OnCreate()
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    public partial class PingServerSystem : SystemBase
     {
-        m_ServerDriverSystem = World.GetOrCreateSystem<PingDriverSystem>();
-    }
+        private PingDriverSystem m_ServerDriverSystem;
 
-    protected override void OnUpdate()
-    {
-        if (!m_ServerDriverSystem.ServerDriver.IsCreated)
-            return;
-        var driver = m_ServerDriverSystem.ConcurrentServerDriver;
-        Entities.ForEach((ref PingServerConnectionComponentData connection) =>
+        protected override void OnCreate()
         {
-            DataStreamReader strm;
-            NetworkEvent.Type cmd;
-            while ((cmd = driver.PopEventForConnection(connection.connection, out strm)) != NetworkEvent.Type.Empty)
+            m_ServerDriverSystem = World.GetOrCreateSystem<PingDriverSystem>();
+        }
+
+        protected override void OnUpdate()
+        {
+            if (!m_ServerDriverSystem.ServerDriver.IsCreated)
+                return;
+            var driver = m_ServerDriverSystem.ConcurrentServerDriver;
+            Entities.ForEach((ref PingServerConnectionComponentData connection) =>
             {
-                if (cmd == NetworkEvent.Type.Data)
+                DataStreamReader strm;
+                NetworkEvent.Type cmd;
+                while ((cmd = driver.PopEventForConnection(connection.connection, out strm)) != NetworkEvent.Type.Empty)
                 {
-                    int id = strm.ReadInt();
-                    if (driver.BeginSend(connection.connection, out var pongData) == 0)
+                    if (cmd == NetworkEvent.Type.Data)
                     {
-                        pongData.WriteInt(id);
-                        driver.EndSend(pongData);
+                        int id = strm.ReadInt();
+                        if (driver.BeginSend(connection.connection, out var pongData) == 0)
+                        {
+                            pongData.WriteInt(id);
+                            driver.EndSend(pongData);
+                        }
+                    }
+                    else if (cmd == NetworkEvent.Type.Disconnect)
+                    {
+                        connection = new PingServerConnectionComponentData {connection = default(NetworkConnection)};
                     }
                 }
-                else if (cmd == NetworkEvent.Type.Disconnect)
-                {
-                    connection = new PingServerConnectionComponentData {connection = default(NetworkConnection)};
-                }
-            }
-        }).ScheduleParallel();
+            }).ScheduleParallel();
+        }
     }
 }

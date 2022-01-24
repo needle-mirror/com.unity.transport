@@ -5,83 +5,86 @@ using Unity.Networking.Transport;
 using Unity.Collections;
 using UnityEngine.Assertions;
 
-public class ServerBehaviour : MonoBehaviour
+namespace Unity.Networking.Transport.Samples
 {
-    public NetworkDriver m_Driver;
-    //private NetworkPipeline m_UnreliablePipeline;
-    private NetworkPipeline m_SequencedPipeline;
-    private NativeList<NetworkConnection> m_Connections;
-
-    void Start()
+    public class ServerBehaviour : MonoBehaviour
     {
-        m_Driver = NetworkDriver.Create();
-        //m_UnreliablePipeline = NetworkPipeline.Null;
-        m_SequencedPipeline = m_Driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
+        public NetworkDriver m_Driver;
+        //private NetworkPipeline m_UnreliablePipeline;
+        private NetworkPipeline m_SequencedPipeline;
+        private NativeList<NetworkConnection> m_Connections;
 
-        var endpoint = NetworkEndPoint.AnyIpv4;
-        endpoint.Port = 9000;
-        if (m_Driver.Bind(endpoint) != 0)
-            Debug.Log("Failed to bind to port 9000");
-        else
-            m_Driver.Listen();
-
-        m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
-    }
-
-    public void OnDestroy()
-    {
-        m_Driver.Dispose();
-        m_Connections.Dispose();
-    }
-
-    void Update()
-    {
-        m_Driver.ScheduleUpdate().Complete();
-
-        // CleanUpConnections
-        for (int i = 0; i < m_Connections.Length; i++)
+        void Start()
         {
-            if (!m_Connections[i].IsCreated)
-            {
-                m_Connections.RemoveAtSwapBack(i);
-                --i;
-            }
-        }
-        // AcceptNewConnections
-        NetworkConnection c;
-        while ((c = m_Driver.Accept()) != default(NetworkConnection))
-        {
-            m_Connections.Add(c);
-            Debug.Log("Accepted a connection");
+            m_Driver = NetworkDriver.Create();
+            //m_UnreliablePipeline = NetworkPipeline.Null;
+            m_SequencedPipeline = m_Driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
+
+            var endpoint = NetworkEndPoint.AnyIpv4;
+            endpoint.Port = 9000;
+            if (m_Driver.Bind(endpoint) != 0)
+                Debug.Log("Failed to bind to port 9000");
+            else
+                m_Driver.Listen();
+
+            m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
         }
 
-        DataStreamReader stream;
-        for (int i = 0; i < m_Connections.Length; i++)
+        public void OnDestroy()
         {
-            if (!m_Connections[i].IsCreated)
-                Assert.IsTrue(true);
+            m_Driver.Dispose();
+            m_Connections.Dispose();
+        }
 
-            NetworkEvent.Type cmd;
-            while ((cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream)) !=
-                   NetworkEvent.Type.Empty)
+        void Update()
+        {
+            m_Driver.ScheduleUpdate().Complete();
+
+            // CleanUpConnections
+            for (int i = 0; i < m_Connections.Length; i++)
             {
-                if (cmd == NetworkEvent.Type.Data)
+                if (!m_Connections[i].IsCreated)
                 {
-                    uint number = stream.ReadUInt();
-
-                    Debug.Log("Got " + number + " from the Client adding + 2 to it.");
-                    number += 2;
-
-                    if (m_Driver.BeginSend(m_SequencedPipeline, m_Connections[i], out var writer) == 0)
-                    {
-                        writer.WriteUInt(number);
-                        m_Driver.EndSend(writer);
-                    }
+                    m_Connections.RemoveAtSwapBack(i);
+                    --i;
                 }
-                else if (cmd == NetworkEvent.Type.Disconnect)
+            }
+            // AcceptNewConnections
+            NetworkConnection c;
+            while ((c = m_Driver.Accept()) != default(NetworkConnection))
+            {
+                m_Connections.Add(c);
+                Debug.Log("Accepted a connection");
+            }
+
+            DataStreamReader stream;
+            for (int i = 0; i < m_Connections.Length; i++)
+            {
+                if (!m_Connections[i].IsCreated)
+                    Assert.IsTrue(true);
+
+                NetworkEvent.Type cmd;
+                while ((cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream)) !=
+                    NetworkEvent.Type.Empty)
                 {
-                    Debug.Log("Client disconnected from server");
-                    m_Connections[i] = default(NetworkConnection);
+                    if (cmd == NetworkEvent.Type.Data)
+                    {
+                        uint number = stream.ReadUInt();
+
+                        Debug.Log("Got " + number + " from the Client adding + 2 to it.");
+                        number += 2;
+
+                        if (m_Driver.BeginSend(m_SequencedPipeline, m_Connections[i], out var writer) == 0)
+                        {
+                            writer.WriteUInt(number);
+                            m_Driver.EndSend(writer);
+                        }
+                    }
+                    else if (cmd == NetworkEvent.Type.Disconnect)
+                    {
+                        Debug.Log("Client disconnected from server");
+                        m_Connections[i] = default(NetworkConnection);
+                    }
                 }
             }
         }

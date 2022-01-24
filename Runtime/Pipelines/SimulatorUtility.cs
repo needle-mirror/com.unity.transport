@@ -326,7 +326,7 @@ namespace Unity.Networking.Transport.Utilities
 
         public unsafe bool ShouldDropPacket(Context* ctx, Parameters param, long timestamp)
         {
-            if (param.PacketDropInterval > 0 && (ctx->PacketCount - 1) % param.PacketDropInterval == 0)
+            if (param.PacketDropInterval > 0 && ((ctx->PacketCount - 1) % param.PacketDropInterval) == 0)
                 return true;
             if (param.PacketDropPercentage > 0)
             {

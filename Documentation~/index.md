@@ -1,44 +1,24 @@
-# About Unity.Networking.Transport
+# About Unity Transport
 
-Use the `com.unity.transport` package to add multiplayer / network features to your project.
+The Unity Transport Package (`com.unity.transport`) is a low-level networking library geared towards multiplayer games development. It provides a connection-based abstraction layer over UDP sockets with optional functionality like reliability, ordering, and fragmentation.
 
-## Overview
+# Documentation
 
-![Transport Overview](images/layercake.png)
-
-# Installing Unity.Networking.Transport
-
-For installation instructions on the `com.unity.transport` package, follow the [installation guide](install.md).
-
-# Using Unity.Networking.Transport
-
-To learn how to use the `com.unity.transport` package in your own project, read the [manual](TableOfContents.md).
-
-> **Note**: Once you have installed the package, it is recommended that you read through the client and server workflows first.
+The full documentation for the package can be found on the [Unity multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/1.0.0/introduction).
 
 # Technical details
 
 ## Requirements
 
-This version of `com.unity.transport` is compatible with the following versions of the Unity Editor:
+This version of `com.unity.transport` is compatible with the following Unity versions and platforms:
 
-* 2020.1.2 and later
-* All platforms supported by Unity are supported by the transport
-
-## Package contents
-
-The following table shows the package folder contents.
-
-|Location|Description|
-|---|---|
-|`Documentation`|Contains manual part of the documentation (script reference is inline using xmldoc).|
-|`Runtime`|Contains the implementation.|
-|`Tests`|Contains all the tests.|
-
+* 2020.1.2 and later.
+* All platforms supported by Unity are supported, except WebGL.
 
 ## Document revision history
 
 |Date|Reason|
 |---|---|
+|Jan 24, 2022|Documentation moved to [multiplayer docs site](https://docs-multiplayer.unity3d.com/).|
 |Oct 22, 2018|Documentation reorganised and proofread by Technical Writer.|
 |Jul 18, 2018|Document created. Matches package version 0.1.0.|

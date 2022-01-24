@@ -5,38 +5,40 @@ using System.Collections.Generic;
 using UnityEngine;
 using Unity.Networking.Transport.Relay;
 
-
-public static class RelayUtilities
+namespace Unity.Networking.Transport.Samples
 {
-   public static RelayAllocationId ConvertFromAllocationIdBytes(byte[] allocationIdBytes)
+    public static class RelayUtilities
     {
-        unsafe
+    public static RelayAllocationId ConvertFromAllocationIdBytes(byte[] allocationIdBytes)
         {
-            fixed (byte* ptr = allocationIdBytes)
+            unsafe
             {
-                return RelayAllocationId.FromBytePointer(ptr, allocationIdBytes.Length);
+                fixed (byte* ptr = allocationIdBytes)
+                {
+                    return RelayAllocationId.FromBytePointer(ptr, allocationIdBytes.Length);
+                }
             }
         }
-    }
 
-    public static RelayHMACKey ConvertFromHMAC(byte[] hmac)
-    {
-        unsafe
+        public static RelayHMACKey ConvertFromHMAC(byte[] hmac)
         {
-            fixed (byte* ptr = hmac)
+            unsafe
             {
-                return RelayHMACKey.FromBytePointer(ptr, RelayHMACKey.k_Length);
+                fixed (byte* ptr = hmac)
+                {
+                    return RelayHMACKey.FromBytePointer(ptr, RelayHMACKey.k_Length);
+                }
             }
         }
-    }
 
-    public static RelayConnectionData ConvertConnectionData(byte[] connectionData)
-    {
-        unsafe
+        public static RelayConnectionData ConvertConnectionData(byte[] connectionData)
         {
-            fixed (byte* ptr = connectionData)
+            unsafe
             {
-                return RelayConnectionData.FromBytePointer(ptr, RelayConnectionData.k_Length);
+                fixed (byte* ptr = connectionData)
+                {
+                    return RelayConnectionData.FromBytePointer(ptr, RelayConnectionData.k_Length);
+                }
             }
         }
     }

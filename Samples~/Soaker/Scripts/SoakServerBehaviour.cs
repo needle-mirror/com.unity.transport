@@ -1,22 +1,25 @@
 using UnityEngine;
 
-public class SoakServerBehaviour : MonoBehaviour
+namespace Unity.Networking.Transport.Samples
 {
-    private SoakServer m_Server;
-
-    void Start()
+    public class SoakServerBehaviour : MonoBehaviour
     {
-        m_Server = new SoakServer();
-        m_Server.Start();
-    }
+        private SoakServer m_Server;
 
-    void OnDestroy()
-    {
-        m_Server.Dispose();
-    }
+        void Start()
+        {
+            m_Server = new SoakServer();
+            m_Server.Start();
+        }
 
-    void FixedUpdate()
-    {
-        m_Server.Update();
+        void OnDestroy()
+        {
+            m_Server.Dispose();
+        }
+
+        void FixedUpdate()
+        {
+            m_Server.Update();
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using Unity.Collections;
 
 namespace Unity.Networking.Transport
@@ -82,7 +83,7 @@ namespace Unity.Networking.Transport
     /// Public representation of a connection. Holds all information needed by the
     /// <see cref="NetworkDriver"> to link it to an internal virtual connection.
     /// </summary>
-    public struct NetworkConnection
+    public struct NetworkConnection : IEquatable<NetworkConnection>
     {
         /// <summary>Index of the connection in the internal connection list.</summary>
         internal int m_NetworkId;

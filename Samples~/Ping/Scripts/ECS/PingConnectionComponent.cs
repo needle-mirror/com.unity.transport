@@ -1,12 +1,15 @@
 using Unity.Entities;
 using Unity.Networking.Transport;
 
-struct PingServerConnectionComponentData : IComponentData
+namespace Unity.Networking.Transport.Samples
 {
-    public NetworkConnection connection;
-}
+    struct PingServerConnectionComponentData : IComponentData
+    {
+        public NetworkConnection connection;
+    }
 
-struct PingClientConnectionComponentData : IComponentData
-{
-    public NetworkConnection connection;
+    struct PingClientConnectionComponentData : IComponentData
+    {
+        public NetworkConnection connection;
+    }
 }

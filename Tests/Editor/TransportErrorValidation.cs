@@ -12,7 +12,7 @@ using Unity.Networking.Transport.Utilities;
 using UnityEngine.TestTools;
 using Random = UnityEngine.Random;
 
-namespace Unity.Networking.Transport.ErrorValidation
+namespace Unity.Networking.Transport.Tests
 {
     public class TransportErrorValidation
     {

@@ -1499,14 +1499,7 @@ namespace Unity.Networking.Transport
                     {
                         c.DidReceiveData = 1;
                         c.LastReceive = m_UpdateTime;
-
-                        if (c.State == NetworkConnection.State.Connected)
-                        {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                            UnityEngine.Debug.LogWarning(string.Format("Dropping connect request for an already connected endpoint [{0}]", command.Address.ToFixedString()));
-#endif
-                            return;
-                        }
+                        SetConnection(c);
 
                         if (c.State == NetworkConnection.State.Connecting)
                         {
@@ -1665,6 +1658,7 @@ namespace Unity.Networking.Transport
                         //There may be more scenarios where this could occur, but those are the expected results in that particular scenario.
                         //Such a log message does not seem to actually prompt the user to take any action or make any change, and serves as little
                         //more than noise.
+                        return;
                     }
 
                     c.DidReceiveData = 1;
