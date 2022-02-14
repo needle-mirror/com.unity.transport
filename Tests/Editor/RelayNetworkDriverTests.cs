@@ -1,8 +1,10 @@
 using NUnit.Framework;
+using System.Threading;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Protocols;
 using Unity.Networking.Transport.Relay;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.TestTools;
 
 namespace Unity.Networking.Transport.Tests
@@ -93,6 +95,34 @@ namespace Unity.Networking.Transport.Tests
 
                 Assert.IsTrue(retriesLeft <= 0);
                 Assert.IsTrue(server.IsBound(0));
+            }
+        }
+
+        [Test]
+        public void RelayNetworkDriver_Bind_Fail()
+        {
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData = server.GetRelayConnectionData(0);
+            var settings = new NetworkSettings();
+            settings.WithRelayParameters(serverData: ref serverData, relayConnectionTimeMS: 10000000);
+
+            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
+            {
+                server.SetupForBindFail(0);
+
+                Assert.Zero(driver.Bind(NetworkEndPoint.AnyIpv4));
+
+                // One update to send the Bind message out.
+                driver.ScheduleUpdate().Complete();
+
+                // Wait long enough for our server to send its error.
+                Thread.Sleep(250);
+
+                // One update to receive the Error message.
+                driver.ScheduleUpdate().Complete();
+
+                LogAssert.Expect(LogType.Error, "Received error message from Relay: unauthorized.");
             }
         }
 

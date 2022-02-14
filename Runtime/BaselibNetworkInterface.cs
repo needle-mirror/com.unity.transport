@@ -406,13 +406,6 @@ namespace Unity.Networking.Transport
                     // We ensure we never process more than the actual capacity to prevent unexpected deadlocks
                     pendingSend = Tx.InUse > 0 && maxIterations-- > 0;
                 }
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (Tx.InUse > 0)
-                {
-                    UnityEngine.Debug.LogWarning(string.Format("There are {0} pending send packets after the baselib process send", Tx.InUse));
-                }
-#endif
             }
         }
         [BurstCompile]

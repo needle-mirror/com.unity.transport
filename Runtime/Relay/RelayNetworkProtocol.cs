@@ -522,10 +522,58 @@ namespace Unity.Networking.Transport.Relay
                     }
 
                     return true;
+
+                case RelayMessageType.Error:
+                    ProcessRelayError(data, size);
+                    command.Type = ProcessPacketCommandType.Drop;
+                    return true;
             }
 
             command.Type = ProcessPacketCommandType.Drop;
             return true;
+        }
+
+        private static unsafe void ProcessRelayError(byte* data, int size)
+        {
+            if (size != RelayMessageError.Length)
+            {
+                Debug.LogError("Received an invalid Relay Error message (wrong length).");
+                return;
+            }
+
+            var errorMessage = *(RelayMessageError*)data;
+
+            switch (errorMessage.ErrorCode)
+            {
+                case 0:
+                    Debug.LogError("Received error message from Relay: invalid protocol version. " +
+                        "Make sure your Unity Transport package is up to date.");
+                    return;
+                case 1:
+                    Debug.LogError("Received error message from Relay: player timed out due to inactivity. " +
+                        "This could be due to an inappropriate value for reconnectionTimeMS when calling " +
+                        "NetworkSettings.WithRelayParameters. Also make sure to schedule NetworkDriver updates " +
+                        "frequently to avoid this error.");
+                    return;
+                case 2:
+                    Debug.LogError("Received error message from Relay: unauthorized.");
+                    return;
+                case 3:
+                    Debug.LogError("Received error message from Relay: allocation ID client mismatch.");
+                    return;
+                case 4:
+                    Debug.LogError("Received error message from Relay: allocation ID not found.");
+                    return;
+                case 5:
+                    Debug.LogError("Received error message from Relay: not connected.");
+                    return;
+                case 6:
+                    Debug.LogError("Received error message from Relay: self-connect not allowed.");
+                    return;
+                default:
+                    Debug.LogError($"Received error message from Relay with unknown error code {errorMessage.ErrorCode}");
+                    return;
+            }
         }
 
         private static unsafe int SendMessage(RelayProtocolData* protocolData, ref NetworkSendInterface sendInterface,

@@ -151,6 +151,20 @@ namespace Unity.Networking.Transport.Tests
             ExpectPacket(BindPacket, bindReceiveMethod);
         }
 
+        public unsafe void SetupForBindFail(int key)
+        {
+            var errorPacket = ErrorPacket;
+            fixed(byte* ptr = &errorPacket[0])
+            {
+                *(RelayAllocationId*)(ptr + 4) = GetAllocationIdForClient(key);
+            }
+
+            ExpectPacket(BindPacket, (endpoint, data) =>
+            {
+                Send(errorPacket, endpoint);
+            });
+        }
+
         public unsafe void SetupForConnect(int clientKey)
         {
             var connectRequestPacket = ConnectRequestPacket;
@@ -337,6 +351,13 @@ namespace Unity.Networking.Transport.Tests
         {
             0xda, 0x72, 0x00, 0x02,                                                                         // Header
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // From Allocation Id
+        };
+
+        static private byte[] ErrorPacket => new byte[]
+        {
+            0xda, 0x72, 0x00, 0x0c,                                                                         // Header
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Allocation Id
+            0x02,                                                                                           // Error Code
         };
 
         static private RelayAllocationId GetAllocationIdForClient(int clientKey)

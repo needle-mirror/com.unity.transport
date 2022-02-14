@@ -788,7 +788,7 @@ namespace Unity.Networking.Transport.Utilities
             // and if the last received sequence ID has not been acked yet, or the set of acked packet in the window
             // changed without the sequence ID updating (can happen when receiving out of order packets)
             if (reliable->LastSentTime < reliable->PreviousTimestamp &&
-                (shared->ReceivedPackets.Acked < shared->ReceivedPackets.Sequence ||
+                (SequenceHelpers.LessThan16((ushort)shared->ReceivedPackets.Acked, (ushort)shared->ReceivedPackets.Sequence) ||
                  shared->ReceivedPackets.AckMask != shared->ReceivedPackets.LastAckMask))
                 return true;
             return false;

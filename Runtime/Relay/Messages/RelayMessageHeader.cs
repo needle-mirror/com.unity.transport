@@ -36,5 +36,6 @@ namespace Unity.Networking.Transport.Relay
         Accepted = 6,
         Disconnect = 9,
         Relay = 10,
+        Error = 12,
     }
 }

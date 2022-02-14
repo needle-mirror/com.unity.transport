@@ -12,7 +12,7 @@ namespace Unity.Networking.Transport.Relay
         public RelayAllocationId FromAllocationId;
         public RelayAllocationId ToAllocationId;
 
-        internal static RelayMessageAccepted Create(RelayAllocationId fromAllocationId, RelayAllocationId toAllocationId, ushort dataLength)
+        internal static RelayMessageAccepted Create(RelayAllocationId fromAllocationId, RelayAllocationId toAllocationId)
         {
             return new RelayMessageAccepted
             {

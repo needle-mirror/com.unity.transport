@@ -1,5 +1,13 @@
 # Change log
 
+## [1.0.0-pre.13] - 2022-02-14
+
+### New features
+* When using the Relay protocol, error messages sent by the Relay server are now properly captured and logged.
+
+### Fixes
+* Fixed: Issue where an overflow of the `ReliableSequencedPipelineStage` sequence numbers would not be handled properly.
+
 ## [1.0.0-pre.12] - 2022-01-24
 
 ### Fixes

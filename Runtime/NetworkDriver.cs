@@ -731,6 +731,7 @@ namespace Unity.Networking.Transport
             }
         }
 
+        [BurstCompile]
         struct ClearEventQueue : IJob
         {
             public NativeList<byte> dataStream;
@@ -1732,7 +1733,7 @@ namespace Unity.Networking.Transport
         /// <param name="length">Bytes to move</param>
         /// <returns>Returns head of pinned memory</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int PinMemoryTillUpdate(int length)
+        internal int PinMemoryTillUpdate(int length)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (m_DataStreamHead[0] + length > m_DataStream.Length)
@@ -1771,7 +1772,7 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="dataLen">Size of memory to allocate in bytes. Must be > 0</param>
         /// <returns>Pointer to allocated memory or IntPtr.Zero if there is no space left (this function doesn't set <see cref="ReceiveErrorCode"/>! caller should decide if this is Out of memory or something else)</returns>
-        public IntPtr AllocateMemory(ref int dataLen)
+        internal IntPtr AllocateMemory(ref int dataLen)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (dataLen <= 0)
