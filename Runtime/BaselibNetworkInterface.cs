@@ -70,7 +70,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// Network Parameters used to set queue and payload sizes for <see cref="BaselibNetworkInterface"/>
     /// </summary>
-    public struct BaselibNetworkParameter : INetworkParameter, IValidatableNetworkParameter
+    public struct BaselibNetworkParameter : INetworkParameter
     {
         /// <summary>
         /// The maximum number of receiving packets that the <see cref="BaselibNetworkInterface"/> can process in a single update iteration.

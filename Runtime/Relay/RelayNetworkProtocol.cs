@@ -72,7 +72,7 @@ namespace Unity.Networking.Transport.Relay
     /// Relay protocol network parementers used to connect to the Unity Relay service. This data must be provided to
     /// the <see cref="NetworkDriver.Create"/> function in order to be able to use connect to Relay.
     /// </summary>
-    public struct RelayNetworkParameter : INetworkParameter, IValidatableNetworkParameter
+    public struct RelayNetworkParameter : INetworkParameter
     {
         internal const int k_DefaultConnectionTimeMS = 9000;
 

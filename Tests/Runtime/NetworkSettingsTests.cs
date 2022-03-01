@@ -17,14 +17,18 @@ namespace Unity.Networking.Transport.Tests
         private unsafe struct TestParameter32 : INetworkParameter
         {
             public fixed byte Data[32];
+
+            public bool Validate() => true;
         }
 
         private unsafe struct TestParameter64 : INetworkParameter
         {
             public fixed byte Data[64];
+
+            public bool Validate() => true;
         }
 
-        public struct TestParameterValidatable : INetworkParameter, IValidatableNetworkParameter
+        public struct TestParameterValidatable : INetworkParameter
         {
             public int Valid;
 

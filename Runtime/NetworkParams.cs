@@ -5,13 +5,6 @@ namespace Unity.Networking.Transport
     /// </summary>
     public interface INetworkParameter
     {
-    }
-
-    /// <summary>
-    /// Interface for adding validation capabilities to the INetworkParameter.
-    /// </summary>
-    public interface IValidatableNetworkParameter
-    {
         /// <summary>
         /// Checks if the values for all fields are valid.
         /// This method will be automatically called when adding a paramter to the NetworkSettings.
@@ -56,7 +49,7 @@ namespace Unity.Networking.Transport
     /// The NetworkDataStreamParameter is used to set a fixed data stream size.
     /// </summary>
     /// <remarks>The <see cref="DataStreamWriter"/> will grow on demand if the size is set to zero. </remarks>
-    public struct NetworkDataStreamParameter : INetworkParameter, IValidatableNetworkParameter
+    public struct NetworkDataStreamParameter : INetworkParameter
     {
         internal const int k_DefaultSize = 0;
 
@@ -80,7 +73,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// The NetworkConfigParameter is used to set specific parameters that the driver uses.
     /// </summary>
-    public struct NetworkConfigParameter : INetworkParameter, IValidatableNetworkParameter
+    public struct NetworkConfigParameter : INetworkParameter
     {
         /// <summary>A timeout in milliseconds indicating how long we will wait until we send a new connection attempt.</summary>
         public int connectTimeoutMS;

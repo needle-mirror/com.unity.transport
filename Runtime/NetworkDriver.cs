@@ -544,8 +544,7 @@ namespace Unity.Networking.Transport
         /// Helper function for creating a NetworkDriver.
         /// </summary>
         /// <param name="param">
-        /// An optional array of INetworkParameter. There are currently only two <see cref="INetworkParameter"/>,
-        /// the <see cref="NetworkDataStreamParameter"/> and the <see cref="NetworkConfigParameter"/>.
+        /// The <see cref="NewtorkSettings"/> for the new NetworkDriver.
         /// </param>
         /// <exception cref="InvalidOperationException"></exception>
         public static NetworkDriver Create(NetworkSettings settings)
@@ -557,7 +556,27 @@ namespace Unity.Networking.Transport
 #endif
         }
 
-        public static NetworkDriver Create() => Create(new NetworkSettings());
+        /// <summary>
+        /// Helper function for creating a NetworkDriver.
+        /// </summary>
+        public static NetworkDriver Create() => Create(new NetworkSettings(Allocator.Temp));
+
+        /// <summary>
+        /// Helper function for creating a NetworkDriver.
+        /// </summary>
+        /// <typeparam name="N"></typeparam>
+        /// <param name="networkInterface">The custom interface to use.</param>
+        public static NetworkDriver Create<N>(N networkInterface) where N : INetworkInterface
+            => Create(networkInterface, new NetworkSettings(Allocator.Temp));
+
+        /// <summary>
+        /// Helper function for creating a NetworkDriver.
+        /// </summary>
+        /// <typeparam name="N"></typeparam>
+        /// <param name="networkInterface">The custom interface to use.</param>
+        /// <param name="settings">The <see cref="NewtorkSettings"/> for the new NetworkDriver.</param>
+        public static NetworkDriver Create<N>(N networkInterface, NetworkSettings settings) where N : INetworkInterface
+            => new NetworkDriver(networkInterface, settings);
 
         public NetworkDriver(INetworkInterface netIf)
             : this(netIf, new NetworkSettings()) {}
@@ -619,6 +638,10 @@ namespace Unity.Networking.Transport
         /// <exception cref="InvalidOperationException">Thrown if network interface couldn't be initialized.</exception>
         internal NetworkDriver(INetworkInterface netIf, INetworkProtocol netProtocol, NetworkSettings settings)
         {
+#if UNITY_WEBGL
+            UnityEngine.Debug.LogWarning("Unity Transport is not currently supported in WebGL. NetworkDriver will likely not work as intended.");
+#endif
+
             m_NetworkParams = new Parameters(settings);
 
             netProtocol.Initialize(settings);

@@ -300,6 +300,8 @@ namespace Unity.Networking.Transport.TLS
         public uint                                 SSLHandshakeTimeoutMax;
         /// <summary>Initial ssl handshake minimum timeout value in milliseconds. Default is 1000 (1 sec)</summary>
         public uint                                 SSLHandshakeTimeoutMin;
+
+        public bool Validate() => true;
     }
 
     [BurstCompile]
@@ -361,7 +363,7 @@ namespace Unity.Networking.Transport.TLS
                 //TODO: We need to validate that you have a config that makes sense for what you are trying to do
                 // should this be something we allow for expressing in the config? like which role you are?
 
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
+#if ENABLE_UNITY_COLLECTIONS_CHECKS && !UNITY_WEBGL
                 // If we have baselib configs we need to make sure they are of proper size
                 if (settings.TryGet<BaselibNetworkParameter>(out var baselibConfig))
                 {

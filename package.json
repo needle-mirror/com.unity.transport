@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.0.0-pre.13",
+  "version": "1.0.0-pre.14",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
@@ -10,13 +10,16 @@
     "com.unity.burst": "1.6.4",
     "com.unity.mathematics": "1.2.5"
   },
+  "upm": {
+    "changelog": "### Changes,* `IValidatableNetworkParameter.Validate()` method is now part of `INetworkParameter`.,* Added: `NetworkDriver.Create<>()` generic methods.,### Fixes,* Fixed compilation on WebGL. Note that the platform is still unsupported, but at least including the package in a WebGL project will not create compilation errors anymore. Creating a `NetworkDriver` in WebGL projects will now produce a warning."
+  },
   "upmCi": {
-    "footprint": "57b492bfcb2bf65e61199af180e784a496d45851"
+    "footprint": "70fe4d4c8cc14171e96a28410bc1f5a71c1dc8f2"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "83e229da512ae50e8039c3688e22572ebd5a8c7d"
+    "revision": "e2f1f8587a7a90600af52138046b51cde18c5e78"
   },
   "samples": [
     {

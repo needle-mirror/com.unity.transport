@@ -138,7 +138,7 @@ namespace Unity.Networking.Transport
 
         internal static void ValidateParameterOrError<T>(ref T parameter) where T : INetworkParameter
         {
-            if (parameter is IValidatableNetworkParameter && !((IValidatableNetworkParameter)parameter).Validate())
+            if (!parameter.Validate())
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The provided network parameter ({parameter.GetType().Name}) is not valid");
@@ -163,6 +163,7 @@ namespace Unity.Networking.Transport
 
                 // LEGACY transformations: Some parameters were previously assuming that
                 // the default 0 values converted to the actual default value.
+#if !UNITY_WEBGL
                 if (type == typeof(BaselibNetworkParameter))
                 {
                     var p = (BaselibNetworkParameter)parameter;
@@ -178,6 +179,7 @@ namespace Unity.Networking.Transport
 
                     parameter = p;
                 }
+#endif
                 if (type == typeof(Relay.RelayNetworkParameter))
                 {
                     var p = (Relay.RelayNetworkParameter)parameter;

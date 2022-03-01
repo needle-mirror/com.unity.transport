@@ -428,7 +428,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// The network pipeline params
     /// </summary>
-    public struct NetworkPipelineParams : INetworkParameter, IValidatableNetworkParameter
+    public struct NetworkPipelineParams : INetworkParameter
     {
         internal const int k_DefaultInitialCapacity = 0;
 

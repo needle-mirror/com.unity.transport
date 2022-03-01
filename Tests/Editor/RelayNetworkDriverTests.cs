@@ -9,19 +9,6 @@ using UnityEngine.TestTools;
 
 namespace Unity.Networking.Transport.Tests
 {
-    [InitializeOnLoad]
-    public class OnLoad
-    {
-        static OnLoad()
-        {
-            var editorIsOSX = false;
-            #if UNITY_EDITOR_OSX
-            editorIsOSX = true;
-            #endif
-
-            ConditionalIgnoreAttribute.AddConditionalIgnoreMapping("IgnoreInMacEditor", editorIsOSX);
-        }
-    }
     public class RelayNetworkDriverTests
     {
         private ushort m_port = 1234;
@@ -52,18 +39,7 @@ namespace Unity.Networking.Transport.Tests
 
             using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
             {
-                server.SetupForBind(0);
-
-                Assert.Zero(driver.Bind(NetworkEndPoint.AnyIpv4));
-                driver.ScheduleUpdate(default).Complete();
-
-                RelayServerMock.WaitForCondition(() =>
-                {
-                    driver.ScheduleUpdate().Complete();
-                    return server.IsBound(0);
-                });
-
-                Assert.IsTrue(server.IsBound(0));
+                Assert.True(server.CompleteBind(driver, 0));
             }
         }
 
@@ -190,7 +166,7 @@ namespace Unity.Networking.Transport.Tests
             }
         }
 
-        [Test, ConditionalIgnore("IgnoreInMacEditor", "Ignored on Mac editor.")]
+        [Test]
         public void RelayNetworkDriver_Connect_Retry()
         {
             const int k_RetryCount = 10;
@@ -277,6 +253,17 @@ namespace Unity.Networking.Transport.Tests
 
                 Assert.AreEqual(NetworkConnection.State.Disconnected, client.GetConnectionState(connection.clientToHost));
                 Assert.AreEqual(NetworkConnection.State.Disconnected, host.GetConnectionState(connection.hostToClient));
+
+                client.ScheduleUpdate().Complete();
+                host.ScheduleUpdate().Complete();
+
+                // That the drivers are both disconnected doesn't mean the relay server has received
+                // its Disconnect message yet, since it is sent by the client upon receiving the UTP
+                // Disconnect message. Most of the time this is not an issue since the message is
+                // delivered very quickly to the relay server mock. But on some slower CI machines,
+                // the test can end before that happens, so we wait a little to give enough time for
+                // the Disconnect message to make it. Yes, this is super ugly.
+                Thread.Sleep(100);
             }
         }
 

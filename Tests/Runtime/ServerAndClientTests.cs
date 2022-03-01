@@ -104,6 +104,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.Switch, RuntimePlatform.PS4, RuntimePlatform.PS5 })]
         public void ServerAndClient_Connect_Successfull_IPv6()
         {
             SetupServerAndClientAndConnectThem(NetworkEndPoint.LoopbackIpv6, 0, defaultConfigParams);
@@ -118,6 +119,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.Switch, RuntimePlatform.PS4, RuntimePlatform.PS5 })]
         public void ServerAnd5Clients_Connect_Successfully_IPv6()
         {
             ServerAnd5Clients_Connect_Successfully(NetworkEndPoint.LoopbackIpv6);
@@ -188,6 +190,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.Switch, RuntimePlatform.PS4, RuntimePlatform.PS5 })]
         public void ServerAndClient_PingPong_Successfully_IPv6()
         {
             ServerAndClient_PingPong_Successfully(NetworkEndPoint.LoopbackIpv6);

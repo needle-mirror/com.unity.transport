@@ -1,5 +1,14 @@
 # Change log
 
+## [1.0.0-pre.14] - 2022-03-01
+
+### Changes
+* `IValidatableNetworkParameter.Validate()` method is now part of `INetworkParameter`.
+* Added: `NetworkDriver.Create<>()` generic methods.
+
+### Fixes
+* Fixed compilation on WebGL. Note that the platform is still unsupported, but at least including the package in a WebGL project will not create compilation errors anymore. Creating a `NetworkDriver` in WebGL projects will now produce a warning.
+
 ## [1.0.0-pre.13] - 2022-02-14
 
 ### New features

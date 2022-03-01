@@ -3,27 +3,27 @@ using Unity.Collections;
 
 namespace Unity.Networking.Transport.Tests
 {
-    public static class SharedConstants
-    {
-        public static byte[] ping =
-        {
-            (byte)'p',
-            (byte)'i',
-            (byte)'n',
-            (byte)'g'
-        };
-
-        public static byte[] pong =
-        {
-            (byte)'p',
-            (byte)'o',
-            (byte)'n',
-            (byte)'g'
-        };
-    }
-
     public class NetworkConnectionUnitTests
     {
+        public static class SharedConstants
+        {
+            public static byte[] ping =
+            {
+                (byte)'p',
+                (byte)'i',
+                (byte)'n',
+                (byte)'g'
+            };
+
+            public static byte[] pong =
+            {
+                (byte)'p',
+                (byte)'o',
+                (byte)'n',
+                (byte)'g'
+            };
+        }
+
         private NetworkDriver Driver;
         private NetworkDriver RemoteDriver;
 

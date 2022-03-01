@@ -123,6 +123,8 @@ namespace Unity.Networking.Transport.Utilities
             /// deterministic runs in tests for example that are dependant on the random number generator.
             /// </summary>
             public uint RandomSeed;
+
+            public bool Validate() => true;
         }
 
         [StructLayout(LayoutKind.Sequential)]

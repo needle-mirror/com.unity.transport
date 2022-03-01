@@ -79,10 +79,18 @@ namespace Unity.Networking.Transport.Tests
             try
             {
                 int count = m_Socket.EndReceiveFrom(result, ref m_LocalEndpoint);
-                ProcessPacket(m_Buffer, count, m_LocalEndpoint);
+                lock (m_ExpectedPackets)
+                {
+                    ProcessPacket(m_Buffer, count, m_LocalEndpoint);
+                }
                 m_Socket.BeginReceiveFrom(m_Buffer, 0, k_BufferSize, SocketFlags.None, ref m_LocalEndpoint, Receive, null);
             }
-            catch (Exception) {}
+            catch (ObjectDisposedException) {}
+            catch (SocketException) {}
+            catch (Exception e)
+            {
+                m_Exceptions.Add(e);
+            }
         }
 
         private void ProcessPacket(byte[] buffer, int count, EndPoint endpoint)
@@ -212,34 +220,16 @@ namespace Unity.Networking.Transport.Tests
 
         public void ExpectPacket(byte[] packet, Action<EndPoint, byte[]> callback, PacketParameter[] parameters = null, bool optional = false)
         {
-            m_ExpectedPackets[m_ExpectedPacketsCount++] = new ExpectedPacket
+            lock (m_ExpectedPackets)
             {
-                Packet = packet,
-                Callback = callback,
-                Parameters = parameters,
-                Optional = optional,
-            };
-        }
-
-        public unsafe void ExpectPacket<T>(byte[] packet, int offset, Action<EndPoint, byte[], T> callback) where T : unmanaged
-        {
-            var parameter = new PacketParameter
-            {
-                Offset = offset,
-                Size = UnsafeUtility.SizeOf<T>(),
-            };
-
-            if (parameter.Offset + parameter.Size > packet.Length)
-                throw new ArgumentException("The parameter doesn't fit in the packet size");
-
-            ExpectPacket(packet, (endpoint, data) =>
-            {
-                fixed(byte* ptr = &data[offset])
+                m_ExpectedPackets[m_ExpectedPacketsCount++] = new ExpectedPacket
                 {
-                    T paramValue = *(T*)ptr;
-                    callback(endpoint, data, paramValue);
-                }
-            }, new[] { parameter });
+                    Packet = packet,
+                    Callback = callback,
+                    Parameters = parameters,
+                    Optional = optional,
+                };
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Threading;
@@ -13,7 +14,8 @@ namespace Unity.Networking.Transport.Tests
         private string m_Address;
         private ushort m_Port;
 
-        private Dictionary<RelayAllocationId, EndPoint> m_ClientsAddresses = new Dictionary<RelayAllocationId, EndPoint>();
+        private ConcurrentDictionary<RelayAllocationId, EndPoint> m_ClientsAddresses =
+            new ConcurrentDictionary<RelayAllocationId, EndPoint>();
 
         public RelayServerMock(string address, ushort port) : base(address, port)
         {
@@ -375,7 +377,7 @@ namespace Unity.Networking.Transport.Tests
             return allocationId;
         }
 
-        static public void WaitForCondition(Func<bool> condition, long timeout = 1000)
+        static public void WaitForCondition(Func<bool> condition, long timeout = 2000)
         {
             var stopwatch = Stopwatch.StartNew();
 

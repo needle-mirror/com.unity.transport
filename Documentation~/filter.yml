@@ -2,11 +2,11 @@
 
 apiRules:
   - exclude:
-    uidRegex: ^Unity.Networking.Transport.Tests.*$
+    uidRegex: ^Unity\.Networking\.Transport\.Tests.*$
     type: Namespace
   - exclude:
-    uidRegex: ^Unity.Networking.Editor.*$
+    uidRegex: ^Unity\.Networking\.Editor.*$
     type: Namespace
   - exclude:
-    uidRegex: ^Unity.Networking.Transport.Samples.*$
+    uidRegex: ^Unity\.Networking\.Transport\.Samples.*$
     type: Namespace

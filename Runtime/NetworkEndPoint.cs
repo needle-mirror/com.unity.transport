@@ -307,7 +307,7 @@ namespace Unity.Networking.Transport
             return UnsafeUtility.MemCmp(p, p1, rawLength) == 0;
         }
 
-        internal static FixedString128Bytes AddressToString(in Binding.Baselib_NetworkAddress rawNetworkAddress)
+        internal static FixedString128Bytes AddressToString(ref Binding.Baselib_NetworkAddress rawNetworkAddress)
         {
             FixedString128Bytes str = default;
             FixedString32Bytes dot = ".";
@@ -363,7 +363,7 @@ namespace Unity.Networking.Transport
         
         private string AddressAsString()
         {
-            return AddressToString(rawNetworkAddress).ToString();
+            return AddressToString(ref rawNetworkAddress).ToString();
         }
         
         private static ushort ByteSwap(ushort val)

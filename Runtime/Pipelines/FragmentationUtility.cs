@@ -39,7 +39,7 @@ namespace Unity.Networking.Transport.Utilities
     public struct FragmentationUtility
     {
         /// <summary>Configuration parameters for <see cref="FragmentationPipelineStage">.</summary>
-        public struct Parameters : INetworkParameter, IValidatableNetworkParameter
+        public struct Parameters : INetworkParameter
         {
             internal const int k_DefaultPayloadCapacity = 4 * 1024;
 

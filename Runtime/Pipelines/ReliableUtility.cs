@@ -132,7 +132,7 @@ namespace Unity.Networking.Transport.Utilities
             public long PreviousTimestamp;
         }
 
-        public struct Parameters : INetworkParameter, IValidatableNetworkParameter
+        public struct Parameters : INetworkParameter
         {
             public int WindowSize;
 

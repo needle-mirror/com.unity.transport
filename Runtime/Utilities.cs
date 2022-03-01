@@ -264,7 +264,7 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="str">The string of type T. Passed in by reference, and will be modified by this method.</param>
         /// <param name="val">The ushort representation of the hex value to convert to its string representation and append to T.</param>
         /// <returns>The <see cref="FormatError"/> from the attempt to modify <see cref="str"/>, either None or Overflow.</returns>
-        public static FormatError AppendHex<T>(ref this T str, ushort val) where T : struct, INativeList<byte>, IUTF8Bytes
+        public static FormatError AppendHex<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
             int shamt = 12;
             // Find the first non-zero nibble
