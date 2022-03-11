@@ -1,5 +1,3 @@
-#if ENABLE_RELAY
-
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -9,11 +7,11 @@ namespace Unity.Networking.Transport.Samples
 {
     public static class RelayUtilities
     {
-    public static RelayAllocationId ConvertFromAllocationIdBytes(byte[] allocationIdBytes)
+        public static RelayAllocationId ConvertFromAllocationIdBytes(byte[] allocationIdBytes)
         {
             unsafe
             {
-                fixed (byte* ptr = allocationIdBytes)
+                fixed(byte* ptr = allocationIdBytes)
                 {
                     return RelayAllocationId.FromBytePointer(ptr, allocationIdBytes.Length);
                 }
@@ -24,7 +22,7 @@ namespace Unity.Networking.Transport.Samples
         {
             unsafe
             {
-                fixed (byte* ptr = hmac)
+                fixed(byte* ptr = hmac)
                 {
                     return RelayHMACKey.FromBytePointer(ptr, RelayHMACKey.k_Length);
                 }
@@ -35,7 +33,7 @@ namespace Unity.Networking.Transport.Samples
         {
             unsafe
             {
-                fixed (byte* ptr = connectionData)
+                fixed(byte* ptr = connectionData)
                 {
                     return RelayConnectionData.FromBytePointer(ptr, RelayConnectionData.k_Length);
                 }
@@ -43,5 +41,3 @@ namespace Unity.Networking.Transport.Samples
         }
     }
 }
-
-#endif

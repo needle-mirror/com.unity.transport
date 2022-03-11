@@ -1,5 +1,6 @@
 {
     "name": "Soaker",
+    "rootNamespace": "",
     "references": [
         "Unity.Burst",
         "Unity.Collections",
@@ -12,7 +13,15 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": [],
-    "versionDefines": [],
+    "defineConstraints": [
+        "ENABLE_JOBS"
+    ],
+    "versionDefines": [
+        {
+           "name": "com.unity.jobs",
+            "expression": "0.0",
+            "define": "ENABLE_JOBS"
+        }
+    ],
     "noEngineReferences": false
 }

@@ -1,5 +1,14 @@
 # Change log
 
+## [1.0.0-pre.15] - 2022-03-11
+
+### Changes
+* An error is now logged if failing to decrypt a DTLS message when using Relay.
+* Decreased default Relay keep-alive period to 3 seconds (was 9 seconds). The value can still be configured through the `relayConnectionTimeMS` parameter of `NetworkSettings.WithRelayParameters`.
+
+### Fixes
+* Updated Relay sample to the most recent Relay SDK APIs (would fail to compile with latest packages).
+
 ## [1.0.0-pre.14] - 2022-03-01
 
 ### Changes

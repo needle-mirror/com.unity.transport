@@ -1,6 +1,3 @@
-﻿#if ENABLE_RELAY
-
-
 using Unity.Burst;
 using UnityEngine;
 using Unity.Networking.Transport;
@@ -27,7 +24,6 @@ namespace Unity.Networking.Transport.Samples
 
         private NetworkDriver m_ClientDriver;
         private NativeArray<NetworkConnection> m_clientToServerConnection;
-        private List<INetworkParameter> m_NetworkParameters;
 
         // pendingPings is an array of pings sent to the server which have not yet received a response.
         // Currently we only support one ping in-flight
@@ -37,13 +33,13 @@ namespace Unity.Networking.Transport.Samples
 
         private JobHandle m_updateHandle;
         private bool isRelayConnected = false;
-        
+
         void InitDriver(ref RelayServerData relayServerData)
         {
-            m_NetworkParameters = new List<INetworkParameter>();
-            m_NetworkParameters.Add(new RelayNetworkParameter{ ServerData = relayServerData });
+            var settings = new NetworkSettings();
+            settings.WithRelayParameters(serverData: ref relayServerData);
 
-            m_ClientDriver = NetworkDriver.Create(m_NetworkParameters.ToArray());
+            m_ClientDriver = NetworkDriver.Create(settings);
 
             m_pendingPings = new NativeArray<PendingPing>(64, Allocator.Persistent);
             m_pingStats = new NativeArray<int>(2, Allocator.Persistent);
@@ -51,9 +47,11 @@ namespace Unity.Networking.Transport.Samples
         }
 
         public IEnumerator ConnectAndBind(string joinCode) {
-            UnityServices.Initialize();
+            var initTask = UnityServices.InitializeAsync();
+            while(!initTask.IsCompleted)
+                yield return null;
 
-            var joinTask = RelayService.AllocationsApiClient.JoinRelayAsync(new JoinRelayRequest(new JoinRequest(joinCode)));
+            var joinTask = Unity.Services.Relay.Relay.Instance.JoinAllocationAsync(joinCode);
             while(!joinTask.IsCompleted)
                 yield return null;
 
@@ -64,8 +62,8 @@ namespace Unity.Networking.Transport.Samples
                 yield break;
             }
 
-            var allocation = joinTask.Result.Result.Data.Allocation;
-            
+            var allocation = joinTask.Result;
+
             var allocationId = RelayUtilities.ConvertFromAllocationIdBytes(allocation.AllocationIdBytes);
 
             var connectionData = RelayUtilities.ConvertConnectionData(allocation.ConnectionData);
@@ -76,12 +74,12 @@ namespace Unity.Networking.Transport.Samples
             Debug.Log($"host: {allocation.HostConnectionData[0]} {allocation.HostConnectionData[1]}");
 
             Debug.Log($"client: {allocation.AllocationId}");
-            
+
             RelayServerEndpoint defaultEndPoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
                 true, false, allocation.RelayServer.IpV4, allocation.RelayServer.Port);
-            
+
             foreach (var endPoint
-                in allocation.ServerEndpoints)
+                     in allocation.ServerEndpoints)
             {
 #if ENABLE_MANAGED_UNITYTLS
                 if (endPoint.Secure == true && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
@@ -91,9 +89,9 @@ namespace Unity.Networking.Transport.Samples
                     defaultEndPoint = endPoint;
 #endif
             }
-            
+
             var serverEndpoint = NetworkEndPoint.Parse(defaultEndPoint.Host, (ushort)defaultEndPoint.Port);
-            
+
             var relayServerData = new RelayServerData(ref serverEndpoint, 0, ref allocationId, ref connectionData, ref hostConnectionData, ref key, defaultEndPoint.Secure);
             relayServerData.ComputeNewNonce();
 
@@ -101,7 +99,7 @@ namespace Unity.Networking.Transport.Samples
 
             if (m_ClientDriver.Bind(NetworkEndPoint.AnyIpv4) != 0)
             {
-                    Debug.LogError("Client failed to bind");
+                Debug.LogError("Client failed to bind");
             }
             else
             {
@@ -128,7 +126,7 @@ namespace Unity.Networking.Transport.Samples
                 }
             }
         }
-        
+
         void OnDestroy()
         {
             // All jobs must be completed before we can dispose the data they use
@@ -173,7 +171,7 @@ namespace Unity.Networking.Transport.Samples
                     else if (cmd == NetworkEvent.Type.Data)
                     {
                         // When the pong message is received we calculate the ping time and disconnect
-                        pingStats[1] = (int) ((fixedTime - pendingPings[0].time) * 1000);
+                        pingStats[1] = (int)((fixedTime - pendingPings[0].time) * 1000);
                         connection[0].Disconnect(driver);
                         connection[0] = default(NetworkConnection);
                     }
@@ -188,11 +186,11 @@ namespace Unity.Networking.Transport.Samples
 
         private void Update()
         {
-            // When connecting to the relay we need to this? 
+            // When connecting to the relay we need to this?
             if (m_ClientDriver.IsCreated && !isRelayConnected)
             {
                 m_ClientDriver.ScheduleUpdate().Complete();
-                
+
                 var pingJob = new PingJob
                 {
                     driver = m_ClientDriver,
@@ -201,7 +199,7 @@ namespace Unity.Networking.Transport.Samples
                     pingStats = m_pingStats,
                     fixedTime = Time.fixedTime
                 };
-                
+
                 pingJob.Schedule().Complete();
             }
         }
@@ -216,8 +214,8 @@ namespace Unity.Networking.Transport.Samples
 
         void FixedUpdate()
         {
-            if (m_ClientDriver.IsCreated && isRelayConnected) {
-
+            if (m_ClientDriver.IsCreated && isRelayConnected)
+            {
                 // Wait for the previous frames ping to complete before starting a new one, the Complete in LateUpdate is not
                 // enough since we can get multiple FixedUpdate per frame on slow clients
                 m_updateHandle.Complete();
@@ -240,5 +238,3 @@ namespace Unity.Networking.Transport.Samples
         }
     }
 }
-
-#endif

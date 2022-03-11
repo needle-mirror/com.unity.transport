@@ -45,7 +45,7 @@ namespace Unity.Networking.Transport.Samples
 
         public async void OnSignIn()
         {
-            await UnityServices.Initialize();
+            await UnityServices.InitializeAsync();
             await AuthenticationService.Instance.SignInAnonymouslyAsync();
             Debug.Log($"Logging in with PlayerID {AuthenticationService.Instance.PlayerId}");
 

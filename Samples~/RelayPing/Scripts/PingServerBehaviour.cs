@@ -1,5 +1,3 @@
-﻿#if ENABLE_RELAY
-
 using System;
 using Unity.Burst;
 using UnityEngine;
@@ -10,13 +8,13 @@ using System.Collections.Generic;
 using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
-using Unity.Networking.Transport.Relay;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Allocations;
 using Unity.Services.Relay.Models;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
 using Unity.Services.Relay.Http;
+using Unity.Networking.Transport.Relay;
 
 namespace Unity.Networking.Transport.Samples
 {
@@ -30,53 +28,59 @@ namespace Unity.Networking.Transport.Samples
 
         void InitDriver(ref RelayServerData relayServerData)
         {
-            m_NetworkParameters = new List<INetworkParameter>();
-            m_NetworkParameters.Add(new RelayNetworkParameter{ ServerData = relayServerData });
+            var settings = new NetworkSettings();
+            settings.WithRelayParameters(serverData: ref relayServerData);
 
-            m_ServerDriver = NetworkDriver.Create(m_NetworkParameters.ToArray());
+            m_ServerDriver = NetworkDriver.Create(settings);
             m_connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
         }
 
         public IEnumerator ConnectAndBind() {
-            UnityServices.Initialize();
-            
-            var allocationTask = RelayService.AllocationsApiClient.CreateAllocationAsync(new CreateAllocationRequest(new AllocationRequest(2)));
-
-            while(!allocationTask.IsCompleted)
-            {
+            var initTask = UnityServices.InitializeAsync();
+            while(!initTask.IsCompleted)
                 yield return null;
-            }
+            
+            var regionsTask = Unity.Services.Relay.Relay.Instance.ListRegionsAsync();
+            while (!regionsTask.IsCompleted)
+                yield return null;
 
-            if (allocationTask.IsFaulted)
+            if (regionsTask.IsFaulted)
             {
-                Debug.LogError("Create allocation request failed");
-                PingClientUIBehaviour.isServer = false;
+                Debug.LogError("Regions request failed.");
                 yield break;
             }
 
-            var allocation = allocationTask.Result.Result.Data.Allocation;
+            string regionId = regionsTask.Result[0].Id;
 
-            var joinCodeTask = RelayService.AllocationsApiClient.CreateJoincodeAsync(new CreateJoincodeRequest(new JoinCodeRequest(allocation.AllocationId)));
-
-            while(!joinCodeTask.IsCompleted)
-            {
+            var allocationTask = Unity.Services.Relay.Relay.Instance.CreateAllocationAsync(5, regionId);
+            while (!allocationTask.IsCompleted)
                 yield return null;
+            
+            if (allocationTask.IsFaulted)
+            {
+                Debug.LogError("Allocation request failed.");
+                yield break;
             }
+
+            var allocation = allocationTask.Result;
+
+            var joinCodeTask = Unity.Services.Relay.Relay.Instance.GetJoinCodeAsync(allocation.AllocationId);
+            while (!joinCodeTask.IsCompleted)
+                yield return null;
 
             if (joinCodeTask.IsFaulted)
             {
-                Debug.LogError("Create join code request failed");
-                PingClientUIBehaviour.isServer = false;
+                Debug.LogError("Join code request failed.");
                 yield break;
             }
 
-            PingClientUIBehaviour.m_JoinCode = joinCodeTask.Result.Result.Data.JoinCode;
+            PingClientUIBehaviour.m_JoinCode = joinCodeTask.Result;
 
             RelayServerEndpoint defaultEndPoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
                 true, false, allocation.RelayServer.IpV4, allocation.RelayServer.Port);
 
             foreach (var endPoint
-                in allocation.ServerEndpoints)
+                     in allocation.ServerEndpoints)
             {
 #if ENABLE_MANAGED_UNITYTLS
                 if (endPoint.Secure == true && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
@@ -92,10 +96,10 @@ namespace Unity.Networking.Transport.Samples
             var allocationId = RelayUtilities.ConvertFromAllocationIdBytes(allocation.AllocationIdBytes);
             var connectionData = RelayUtilities.ConvertConnectionData(allocation.ConnectionData);
             var key = RelayUtilities.ConvertFromHMAC(allocation.Key);
-            
+
             var relayServerData = new RelayServerData(ref serverEndpoint, 0, ref allocationId, ref connectionData,
                 ref connectionData, ref key, defaultEndPoint.Secure);
-            
+
             relayServerData.ComputeNewNonce();
 
             InitDriver(ref relayServerData);
@@ -191,6 +195,7 @@ namespace Unity.Networking.Transport.Samples
 
             return connection;
         }
+
 #if ENABLE_IL2CPP
         [BurstCompile]
         struct PongJob : IJob
@@ -220,11 +225,11 @@ namespace Unity.Networking.Transport.Samples
 
         private void Update()
         {
-            // When connecting to the relay we need to this? 
+            // When connecting to the relay we need to this?
             if (m_ServerDriver.IsCreated && !isRelayConnected)
             {
                 m_ServerDriver.ScheduleUpdate().Complete();
-                
+
                 var updateJob = new DriverUpdateJob {driver = m_ServerDriver, connections = m_connections};
                 updateJob.Schedule().Complete();
             }
@@ -240,7 +245,8 @@ namespace Unity.Networking.Transport.Samples
 
         void FixedUpdate()
         {
-            if (m_ServerDriver.IsCreated && isRelayConnected) {
+            if (m_ServerDriver.IsCreated && isRelayConnected)
+            {
                 // Wait for the previous frames ping to complete before starting a new one, the Complete in LateUpdate is not
                 // enough since we can get multiple FixedUpdate per frame on slow clients
                 m_updateHandle.Complete();
@@ -272,9 +278,6 @@ namespace Unity.Networking.Transport.Samples
                 m_updateHandle = pongJob.Schedule(m_connections, 1, m_updateHandle);
 #endif
             }
-            
         }
     }
 }
-
-#endif

@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using AOT;
 using Unity.Burst;
 using Unity.Collections;
@@ -74,7 +75,7 @@ namespace Unity.Networking.Transport.Relay
     /// </summary>
     public struct RelayNetworkParameter : INetworkParameter
     {
-        internal const int k_DefaultConnectionTimeMS = 9000;
+        internal const int k_DefaultConnectionTimeMS = 3000;
 
         /// <summary>
         /// The data that is used to describe the connection to the Relay Server.
@@ -389,6 +390,13 @@ namespace Unity.Networking.Transport.Relay
                         if (ProcessRelayData(stream, ref endpoint, (int)bytesRead.ToUInt32(), ref sendInterface, ref queueHandle, ref command, protocolData))
                             return;
                     }
+                    else if (result != Binding.UNITYTLS_USER_WOULD_BLOCK)
+                    {
+                        // We only log errors if they're not a "would block" notification. These can
+                        // routinely happen if we receive a retransmitted handshake message after
+                        // the handshake is over.
+                        Debug.LogError($"Failed to receive secure message (error code {result}).");
+                    }
 
                     command.Type = ProcessPacketCommandType.Drop;
                     return;
@@ -657,7 +665,8 @@ namespace Unity.Networking.Transport.Relay
             {
                 *relayMessage = RelayMessageRelay.Create(relayProtocolData->ServerData.AllocationId, *(RelayAllocationId*)addressPtr, dataLength);
             }
-            relayProtocolData->LastSentTime = relayProtocolData->LastUpdateTime;
+
+            Interlocked.Exchange(ref relayProtocolData->LastSentTime, relayProtocolData->LastUpdateTime);
 
             return SendMessage(relayProtocolData, ref sendInterface, ref sendHandle, ref queueHandle);
         }

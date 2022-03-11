@@ -16,13 +16,23 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,
-    "defineConstraints": [],
+	"defineConstraints": [
+        "ENABLE_JOBS",
+		"ENABLE_RELAY"
+    ],
     "versionDefines": [
         {
-            "name": "com.unity.services.relay",
-            "expression": "",
+            "name": "com.unity.jobs",
+            "expression": "0.0",
+            "define": "ENABLE_JOBS"
+        },
+		{
+            "name": "Unity.Services.Relay",
+            "expression": "0.0",
             "define": "ENABLE_RELAY"
         }
     ],
     "noEngineReferences": false
 }
+
+ 
