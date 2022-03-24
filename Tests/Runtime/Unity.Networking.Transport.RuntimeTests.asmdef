@@ -1,5 +1,5 @@
 {
-    "name": "Unity.Networking.Transport.PlayTests",
+    "name": "Unity.Networking.Transport.RuntimeTests",
     "references": [
         "Unity.Collections",
         "Unity.Networking.Transport",
@@ -10,5 +10,12 @@
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.collections",
+            "expression": "2.0.0-pre.1",
+            "define": "DOTS_COLLECTIONS_MOVE"
+        }
+    ],
     "allowUnsafeCode": true
 }

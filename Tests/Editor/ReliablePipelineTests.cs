@@ -1719,6 +1719,134 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        public unsafe void NetworkPipeline_ReliableSequencedStatistics_NoDrop()
+        {
+            const int packetsCount = 32;
+
+            var clientPipe = m_ClientDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+            var serverPipe = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+            Assert.AreEqual(clientPipe, serverPipe);
+
+            // Connect to server
+            var clientToServer = m_ClientDriver.Connect(m_ServerDriver.LocalEndPoint());
+            Assert.AreNotEqual(default(NetworkConnection), clientToServer);
+            m_ClientDriver.ScheduleUpdate().Complete();
+
+            // Handle incoming connection from client
+            m_ServerDriver.ScheduleUpdate().Complete();
+            var serverToClient = m_ServerDriver.Accept();
+            Assert.AreNotEqual(default(NetworkConnection), serverToClient);
+
+            // Receive incoming message from server
+            m_ClientDriver.ScheduleUpdate().Complete();
+
+            Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out _));
+
+            for (int i = 0; i < packetsCount; i++)
+            {
+                Assert.Zero(m_ServerDriver.BeginSend(serverPipe, serverToClient, out var writer));
+                writer.WriteInt(i);
+                Assert.AreEqual(4, m_ServerDriver.EndSend(writer));
+            }
+            m_ServerDriver.ScheduleUpdate().Complete();
+            m_ClientDriver.ScheduleUpdate().Complete();
+
+            for (int i = 0; i < packetsCount; i++)
+            {
+                Assert.AreEqual(NetworkEvent.Type.Data, m_ClientDriver.PopEventForConnection(clientToServer, out var reader));
+                Assert.AreEqual(i, reader.ReadInt());
+            }
+
+            m_ClientDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, clientToServer, out var tmpReceiveBuffer, out var tmpSendBuffer, out var clientReliableBuffer);
+            var clientReliableCtx = (ReliableUtility.SharedContext*)clientReliableBuffer.GetUnsafePtr();
+
+            UnityEngine.Debug.Log("Client Reliability stats\nPacketsDropped: " + clientReliableCtx->stats.PacketsDropped + "\n" +
+                "PacketsDuplicated: " + clientReliableCtx->stats.PacketsDuplicated + "\n" +
+                "PacketsOutOfOrder: " + clientReliableCtx->stats.PacketsOutOfOrder + "\n" +
+                "PacketsReceived: " + clientReliableCtx->stats.PacketsReceived + "\n" +
+                "PacketsResent: " + clientReliableCtx->stats.PacketsResent + "\n" +
+                "PacketsSent: " + clientReliableCtx->stats.PacketsSent + "\n" +
+                "PacketsStale: " + clientReliableCtx->stats.PacketsStale + "\n");
+
+            Assert.AreEqual(packetsCount, clientReliableCtx->stats.PacketsReceived);
+            Assert.Zero(clientReliableCtx->stats.PacketsDropped);
+        }
+
+        [Test]
+        public unsafe void NetworkPipeline_ReliableSequencedStatistics_Drop([Values(10, 100)] int packetsToSkip)
+        {
+            var clientPipe = m_ClientDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+            var serverPipe = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+            Assert.AreEqual(clientPipe, serverPipe);
+
+            // Connect to server
+            var clientToServer = m_ClientDriver.Connect(m_ServerDriver.LocalEndPoint());
+            Assert.AreNotEqual(default(NetworkConnection), clientToServer);
+            m_ClientDriver.ScheduleUpdate().Complete();
+
+            // Handle incoming connection from client
+            m_ServerDriver.ScheduleUpdate().Complete();
+            var serverToClient = m_ServerDriver.Accept();
+            Assert.AreNotEqual(default(NetworkConnection), serverToClient);
+
+            // Receive incoming message from server
+            m_ClientDriver.ScheduleUpdate().Complete();
+
+            Assert.AreEqual(NetworkEvent.Type.Connect, clientToServer.PopEvent(m_ClientDriver, out _));
+
+            m_ClientDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, clientToServer, out _, out _, out var clientReliableBuffer);
+            var clientReliableCtx = (ReliableUtility.SharedContext*)clientReliableBuffer.GetUnsafePtr();
+
+            m_ServerDriver.GetPipelineBuffers(clientPipe, m_ReliableStageId, serverToClient, out _, out _, out var serverReliableBuffer);
+            var serverReliableCtx = (ReliableUtility.SharedContext*)serverReliableBuffer.GetUnsafePtr();
+
+            ReliableUtility.SetMinimumResendTime(10000, m_ServerDriver, serverPipe, serverToClient);
+
+            for (int i = 1; i <= 10; i++)
+            {
+                Assert.Zero(m_ServerDriver.BeginSend(serverPipe, serverToClient, out var writer));
+                writer.WriteInt(i);
+                Assert.AreEqual(4, m_ServerDriver.EndSend(writer));
+
+                m_ServerDriver.ScheduleUpdate().Complete();
+                m_ClientDriver.ScheduleUpdate().Complete();
+
+                Assert.AreEqual(NetworkEvent.Type.Data, m_ClientDriver.PopEventForConnection(clientToServer, out var reader));
+                Assert.AreEqual(i, reader.ReadInt());
+
+                m_ClientDriver.ScheduleUpdate().Complete();
+                m_ClientDriver.ScheduleUpdate().Complete();
+                m_ServerDriver.ScheduleUpdate().Complete();
+            }
+
+            Assert.AreEqual(10, serverReliableCtx->SentPackets.Sequence);
+            serverReliableCtx->SentPackets.Sequence = 10 + packetsToSkip; // skip some packets
+
+            {
+                Assert.Zero(m_ServerDriver.BeginSend(serverPipe, serverToClient, out var writer));
+                writer.WriteInt(1234);
+                Assert.AreEqual(4, m_ServerDriver.EndSend(writer));
+            }
+
+            m_ServerDriver.ScheduleUpdate().Complete();
+            m_ClientDriver.ScheduleUpdate().Complete();
+            m_ServerDriver.ScheduleUpdate().Complete();
+
+            Assert.AreEqual(NetworkEvent.Type.Empty, m_ClientDriver.PopEventForConnection(clientToServer, out _));
+
+            Assert.AreEqual(11, clientReliableCtx->stats.PacketsReceived);
+            Assert.AreEqual(packetsToSkip, clientReliableCtx->stats.PacketsDropped);
+
+            UnityEngine.Debug.Log("Client Reliability stats\nPacketsDropped: " + clientReliableCtx->stats.PacketsDropped + "\n" +
+                "PacketsDuplicated: " + clientReliableCtx->stats.PacketsDuplicated + "\n" +
+                "PacketsOutOfOrder: " + clientReliableCtx->stats.PacketsOutOfOrder + "\n" +
+                "PacketsReceived: " + clientReliableCtx->stats.PacketsReceived + "\n" +
+                "PacketsResent: " + clientReliableCtx->stats.PacketsResent + "\n" +
+                "PacketsSent: " + clientReliableCtx->stats.PacketsSent + "\n" +
+                "PacketsStale: " + clientReliableCtx->stats.PacketsStale + "\n");
+        }
+
+        [Test]
         public void NetworkPipeline_UnreliableSequenced_SendRecvOnce()
         {
             var clientPipe = m_ClientDriver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));

@@ -98,7 +98,6 @@ namespace Unity.Networking.Transport
             else
             {
                 parameterSlice = m_ParameterOffsets[typeHash];
-                UnityEngine.Debug.LogWarning($"The parameters list already contains a parameter of type {typeof(T).Name}. The previous value will be overwritten.");
             }
 
             var valuePtr = (T*)((byte*)m_Parameters.GetUnsafePtr<byte>() + parameterSlice.Offset);

@@ -1,5 +1,16 @@
 # Change log
 
+## [1.0.0-pre.16] - 2022-03-24
+
+### Changes
+* Don't warn when overwriting settings in `NetworkSettings` (e.g. when calling the same `WithFooParameters` method twice).
+* Added new methods to set security parameters: `NetworkSettings.WithSecureClientParameters` and `NetworkSettings.WithSecureServerParameters`. These replace the existing `WithSecureParameters`, which is now obsolete.
+* Updated Collections dependency to 1.2.3.
+
+### Fixes
+* Fixed client certificate not being passed to UnityTLS on secure connections. This prevented client authentication from properly working.
+* Fixed: Reliable pipeline drop statistics inaccurate.
+
 ## [1.0.0-pre.15] - 2022-03-11
 
 ### Changes

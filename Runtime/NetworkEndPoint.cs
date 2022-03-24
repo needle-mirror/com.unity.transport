@@ -365,6 +365,11 @@ namespace Unity.Networking.Transport
         {
             return AddressToString(ref rawNetworkAddress).ToString();
         }
+
+        public override string ToString()
+        {
+            return AddressToString(ref rawNetworkAddress).ToString();
+        }
         
         private static ushort ByteSwap(ushort val)
         {

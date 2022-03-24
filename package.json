@@ -1,25 +1,25 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.0.0-pre.15",
+  "version": "1.0.0-pre.16",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
   "dependencies": {
-    "com.unity.collections": "1.1.0",
+    "com.unity.collections": "1.2.3",
     "com.unity.burst": "1.6.4",
     "com.unity.mathematics": "1.2.5"
   },
   "upm": {
-    "changelog": "### Changes,* An error is now logged if failing to decrypt a DTLS message when using Relay.,* Decreased default Relay keep-alive period to 3 seconds (was 9 seconds). The value can still be configured through the `relayConnectionTimeMS` parameter of `NetworkSettings.WithRelayParameters`.,### Fixes,* Updated Relay sample to the most recent Relay SDK APIs (would fail to compile with latest packages)."
+    "changelog": "### Changes\n* Don't warn when overwriting settings in `NetworkSettings` (e.g. when calling the same `WithFooParameters` method twice).\n* Added new methods to set security parameters: `NetworkSettings.WithSecureClientParameters` and `NetworkSettings.WithSecureServerParameters`. These replace the existing `WithSecureParameters`, which is now obsolete.\n* Updated Collections dependency to 1.2.3.\n\n### Fixes\n* Fixed client certificate not being passed to UnityTLS on secure connections. This prevented client authentication from properly working.\n* Fixed: Reliable pipeline drop statistics inaccurate."
   },
   "upmCi": {
-    "footprint": "432ca06b01a515cf8fb6819fafe456fa5920ec8c"
+    "footprint": "32ccb3482ac9d890f7e187edc0daf79ada94cda0"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "6e153d31705a6c82c14e0c6287ad98ce4f5c428c"
+    "revision": "bf571bfef0171c649524988792968413ac8e8878"
   },
   "samples": [
     {

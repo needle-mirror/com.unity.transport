@@ -143,167 +143,6 @@ namespace Unity.Networking.Transport.TLS
         }
     }
 
-    /// <summary>
-    /// Secure Transport Protocol select the underlying Transport protocol (TCP or UDP)
-    /// </summary>
-    public enum SecureTransportProtocol : uint
-    {
-        /// <summary>standard TLS provided for TCP connections</summary>
-        TLS = 0,
-        /// <summary>standard TLS provided for UDP connections</summary>
-        DTLS = 1,
-    }
-
-    /// <summary>
-    /// Secure client authentication policy
-    /// </summary>
-    public enum SecureClientAuthPolicy : uint
-    {
-        /// <summary>peer certificate is not checked</summary>
-        /// <remarks>
-        /// (default on server)
-        /// (insecure on client)
-        /// </remarks>
-        None = 0,
-        /// <summary>peer certificate is checked, however the handshake continues even if verification failed</summary>
-        Optional = 1,
-        /// <summary>peer *must* present a valid certificate. handshake is aborted if verification failed.</summary>
-        Required = 2,
-    }
-
-    public static class SecureParameterExtensions
-    {
-        /// <summary>
-        /// Sets the <see cref="SecureNetworkProtocolParameter"/> values for the <see cref="NetworkSettings"/>
-        /// </summary>
-        /// <param name="pem"><seealso cref="SecureNetworkProtocolParameter.Pem"/></param>
-        /// <param name="hostname"><seealso cref="SecureNetworkProtocolParameter.Hostname"/></param>
-        /// <param name="protocol"><seealso cref="SecureNetworkProtocolParameter.Protocol"/></param>
-        /// <param name="clientAuthenticationPolicy"><seealso cref="SecureNetworkProtocolParameter.ClientAuthenticationPolicy"/></param>
-        /// <param name="sslReadTimeoutMs"><seealso cref="SecureNetworkProtocolParameter.SSLReadTimeoutMs"/></param>
-        /// <param name="sslHandshakeTimeoutMax"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMax"/></param>
-        /// <param name="sslHandshakeTimeoutMin"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMin"/></param>
-        public static ref NetworkSettings WithSecureParameters(
-            ref this NetworkSettings    settings,
-            ref FixedString4096Bytes    pem,
-            ref FixedString32Bytes      hostname,
-            SecureTransportProtocol     protocol                        = SecureTransportProtocol.DTLS,
-            SecureClientAuthPolicy      clientAuthenticationPolicy      = SecureClientAuthPolicy.Optional,
-            uint                        sslReadTimeoutMs                = 0,
-            uint                        sslHandshakeTimeoutMax          = 60000,
-            uint                        sslHandshakeTimeoutMin          = 1000
-        )
-        {
-            var parameter = new SecureNetworkProtocolParameter
-            {
-                Pem                         = pem,
-                Rsa                         = default,
-                RsaKey                      = default,
-                Hostname                    = hostname,
-                Protocol                    = protocol,
-                ClientAuthenticationPolicy  = clientAuthenticationPolicy,
-                SSLReadTimeoutMs            = sslReadTimeoutMs,
-                SSLHandshakeTimeoutMax      = sslHandshakeTimeoutMax,
-                SSLHandshakeTimeoutMin      = sslHandshakeTimeoutMin,
-            };
-
-            settings.AddRawParameterStruct(ref parameter);
-
-            return ref settings;
-        }
-
-        /// <summary>
-        /// Sets the <see cref="SecureNetworkProtocolParameter"/> values for the <see cref="NetworkSettings"/>
-        /// </summary>
-        /// <param name="pem"><seealso cref="SecureNetworkProtocolParameter.Pem"/></param>
-        /// <param name="rsa"><seealso cref="SecureNetworkProtocolParameter.Rsa"/></param>
-        /// <param name="rsaKey"><seealso cref="SecureNetworkProtocolParameter.RsaKey"/></param>
-        /// <param name="hostname"><seealso cref="SecureNetworkProtocolParameter.Hostname"/></param>
-        /// <param name="protocol"><seealso cref="SecureNetworkProtocolParameter.Protocol"/></param>
-        /// <param name="clientAuthenticationPolicy"><seealso cref="SecureNetworkProtocolParameter.ClientAuthenticationPolicy"/></param>
-        /// <param name="sslReadTimeoutMs"><seealso cref="SecureNetworkProtocolParameter.SSLReadTimeoutMs"/></param>
-        /// <param name="sslHandshakeTimeoutMax"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMax"/></param>
-        /// <param name="sslHandshakeTimeoutMin"><seealso cref="SecureNetworkProtocolParameter.SSLHandshakeTimeoutMin"/></param>
-        public static ref NetworkSettings WithSecureParameters(
-            ref this NetworkSettings    settings,
-            ref FixedString4096Bytes    pem,
-            ref FixedString4096Bytes    rsa,
-            ref FixedString4096Bytes    rsaKey,
-            ref FixedString32Bytes      hostname,
-            SecureTransportProtocol     protocol                        = SecureTransportProtocol.DTLS,
-            SecureClientAuthPolicy      clientAuthenticationPolicy      = SecureClientAuthPolicy.Optional,
-            uint                        sslReadTimeoutMs                = 0,
-            uint                        sslHandshakeTimeoutMax          = 60000,
-            uint                        sslHandshakeTimeoutMin          = 1000
-        )
-        {
-            var parameter = new SecureNetworkProtocolParameter
-            {
-                Pem                         = pem,
-                Rsa                         = rsa,
-                RsaKey                      = rsaKey,
-                Hostname                    = hostname,
-                Protocol                    = protocol,
-                ClientAuthenticationPolicy  = clientAuthenticationPolicy,
-                SSLReadTimeoutMs            = sslReadTimeoutMs,
-                SSLHandshakeTimeoutMax      = sslHandshakeTimeoutMax,
-                SSLHandshakeTimeoutMin      = sslHandshakeTimeoutMin,
-            };
-
-            settings.AddRawParameterStruct(ref parameter);
-
-            return ref settings;
-        }
-
-        /// <summary>
-        /// Gets the <see cref="SecureNetworkProtocolParameter"/>
-        /// </summary>
-        /// <returns>Returns the <see cref="SecureNetworkProtocolParameter"/> values for the <see cref="NetworkSettings"/></returns>
-        public static SecureNetworkProtocolParameter GetSecureParameters(ref this NetworkSettings settings)
-        {
-            if (!settings.TryGet<SecureNetworkProtocolParameter>(out var parameters))
-            {
-                throw new System.InvalidOperationException($"Can't extract Secure parameters: {nameof(SecureNetworkProtocolParameter)} must be provided to the {nameof(NetworkSettings)}");
-            }
-
-            return parameters;
-        }
-    }
-
-    /// <summary>
-    /// The SecureNetworkProtocolParameter are settings used to provide configuration to the underlying
-    /// security implementation.
-    /// </summary>
-    public struct SecureNetworkProtocolParameter : INetworkParameter
-    {
-        /// <summary>Common (client/server) certificate</summary>
-        public FixedString4096Bytes                 Pem;
-        /// <summary>Server (or client) own certificate</summary>
-        public FixedString4096Bytes                 Rsa;
-        /// <summary>Server (or client) own private key</summary>
-        public FixedString4096Bytes                 RsaKey;
-        /// <summary>Server's hostname's name</summary>
-        public FixedString32Bytes                   Hostname;
-        /// <summary>Underlying transport protocol provided to tls </summary>
-        /// <remarks>
-        /// This value is either TLS (used for TCP Connections) or DTLS (used for UDP Connections)
-        /// </remarks>
-        public SecureTransportProtocol              Protocol;
-        /// <summary>server-only policy regarding client authentication</summary>
-        /// <remarks>
-        /// Default value is optional
-        /// </remarks>
-        public SecureClientAuthPolicy               ClientAuthenticationPolicy;
-        /// <summary>Timeout in ms for ssl reads.</summary>
-        public uint                                 SSLReadTimeoutMs;
-        /// <summary>Initial ssl handshake maximum timeout value in milliseconds. Default is 60000 (60 seconds)</summary>
-        public uint                                 SSLHandshakeTimeoutMax;
-        /// <summary>Initial ssl handshake minimum timeout value in milliseconds. Default is 1000 (1 sec)</summary>
-        public uint                                 SSLHandshakeTimeoutMin;
-
-        public bool Validate() => true;
-    }
-
     [BurstCompile]
     internal unsafe struct SecureNetworkProtocol : INetworkProtocol
     {
@@ -593,19 +432,38 @@ namespace Unity.Networking.Transport.TLS
 
                 secureClient.ClientConfig->transportUserData = secureUserData;
 
-                secureClient.ClientConfig->hostname = protocolData->Hostname.GetUnsafePtr();
-                if (tlsRole == Binding.UnityTLSRole_Server)
+                if (protocolData->Hostname != default)
+                {
+                    secureClient.ClientConfig->hostname = protocolData->Hostname.GetUnsafePtr();
+                }
+                else
+                {
+                    secureClient.ClientConfig->hostname = null;
+                }
+
+                if (protocolData->Pem != default)
+                {
+                    secureClient.ClientConfig->caPEM = new Binding.unitytls_dataRef()
+                    {
+                        dataPtr = protocolData->Pem.GetUnsafePtr(),
+                        dataLen = new UIntPtr((uint)protocolData->Pem.Length)
+                    };
+                }
+                else
+                {
+                    secureClient.ClientConfig->caPEM = new Binding.unitytls_dataRef()
+                    {
+                        dataPtr = null,
+                        dataLen = new UIntPtr(0)
+                    };
+                }
+
+                if (protocolData->Rsa != default && protocolData->RsaKey != default)
                 {
                     secureClient.ClientConfig->serverPEM = new Binding.unitytls_dataRef()
                     {
                         dataPtr = protocolData->Rsa.GetUnsafePtr(),
                         dataLen = new UIntPtr((uint)protocolData->Rsa.Length)
-                    };
-
-                    secureClient.ClientConfig->caPEM = new Binding.unitytls_dataRef()
-                    {
-                        dataPtr = protocolData->Pem.GetUnsafePtr(),
-                        dataLen = new UIntPtr((uint)protocolData->Pem.Length)
                     };
 
                     secureClient.ClientConfig->privateKeyPEM = new Binding.unitytls_dataRef()
@@ -620,12 +478,6 @@ namespace Unity.Networking.Transport.TLS
                     {
                         dataPtr = null,
                         dataLen = new UIntPtr(0)
-                    };
-
-                    secureClient.ClientConfig->caPEM = new Binding.unitytls_dataRef()
-                    {
-                        dataPtr = protocolData->Pem.GetUnsafePtr(),
-                        dataLen = new UIntPtr((uint)protocolData->Pem.Length)
                     };
 
                     secureClient.ClientConfig->privateKeyPEM = new Binding.unitytls_dataRef()
@@ -810,10 +662,16 @@ namespace Unity.Networking.Transport.TLS
                 clientState = Binding.unitytls_client_get_state(secureClient.ClientPtr);
                 if (clientState == Binding.UnityTLSClientState_Fail)
                 {
-                    // In this case we are likely in an error state and we should likely not be getting data from this
-                    // client and thus we should Disconnect them.
-                    UnityEngine.Debug.LogError(
-                        $"Failed to Recv Encrypted Data with result {handshakeResult} on a unauthorized connection");
+                    // Failed client on server finish state means the handshake has failed, likely
+                    // due to a certificate validation failure.
+                    if (handshakeResult == Binding.UNITYTLS_SSL_HANDSHAKE_SERVER_FINISHED)
+                    {
+                        UnityEngine.Debug.LogError("Secure handshake failure (likely caused by certificate validation failure).");
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogError("Received a secure message on an unauthorized connection.");
+                    }
 
                     command.Type = ProcessPacketCommandType.Drop;
 

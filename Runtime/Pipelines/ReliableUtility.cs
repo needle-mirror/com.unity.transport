@@ -705,23 +705,23 @@ namespace Unity.Networking.Transport.Utilities
             {
                 int distance = SequenceHelpers.AbsDistance(header.SequenceId, (ushort)reliable->ReceivedPackets.Sequence);
 
-                for (var i = 0; i < Math.Min(distance, window); ++i)
-                {
-                    if ((reliable->ReceivedPackets.AckMask & 1 << (window - i)) == 0)
-                    {
-                        reliable->stats.PacketsDropped++;
-                    }
-                }
-
                 if (distance > window)
                 {
-                    reliable->stats.PacketsDropped += distance - window;
+                    reliable->stats.PacketsDropped += distance - 1;
                     reliable->ReceivedPackets.AckMask = 1;
                 }
                 else
                 {
                     reliable->ReceivedPackets.AckMask <<= distance;
                     reliable->ReceivedPackets.AckMask |= 1;
+
+                    for (var i = 0; i < Math.Min(distance, window); ++i)
+                    {
+                        if ((reliable->ReceivedPackets.AckMask & 1 << i) == 0)
+                        {
+                            reliable->stats.PacketsDropped++;
+                        }
+                    }
                 }
 
                 reliable->ReceivedPackets.Sequence = header.SequenceId;

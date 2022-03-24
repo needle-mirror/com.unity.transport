@@ -1,12 +1,12 @@
 using System;
 using System.Collections;
-using NUnit.Framework;
-using Unity.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using NUnit.Framework;
+using Unity.Collections;
 using UnityEngine.TestTools;
 
 namespace Unity.Networking.Transport.Tests
@@ -48,7 +48,7 @@ namespace Unity.Networking.Transport.Tests
             CommonUtilites.FillBuffer(parameter32.Data, 32);
             CommonUtilites.FillBuffer(parameter64.Data, 64);
 
-            using var settings = new NetworkSettings();
+            var settings = new NetworkSettings();
             settings.AddRawParameterStruct(ref parameter32);
             settings.AddRawParameterStruct(ref parameter64);
 
@@ -60,35 +60,15 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
-        public unsafe void NetworkSettings_WithParameter_WarnsOnDuplicated()
-        {
-            using var settings = new NetworkSettings();
-
-            var paramA = new TestParameter32();
-            var paramB = new TestParameter32();
-
-            paramA.Data[0] = 1;
-            paramB.Data[0] = 2;
-
-            settings.AddRawParameterStruct(ref paramA);
-            settings.AddRawParameterStruct(ref paramB);
-
-            Assert.IsTrue(settings.TryGet<TestParameter32>(out var returnedParameter));
-            Assert.AreEqual(2, returnedParameter.Data[0]);
-
-            LogAssert.Expect(UnityEngine.LogType.Warning, $"The parameters list already contains a parameter of type {nameof(TestParameter32)}. The previous value will be overwritten.");
-        }
-
-        [Test]
         public void NetworkSettings_WithParameter_ValidatesParameter()
         {
-            using var settingsValid = new NetworkSettings();
+            var settingsValid = new NetworkSettings();
             var parameter = new TestParameterValidatable { Valid = 1 };
             settingsValid.AddRawParameterStruct(ref parameter);
 
             TestDelegate funct = () =>
             {
-                using var settingsInvalid = new NetworkSettings();
+                var settingsInvalid = new NetworkSettings();
                 parameter = new TestParameterValidatable { Valid = 0 };
                 settingsInvalid.AddRawParameterStruct(ref parameter);
             };
@@ -107,7 +87,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void NetworkSettings_TryGet_ReturnsCorrectly()
         {
-            using var settings = new NetworkSettings();
+            var settings = new NetworkSettings();
             var parameter = new TestParameter32();
             settings.AddRawParameterStruct(ref parameter);
 
@@ -121,7 +101,7 @@ namespace Unity.Networking.Transport.Tests
             var parameter32 = new TestParameter32();
             CommonUtilites.FillBuffer(parameter32.Data, 32);
 
-            using var settings = new NetworkSettings();
+            var settings = new NetworkSettings();
             settings.AddRawParameterStruct(ref parameter32);
 
             Assert.IsTrue(settings.TryGet<TestParameter32>(out var returnedParameter32));
@@ -133,7 +113,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void NetworkSettings_WithParameter_ThrowsIfDisposed()
         {
-            using var settings = new NetworkSettings();
+            var settings = new NetworkSettings();
             settings.Dispose();
 
             TestDelegate funct = () =>
@@ -156,7 +136,7 @@ namespace Unity.Networking.Transport.Tests
         [Test]
         public void NetworkSettings_TryGet_ThrowsIfDisposed()
         {
-            using var settings = new NetworkSettings();
+            var settings = new NetworkSettings();
             settings.Dispose();
 
             TestDelegate funct = () =>
@@ -298,7 +278,7 @@ namespace Unity.Networking.Transport.Tests
             CommonUtilites.FillBuffer(parameter32.Data, 32);
             CommonUtilites.FillBuffer(parameter64.Data, 64);
 
-            using var settings = NetworkSettings.FromArray(parameter32, parameter64);
+            var settings = NetworkSettings.FromArray(parameter32, parameter64);
 
             Assert.IsTrue(settings.TryGet<TestParameter32>(out var returnedParameter32));
             Assert.IsTrue(settings.TryGet<TestParameter64>(out var returnedParameter64));
@@ -312,7 +292,7 @@ namespace Unity.Networking.Transport.Tests
         {
             TestDelegate funct = () =>
             {
-                using var settings = NetworkSettings.FromArray(new TestParameterValidatable { Valid = 0 });
+                var settings = NetworkSettings.FromArray(new TestParameterValidatable { Valid = 0 });
             };
 
             var expectedMessage = $"The provided network parameter ({typeof(TestParameterValidatable).Name}) is not valid";
