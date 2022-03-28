@@ -1,5 +1,10 @@
 # Change log
 
+## [1.0.0] - 2022-03-28
+
+### Changes
+* Changed version to 1.0.0.
+
 ## [1.0.0-pre.16] - 2022-03-24
 
 ### Changes
@@ -163,19 +168,6 @@
 * Upgraded burst to 1.5.5
 
 ### Changes
-### Fixes
-### Upgrade guide
-
-## [0.9.0] - 2021-05-10
-### New features
-* Added support for long serialization and delta compression.
-* Upgraded collections to 1.0.0-pre.1
-* Added a new network interface for WebSockets, can be used in both native and web builds.
-
-### Changes
-* Minimum required Unity version has changed to 2020.3.0f1.
-* The transport package can be compiled with the tiny c# profile and for WebGL, but WebGL builds only support IPC - not sockets.
-
 ### Fixes
 ### Upgrade guide
 

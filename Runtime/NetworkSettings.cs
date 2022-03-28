@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using BurstRuntime = Unity.Burst.BurstRuntime;
 
 namespace Unity.Networking.Transport
 {

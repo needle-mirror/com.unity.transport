@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.0.0-pre.16",
+  "version": "1.0.0",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
@@ -11,15 +11,15 @@
     "com.unity.mathematics": "1.2.5"
   },
   "upm": {
-    "changelog": "### Changes\n* Don't warn when overwriting settings in `NetworkSettings` (e.g. when calling the same `WithFooParameters` method twice).\n* Added new methods to set security parameters: `NetworkSettings.WithSecureClientParameters` and `NetworkSettings.WithSecureServerParameters`. These replace the existing `WithSecureParameters`, which is now obsolete.\n* Updated Collections dependency to 1.2.3.\n\n### Fixes\n* Fixed client certificate not being passed to UnityTLS on secure connections. This prevented client authentication from properly working.\n* Fixed: Reliable pipeline drop statistics inaccurate."
+    "changelog": "### Changes\n* Changed version to 1.0.0."
   },
   "upmCi": {
-    "footprint": "32ccb3482ac9d890f7e187edc0daf79ada94cda0"
+    "footprint": "38407b6505436c019e602001e0267b831314df13"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "bf571bfef0171c649524988792968413ac8e8878"
+    "revision": "6a2ab2aed4ceaaef42b07fdcae1a89d0e09014a4"
   },
   "samples": [
     {
