@@ -1,25 +1,25 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
   "dependencies": {
-    "com.unity.collections": "1.2.3",
-    "com.unity.burst": "1.6.4",
-    "com.unity.mathematics": "1.2.5"
+    "com.unity.collections": "1.2.4",
+    "com.unity.burst": "1.6.6",
+    "com.unity.mathematics": "1.2.6"
   },
-  "upm": {
-    "changelog": "### Changes\n* Changed version to 1.0.0."
+  "_upm": {
+    "changelog": "### New features\n* A `DataStreamReader` can now be passed to another job without triggering the job safety system.\n* A `GetRelayConnectionStatus` method has been added to `NetworkDriver` to query the status of the connection to the Relay server.\n\n### Changes\n* `NetworkSettings.WithDataStreamParameters` is now obsolete. The functionality still works and will remain supported for version 1.X of the package, but will be removed in version 2.0. The reason for the removal is that in 2.0 the data stream size is always dynamically-sized to avoid out-of-memory errors.\n* `NetworkSettings.WithPipelineParameters` is now obsolete. The functionality still works and will remain supported for version 1.X of the package, but will be removed in version 2.0, where pipeline buffer sizing is handled internally.\n* Updated Burst dependency to 1.6.6.\n* Updated Collections dependency to 1.2.4.\n* Updated Mathematics dependency to 1.2.6.\n\n### Fixes\n* `BeginSend` would not return an error if called on a closed connection before the next `ScheduleUpdate` call.\n* Fixed a warning if using the default maximum payload size with DTLS.\n* Removed an error log when receiving messages on a closed DTLS connection (this scenario is common if there were in-flight messages at the moment of disconnection).\n* Fix broken link in package documentation."
   },
   "upmCi": {
-    "footprint": "38407b6505436c019e602001e0267b831314df13"
+    "footprint": "cd3960b74c34568953deb592a44e23402c3a914c"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "6a2ab2aed4ceaaef42b07fdcae1a89d0e09014a4"
+    "revision": "ce258b46039e4d4937778aa8d02c6532b9ea0888"
   },
   "samples": [
     {

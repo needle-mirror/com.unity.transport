@@ -1,7 +1,12 @@
+using System.Threading;
 using NUnit.Framework;
 using Unity.Networking.Transport;
+using Unity.Networking.Transport.Utilities;
+using UnityEngine;
 using UnityEngine.TestTools;
 using System.Linq;
+
+using static Unity.Networking.Transport.Tests.CommonUtilites;
 
 namespace Unity.Networking.Transport.Tests
 {
@@ -41,6 +46,71 @@ namespace Unity.Networking.Transport.Tests
                 baselibInterface.ScheduleSend(default, default).Complete();
 
                 LogAssert.NoUnexpectedReceived();
+            }
+        }
+
+        [Test]
+        [UnityPlatform(include = new[] { RuntimePlatform.IPhonePlayer })]
+        public void Baselib_AfterAppSuspension_SocketIsRecreated()
+        {
+            using (var baselibInterface = new BaselibNetworkInterface())
+            using (var dummyDriver = NetworkDriver.Create())
+            {
+                var settings = new NetworkSettings();
+                baselibInterface.Initialize(settings);
+                baselibInterface.CreateInterfaceEndPoint(NetworkEndPoint.AnyIpv4, out var endpoint);
+                Assert.Zero(baselibInterface.Bind(endpoint));
+
+                var socket = baselibInterface.m_Baselib[0].m_Socket;
+
+                var packetReceiver = new NetworkPacketReceiver();
+
+                dummyDriver.ScheduleUpdate().Complete();
+                packetReceiver.m_Driver = dummyDriver;
+                baselibInterface.ScheduleReceive(packetReceiver, default).Complete();
+
+                // Fake an app suspension by manually calling the focus callback. We add sleeps
+                // around the call to ensure the timestamp is different from the receice jobs.
+                Thread.Sleep(5);
+                AppForegroundTracker.OnFocusChanged(true);
+                Thread.Sleep(5);
+
+                dummyDriver.ScheduleUpdate().Complete();
+                packetReceiver.m_Driver = dummyDriver;
+                baselibInterface.ScheduleReceive(packetReceiver, default).Complete();
+
+                Assert.AreNotEqual(socket, baselibInterface.m_Baselib[0].m_Socket);
+            }
+        }
+
+        [Test]
+        [UnityPlatform(include = new[] { RuntimePlatform.IPhonePlayer })]
+        public void Baselib_AfterAppSuspension_CanSendReceive()
+        {
+            using (var server = NetworkDriver.Create())
+            using (var client = NetworkDriver.Create())
+            {
+                ConnectServerAndClient(NetworkEndPoint.LoopbackIpv4, server, client, out _, out var connection);
+
+                // Fake an app suspension by manually calling the focus callback. We add sleeps
+                // around the call to ensure the timestamp is different from the driver updates.
+                Thread.Sleep(5);
+                AppForegroundTracker.OnFocusChanged(true);
+                Thread.Sleep(5);
+
+                // Let the server and client recreate their sockets.
+                client.ScheduleUpdate().Complete();
+                server.ScheduleUpdate().Complete();
+
+                client.BeginSend(connection, out var writer);
+                writer.WriteInt(42);
+                client.EndSend(writer);
+
+                client.ScheduleUpdate().Complete();
+
+                WaitForDataEvent(server, out var reader);
+
+                Assert.AreEqual(42, reader.ReadInt());
             }
         }
     }

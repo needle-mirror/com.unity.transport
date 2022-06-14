@@ -283,5 +283,31 @@ namespace Unity.Networking.Transport.Tests
                 }
             }
         }
+
+        [Test]
+        public void SendMessage_ReceiveAfterConnectionClose([ValueSource("s_SecureModeParameters")] SecureProtocolMode secureMode)
+        {
+            // Test only checks that receiving a message on a closed connection doesn't generate errors.
+
+            using (var server = CreateServer(secureMode))
+            using (var client = CreateClient(secureMode))
+            {
+                ConnectServerAndClient(NetworkEndPoint.LoopbackIpv4, server, client, out var s2cConnection, out var c2sConnection);
+
+                client.Disconnect(c2sConnection);
+
+                server.BeginSend(s2cConnection, out var writer);
+                writer.WriteInt(42);
+                server.EndSend(writer);
+
+                RunPeriodicallyFor(500, () =>
+                {
+                    server.ScheduleFlushSend(default).Complete();
+                    client.ScheduleUpdate().Complete();
+
+                    Assert.AreEqual(NetworkEvent.Type.Empty, client.PopEvent(out _, out _));
+                });
+            }
+        }
     }
 }

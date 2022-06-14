@@ -1,3 +1,5 @@
+using System;
+
 namespace Unity.Networking.Transport
 {
     /// <summary>
@@ -141,6 +143,7 @@ namespace Unity.Networking.Transport
         /// Sets the <see cref="NetworkDataStreamParameter"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
         /// <param name="size"><seealso cref="NetworkDataStreamParameter.size"/></param>
+        [Obsolete("In Unity Transport 2.0, the data stream size will always be dynamically-sized and this API will be removed.")]
         public static ref NetworkSettings WithDataStreamParameters(ref this NetworkSettings settings, int size = NetworkDataStreamParameter.k_DefaultSize)
         {
             var parameter = new NetworkDataStreamParameter

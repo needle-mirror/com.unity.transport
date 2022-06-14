@@ -390,13 +390,6 @@ namespace Unity.Networking.Transport.Relay
                         if (ProcessRelayData(stream, ref endpoint, (int)bytesRead.ToUInt32(), ref sendInterface, ref queueHandle, ref command, protocolData))
                             return;
                     }
-                    else if (result != Binding.UNITYTLS_USER_WOULD_BLOCK)
-                    {
-                        // We only log errors if they're not a "would block" notification. These can
-                        // routinely happen if we receive a retransmitted handshake message after
-                        // the handshake is over.
-                        Debug.LogError($"Failed to receive secure message (error code {result}).");
-                    }
 
                     command.Type = ProcessPacketCommandType.Drop;
                     return;
@@ -449,6 +442,9 @@ namespace Unity.Networking.Transport.Relay
                     {
                         SendConnectionRequestToRelay(protocolData, ref sendInterface, ref queueHandle);
                     }
+
+                    command.Type = ProcessPacketCommandType.ProtocolStatusUpdate;
+                    command.As.ProtocolStatusUpdate.Status = (int)RelayConnectionStatus.Established;
 
                     return true;
 
@@ -532,8 +528,8 @@ namespace Unity.Networking.Transport.Relay
                     return true;
 
                 case RelayMessageType.Error:
-                    ProcessRelayError(data, size);
                     command.Type = ProcessPacketCommandType.Drop;
+                    ProcessRelayError(data, size, ref command);
                     return true;
             }
 
@@ -541,7 +537,7 @@ namespace Unity.Networking.Transport.Relay
             return true;
         }
 
-        private static unsafe void ProcessRelayError(byte* data, int size)
+        private static unsafe void ProcessRelayError(byte* data, int size, ref ProcessPacketCommand command)
         {
             if (size != RelayMessageError.Length)
             {
@@ -556,31 +552,38 @@ namespace Unity.Networking.Transport.Relay
                 case 0:
                     Debug.LogError("Received error message from Relay: invalid protocol version. " +
                         "Make sure your Unity Transport package is up to date.");
-                    return;
+                    break;
                 case 1:
-                    Debug.LogError("Received error message from Relay: player timed out due to inactivity. " +
-                        "This could be due to an inappropriate value for reconnectionTimeMS when calling " +
-                        "NetworkSettings.WithRelayParameters. Also make sure to schedule NetworkDriver updates " +
-                        "frequently to avoid this error.");
-                    return;
+                    Debug.LogError("Received error message from Relay: player timed out due to inactivity.");
+                    break;
                 case 2:
                     Debug.LogError("Received error message from Relay: unauthorized.");
-                    return;
+                    break;
                 case 3:
                     Debug.LogError("Received error message from Relay: allocation ID client mismatch.");
-                    return;
+                    break;
                 case 4:
                     Debug.LogError("Received error message from Relay: allocation ID not found.");
-                    return;
+                    break;
                 case 5:
                     Debug.LogError("Received error message from Relay: not connected.");
-                    return;
+                    break;
                 case 6:
                     Debug.LogError("Received error message from Relay: self-connect not allowed.");
-                    return;
+                    break;
                 default:
                     Debug.LogError($"Received error message from Relay with unknown error code {errorMessage.ErrorCode}");
-                    return;
+                    break;
+            }
+
+            // Allocation time outs and failure to find the allocation indicate that the allocation
+            // is not valid anymore, and that users will need to recreate a new one.
+            if (errorMessage.ErrorCode == 1 || errorMessage.ErrorCode == 4)
+            {
+                Debug.LogError("Relay allocation is invalid. See NetworkDriver.GetRelayConnectionStatus and " +
+                    "RelayConnectionStatus.AllocationInvalid for details on how to handle this situation.");
+                command.Type = ProcessPacketCommandType.ProtocolStatusUpdate;
+                command.As.ProtocolStatusUpdate.Status = (int)RelayConnectionStatus.AllocationInvalid;
             }
         }
 
@@ -609,7 +612,8 @@ namespace Unity.Networking.Transport.Relay
                 if (result != Binding.UNITYTLS_SUCCESS)
                 {
                     Debug.LogError($"Secure send failed with result: {result}.");
-                    return -1;
+                    // Error is likely caused by a connection that's closed or not established yet.
+                    return (int)Error.StatusCode.NetworkStateMismatch;
                 }
 
                 return buffer.Length;

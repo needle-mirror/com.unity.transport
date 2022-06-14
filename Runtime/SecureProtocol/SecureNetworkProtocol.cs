@@ -209,7 +209,7 @@ namespace Unity.Networking.Transport.TLS
                     // TODO: We do not support fragmented messages at the moment :(
                     // and the largest packet that mbedTLS sends is 1800 which is the key
                     // exchange..
-                    if (baselibConfig.maximumPayloadSize <= 2000)
+                    if (baselibConfig.maximumPayloadSize < 2000)
                     {
                         UnityEngine.Debug.LogWarning(
                             "Secure Protocol Requires the payload size for the Baselib Interface to be at least 2000KB");
@@ -668,10 +668,6 @@ namespace Unity.Networking.Transport.TLS
                     {
                         UnityEngine.Debug.LogError("Secure handshake failure (likely caused by certificate validation failure).");
                     }
-                    else
-                    {
-                        UnityEngine.Debug.LogError("Received a secure message on an unauthorized connection.");
-                    }
 
                     command.Type = ProcessPacketCommandType.Drop;
 
@@ -712,7 +708,8 @@ namespace Unity.Networking.Transport.TLS
             if (result != Binding.UNITYTLS_SUCCESS)
             {
                 Debug.LogError($"Secure Send failed with result {result}");
-                return -1;
+                // Error is likely caused by a connection that's closed or not established yet.
+                return (int)Error.StatusCode.NetworkStateMismatch;
             }
 
             return buffer.Length;

@@ -633,7 +633,7 @@ namespace Unity.Networking.Transport
             public int m_FailedReads;
         }
 
-        byte* m_bufferPtr;
+        [NativeDisableUnsafePtrRestriction] byte* m_bufferPtr;
         Context m_Context;
         int m_Length;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS

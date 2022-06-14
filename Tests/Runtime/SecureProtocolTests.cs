@@ -18,7 +18,7 @@ namespace Unity.Networking.Transport.Tests
         };
 
         [Test]
-        [UnityPlatform(exclude = new[] {RuntimePlatform.GameCoreXboxOne, RuntimePlatform.PS4, RuntimePlatform.PS5, RuntimePlatform.Android})] // MTT-2511
+        [Ignore("Unstable because of Burst bug. See MTT-2511.")]
         public void SecureProtocol_HalfOpenConnectionsPruning(
             [ValueSource("s_SecureModeParameters")] SecureProtocolMode secureMode)
         {

@@ -395,6 +395,7 @@ namespace Unity.Networking.Transport
         /// Sets the <see cref="NetworkPipelineParams"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
         /// <param name="initialCapacity"><seealso cref="NetworkPipelineParams.initialCapacity"/></param>
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public static ref NetworkSettings WithPipelineParameters(
             ref this NetworkSettings settings,
             int initialCapacity = NetworkPipelineParams.k_DefaultInitialCapacity

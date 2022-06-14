@@ -240,12 +240,19 @@ namespace Unity.Networking.Transport.Tests
             Assert.IsTrue(writer.HasFailedWrites);
             Assert.AreEqual((int)Error.StatusCode.NetworkPacketOverflow, Driver.EndSend(writer));
         }
+
+        [Test]
+        public void BeginSendOnClosedConnection()
+        {
+            Driver.Disconnect(ToRemoteConnection);
+            Assert.AreEqual((int)Error.StatusCode.NetworkStateMismatch, Driver.BeginSend(ToRemoteConnection, out _));
+        }
     }
 
     public class BeginEndExtras
     {
         [Test]
-        public void GivenStateConnecting_LogsError()
+        public void GivenStateConnecting_ReturnsError()
         {
             using (var Driver = new NetworkDriver(new IPCNetworkInterface()))
             using (var RemoteDriver = new NetworkDriver(new IPCNetworkInterface()))
@@ -255,7 +262,6 @@ namespace Unity.Networking.Transport.Tests
                 var ToRemoteConnection = Driver.Connect(RemoteDriver.LocalEndPoint());
 
                 Assert.AreEqual((int)Error.StatusCode.NetworkStateMismatch, Driver.BeginSend(ToRemoteConnection, out var writer));
-                LogAssert.Expect(LogType.Error, "Cannot send data while connecting");
             }
         }
     }

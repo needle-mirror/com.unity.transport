@@ -4,7 +4,7 @@ The Unity Transport Package (`com.unity.transport`) is a low-level networking li
 
 # Documentation
 
-The full documentation for the package can be found on the [Unity multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/1.0.0/introduction).
+The full documentation for the package can be found on the [Unity multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/current/about).
 
 # Technical details
 

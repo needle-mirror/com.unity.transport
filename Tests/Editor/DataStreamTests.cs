@@ -2,6 +2,7 @@ using System;
 using NUnit.Framework;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
 using UnityEngine.TestTools;
 using UnityEngine;
 
@@ -459,6 +460,37 @@ namespace Unity.Networking.Transport.Tests
                     Assert.AreEqual(base_val + i, val);
                 }
                 Assert.AreEqual(1979, reader.ReadULong());
+            }
+        }
+
+        private struct ReaderTestJob : IJob
+        {
+            public DataStreamReader Reader;
+            public NativeArray<int> ReturnValue;
+
+            public void Execute()
+            {
+                ReturnValue[0] = Reader.ReadInt();
+            }
+        }
+
+        [Test]
+        public void ReaderAsJobParameter()
+        {
+            using (var returnValue = new NativeArray<int>(1, Allocator.TempJob))
+            {
+                var writer = new DataStreamWriter(sizeof(int), Allocator.Temp);
+                writer.WriteInt(42);
+
+                var reader = new DataStreamReader(writer.AsNativeArray());
+
+                new ReaderTestJob
+                {
+                    Reader = reader,
+                    ReturnValue = returnValue
+                }.Run();
+
+                Assert.AreEqual(42, returnValue[0]);
             }
         }
     }

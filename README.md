@@ -12,7 +12,7 @@ over the network.
 
 ## Documentation
 
-For more information about the Transport package, please see the [Unity Transport Documentation](https://docs-multiplayer.unity3d.com/transport/1.0.0/introduction/index.html). The site includes guides, API reference, and release notes.
+For more information about the Transport package, please see the [Unity Transport Documentation](https://docs-multiplayer.unity3d.com/transport/current/about). The site includes guides, API reference, and release notes.
 
 A [changelog](CHANGELOG.md) is also available in the package.
 

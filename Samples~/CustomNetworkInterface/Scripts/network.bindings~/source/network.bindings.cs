@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using Unity.Collections.LowLevel.Unsafe;
 
-namespace Unity.Networking.Transport
+namespace Unity.Networking.Transport.Samples
 {
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct network_iovec

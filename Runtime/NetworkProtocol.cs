@@ -207,6 +207,11 @@ namespace Unity.Networking.Transport
         /// A heartbeat response (pong) was received.
         /// </summary>
         Pong,
+
+        /// <summary>
+        /// A change in the protocol status occurred.
+        /// </summary>
+        ProtocolStatusUpdate,
     }
 
     /// <summary>
@@ -242,6 +247,7 @@ namespace Unity.Networking.Transport
             [FieldOffset(0)] public AsConnectionAccept ConnectionAccept;
             [FieldOffset(0)] public AsData Data;
             [FieldOffset(0)] public AsDataWithImplicitConnectionAccept DataWithImplicitConnectionAccept;
+            [FieldOffset(0)] public AsProtocolStatusUpdate ProtocolStatusUpdate;
 
             public struct AsAddressUpdate
             {
@@ -270,6 +276,11 @@ namespace Unity.Networking.Transport
                 public SessionIdToken ConnectionToken;
 
                 public bool HasPipeline => HasPipelineByte != 0;
+            }
+
+            public struct AsProtocolStatusUpdate
+            {
+                public int Status;
             }
         }
     }

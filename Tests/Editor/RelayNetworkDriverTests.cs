@@ -39,7 +39,9 @@ namespace Unity.Networking.Transport.Tests
 
             using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
             {
+                Assert.AreEqual(RelayConnectionStatus.NotEstablished, driver.GetRelayConnectionStatus());
                 Assert.True(server.CompleteBind(driver, 0));
+                Assert.AreEqual(RelayConnectionStatus.Established, driver.GetRelayConnectionStatus());
             }
         }
 
@@ -57,6 +59,8 @@ namespace Unity.Networking.Transport.Tests
 
             using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
             {
+                Assert.AreEqual(RelayConnectionStatus.NotEstablished, driver.GetRelayConnectionStatus());
+
                 var retriesLeft = k_RetryCount;
                 server.SetupForBindRetry(k_RetryCount, () => -- retriesLeft, 0);
 
@@ -71,6 +75,7 @@ namespace Unity.Networking.Transport.Tests
 
                 Assert.IsTrue(retriesLeft <= 0);
                 Assert.IsTrue(server.IsBound(0));
+                Assert.AreEqual(RelayConnectionStatus.Established, driver.GetRelayConnectionStatus());
             }
         }
 
@@ -85,6 +90,7 @@ namespace Unity.Networking.Transport.Tests
 
             using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
             {
+                Assert.AreEqual(RelayConnectionStatus.NotEstablished, driver.GetRelayConnectionStatus());
                 server.SetupForBindFail(0);
 
                 Assert.Zero(driver.Bind(NetworkEndPoint.AnyIpv4));
@@ -98,7 +104,11 @@ namespace Unity.Networking.Transport.Tests
                 // One update to receive the Error message.
                 driver.ScheduleUpdate().Complete();
 
-                LogAssert.Expect(LogType.Error, "Received error message from Relay: unauthorized.");
+                Assert.AreEqual(RelayConnectionStatus.AllocationInvalid, driver.GetRelayConnectionStatus());
+                LogAssert.Expect(LogType.Error, "Received error message from Relay: allocation ID not found.");
+                LogAssert.Expect(LogType.Error,
+                    "Relay allocation is invalid. See NetworkDriver.GetRelayConnectionStatus and " +
+                    "RelayConnectionStatus.AllocationInvalid for details on how to handle this situation.");
             }
         }
 
@@ -309,6 +319,46 @@ namespace Unity.Networking.Transport.Tests
                 {
                     Assert.AreEqual((byte)i, reader.ReadByte());
                 }
+            }
+        }
+
+        [Test]
+        public void RelayNetworkDriver_AllocationTimeOut()
+        {
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData0 = server.GetRelayConnectionData(0);
+            var serverData1 = server.GetRelayConnectionData(1);
+            var settings0 = new NetworkSettings();
+            settings0.WithRelayParameters(ref serverData0, 10000000);
+            var settings1 = new NetworkSettings();
+            settings1.WithRelayParameters(ref serverData1, 10000000);
+
+            using (var host = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings0))
+            using (var client = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings1))
+            {
+                Assert.True(server.CompleteBind(host, 0));
+                Assert.True(server.CompleteBind(client, 1));
+
+                Assert.Zero(host.Listen());
+
+                server.SetupForConnectTimeout(1);
+
+                var clientToHost = client.Connect(server.GetRelayConnectionData(0).Endpoint);
+
+                RelayServerMock.WaitForCondition(() =>
+                {
+                    client.ScheduleUpdate(default).Complete();
+                    host.ScheduleUpdate(default).Complete();
+
+                    return client.GetRelayConnectionStatus() == RelayConnectionStatus.AllocationInvalid;
+                }, timeout: 250);
+
+                Assert.AreEqual(RelayConnectionStatus.AllocationInvalid, client.GetRelayConnectionStatus());
+                LogAssert.Expect(LogType.Error, "Received error message from Relay: player timed out due to inactivity.");
+                LogAssert.Expect(LogType.Error,
+                    "Relay allocation is invalid. See NetworkDriver.GetRelayConnectionStatus and " +
+                    "RelayConnectionStatus.AllocationInvalid for details on how to handle this situation.");
             }
         }
     }

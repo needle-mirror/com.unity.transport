@@ -145,7 +145,7 @@ namespace Unity.Networking.Transport
         }
         private static SocketList AllSockets = new SocketList();
 #endif
-        struct Payloads : IDisposable
+        internal struct Payloads : IDisposable
         {
             public UnsafeAtomicFreeList m_Handles;
             public UnsafeBaselibNetworkArray m_PayloadArray;
@@ -200,14 +200,16 @@ namespace Unity.Networking.Transport
         private const int k_defaultTxQueueSize = 64;
         private const int k_defaultMaximumPayloadSize = 2000;
 
-        unsafe struct BaselibData
+        internal unsafe struct BaselibData
         {
             public NetworkSocket m_Socket;
             public Payloads m_PayloadsTx;
+            public NetworkInterfaceEndPoint m_LocalEndpoint;
+            public long m_LastUpdateTime;
         }
 
         [ReadOnly]
-        private NativeArray<BaselibData> m_Baselib;
+        internal NativeArray<BaselibData> m_Baselib;
 
         [NativeDisableContainerSafetyRestriction]
         private Payloads m_PayloadsRx;
@@ -220,23 +222,7 @@ namespace Unity.Networking.Transport
         /// Returns the local endpoint the <see cref="BaselibNetworkInterface"/> is bound to.
         /// </summary>
         /// <value>NetworkInterfaceEndPoint</value>
-        public unsafe NetworkInterfaceEndPoint LocalEndPoint
-        {
-            // error handling: handle the errors...
-            get
-            {
-                var error = default(ErrorState);
-                Binding.Baselib_NetworkAddress local;
-                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(m_Baselib[0].m_Socket, &local, &error);
-                var ep = default(NetworkInterfaceEndPoint);
-                if (error.code != ErrorCode.Success)
-                    return ep;
-
-                CreateInterfaceEndPoint(local, out ep);
-
-                return ep;
-            }
-        }
+        public unsafe NetworkInterfaceEndPoint LocalEndPoint => m_Baselib[0].m_LocalEndpoint;
 
         /// <summary>
         /// Gets if the interface has been created.
@@ -273,6 +259,20 @@ namespace Unity.Networking.Transport
                 UnsafeUtility.MemCpy(ptr, (void*)local.slice.data, endpoint.dataLength);
             }
             return (int)Error.StatusCode.Success;
+        }
+
+        private unsafe NetworkInterfaceEndPoint GetLocalEndPoint(NetworkSocket socket)
+        {
+            var error = default(ErrorState);
+            Binding.Baselib_NetworkAddress local;
+            Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(socket, &local, &error);
+            var ep = default(NetworkInterfaceEndPoint);
+            if (error.code != ErrorCode.Success)
+                return ep;
+
+            CreateInterfaceEndPoint(local, out ep);
+
+            return ep;
         }
 
         /// <summary>
@@ -498,6 +498,22 @@ namespace Unity.Networking.Transport
         }
         #endregion
 
+        [Conditional("UNITY_IOS")]
+        private void RecreateSocketIfAppWasSuspended(long currentUpdateTime)
+        {
+            var baselib = m_Baselib[0];
+
+            var foregroundTime = AppForegroundTracker.LastForegroundTimestamp;
+            if (foregroundTime > 0 && baselib.m_LastUpdateTime > 0 && foregroundTime > baselib.m_LastUpdateTime)
+            {
+                Bind(baselib.m_LocalEndpoint);
+            }
+
+            baselib = m_Baselib[0];
+            baselib.m_LastUpdateTime = currentUpdateTime;
+            m_Baselib[0] = baselib;
+        }
+
         /// <summary>
         /// Schedule a ReceiveJob. This is used to read data from your supported medium and pass it to the AppendData function
         /// supplied by <see cref="NetworkDriver"/>
@@ -507,6 +523,8 @@ namespace Unity.Networking.Transport
         /// <returns>A <see cref="JobHandle"/> to our newly created ScheduleReceive Job.</returns>
         public JobHandle ScheduleReceive(NetworkPacketReceiver receiver, JobHandle dep)
         {
+            RecreateSocketIfAppWasSuspended(receiver.LastUpdateTime);
+
             var job = new ReceiveJob
             {
                 Baselib = m_Baselib,
@@ -542,19 +560,6 @@ namespace Unity.Networking.Transport
         public unsafe int Bind(NetworkInterfaceEndPoint endpoint)
         {
             var baselib = m_Baselib[0];
-            if (m_Baselib[0].m_Socket.handle != IntPtr.Zero)
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                AllSockets.OpenSockets.Remove(new SocketList.SocketId
-                    {socket = m_Baselib[0].m_Socket});
-#endif
-                Binding.Baselib_RegisteredNetwork_Socket_UDP_Close(m_Baselib[0].m_Socket);
-                baselib.m_Socket.handle = IntPtr.Zero;
-
-                // Recreate the payloads to make sure we do not loose any items from the queue
-                m_PayloadsRx.Dispose();
-                m_PayloadsRx = new Payloads(configuration.receiveQueueCapacity, configuration.maximumPayloadSize);
-            }
 
             var slice = m_LocalAndTempEndpoint.AtIndexAsSlice(0, (uint)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize);
             UnsafeUtility.MemCpy((void*)slice.data, endpoint.data, endpoint.dataLength);
@@ -567,16 +572,27 @@ namespace Unity.Networking.Transport
             Binding.Baselib_NetworkAddress localAddress;
             Binding.Baselib_RegisteredNetwork_Endpoint_GetNetworkAddress(local, &localAddress, &error);
 
-            baselib.m_Socket = Binding.Baselib_RegisteredNetwork_Socket_UDP_Create(
+            var socket = Binding.Baselib_RegisteredNetwork_Socket_UDP_Create(
                 &localAddress,
                 Binding.Baselib_NetworkAddress_AddressReuse.Allow,
                 checked((uint)configuration.sendQueueCapacity),
                 checked((uint)configuration.receiveQueueCapacity),
                 &error);
             if (error.code != ErrorCode.Success)
-            {
-                m_Baselib[0] = baselib;
                 return (int)error.code == -1 ? -1 : -(int)error.code;
+
+            // Close old socket now that new one has been successfully created.
+            if (m_Baselib[0].m_Socket.handle != IntPtr.Zero)
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                AllSockets.OpenSockets.Remove(new SocketList.SocketId
+                    {socket = m_Baselib[0].m_Socket});
+#endif
+                Binding.Baselib_RegisteredNetwork_Socket_UDP_Close(m_Baselib[0].m_Socket);
+
+                // Recreate the payloads to make sure we do not loose any items from the queue
+                m_PayloadsRx.Dispose();
+                m_PayloadsRx = new Payloads(configuration.receiveQueueCapacity, configuration.maximumPayloadSize);
             }
 
             // Schedule receive right away so we do not loose packets received before the first call to update
@@ -592,7 +608,7 @@ namespace Unity.Networking.Transport
             if (count > 0)
             {
                 Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleRecv(
-                    baselib.m_Socket,
+                    socket,
                     requests,
                     (uint)count,
                     &error);
@@ -601,9 +617,12 @@ namespace Unity.Networking.Transport
                     return (int)error.code == -1 ? -1 : -(int)error.code;
             }
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AllSockets.OpenSockets.Add(new SocketList.SocketId
-                {socket = baselib.m_Socket});
+            AllSockets.OpenSockets.Add(new SocketList.SocketId {socket = socket});
 #endif
+
+            baselib.m_Socket = socket;
+            baselib.m_LocalEndpoint = GetLocalEndPoint(socket);
+
             m_Baselib[0] = baselib;
             return 0;
         }

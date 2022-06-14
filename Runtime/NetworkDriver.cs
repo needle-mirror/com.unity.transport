@@ -181,13 +181,8 @@ namespace Unity.Networking.Transport
                 if (connection.Version != id.m_NetworkVersion)
                     return (int)Error.StatusCode.NetworkVersionMismatch;
 
-                if (connection.State == NetworkConnection.State.Connecting)
-                {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    UnityEngine.Debug.LogError("Cannot send data while connecting");
-#endif
+                if (connection.State != NetworkConnection.State.Connected)
                     return (int)Error.StatusCode.NetworkStateMismatch;
-                }
 
                 var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) + 1 : 0;
                 var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
@@ -470,6 +465,8 @@ namespace Unity.Networking.Transport
         int m_NetworkProtocolIndex;
         NetworkProtocol m_NetworkProtocolInterface;
 
+        internal INetworkProtocol NetworkProtocol => s_NetworkProtocols[m_NetworkProtocolIndex];
+
         NativeQueue<QueuedSendMessage> m_ParallelSendQueue;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         NativeArray<int> m_PendingBeginSend;
@@ -484,6 +481,9 @@ namespace Unity.Networking.Transport
 
         [NativeDisableContainerSafetyRestriction]
         NativeArray<int> m_InternalState;
+
+        private NativeReference<int> m_ProtocolStatus;
+        internal int ProtocolStatus => m_ProtocolStatus.Value;
 
         NativeQueue<int> m_PendingFree;
         NativeArray<int> m_ErrorCodes;
@@ -700,6 +700,9 @@ namespace Unity.Networking.Transport
             m_InternalState = new NativeArray<int>(2, Allocator.Persistent);
             m_PendingFree = new NativeQueue<int>(Allocator.Persistent);
 
+            m_ProtocolStatus = new NativeReference<int>(Allocator.Persistent);
+            m_ProtocolStatus.Value = 0;
+
             m_ErrorCodes = new NativeArray<int>((int)ErrorCodeType.NumErrorCodes, Allocator.Persistent);
             Listening = false;
         }
@@ -731,6 +734,7 @@ namespace Unity.Networking.Transport
             m_FreeList.Dispose();
             m_InternalState.Dispose();
             m_PendingFree.Dispose();
+            m_ProtocolStatus.Dispose();
             m_ErrorCodes.Dispose();
             m_ParallelSendQueue.Dispose();
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -1710,6 +1714,10 @@ namespace Unity.Networking.Transport
                         });
                     }
                 } break;
+
+                case ProcessPacketCommandType.ProtocolStatusUpdate:
+                    m_ProtocolStatus.Value = command.As.ProtocolStatusUpdate.Status;
+                    break;
 
                 case ProcessPacketCommandType.Drop:
                     break;

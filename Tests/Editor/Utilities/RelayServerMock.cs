@@ -155,15 +155,15 @@ namespace Unity.Networking.Transport.Tests
 
         public unsafe void SetupForBindFail(int key)
         {
-            var errorPacket = ErrorPacket;
-            fixed(byte* ptr = &errorPacket[0])
+            var errorNotFoundPacket = ErrorNotFoundPacket;
+            fixed(byte* ptr = &errorNotFoundPacket[0])
             {
                 *(RelayAllocationId*)(ptr + 4) = GetAllocationIdForClient(key);
             }
 
             ExpectPacket(BindPacket, (endpoint, data) =>
             {
-                Send(errorPacket, endpoint);
+                Send(errorNotFoundPacket, endpoint);
             });
         }
 
@@ -234,6 +234,26 @@ namespace Unity.Networking.Transport.Tests
             };
 
             ExpectPacket(connectRequestPacket, connectReceiveMethod);
+        }
+
+        public unsafe void SetupForConnectTimeout(int clientKey)
+        {
+            var connectRequestPacket = ConnectRequestPacket;
+            fixed(byte* ptr = &connectRequestPacket[0])
+            {
+                *(RelayAllocationId*)(ptr + 4) = GetAllocationIdForClient(clientKey);
+            }
+
+            var errorTimedOutPacket = ErrorTimedOutPacket;
+            fixed(byte* ptr = &errorTimedOutPacket[0])
+            {
+                *(RelayAllocationId*)(ptr + 4) = GetAllocationIdForClient(clientKey);
+            }
+
+            ExpectPacket(connectRequestPacket, (endpoint, data) =>
+            {
+                Send(errorTimedOutPacket, endpoint);
+            });
         }
 
         public unsafe void SetupForRelay(int from, int to, ushort dataLength, bool optional = false)
@@ -355,11 +375,18 @@ namespace Unity.Networking.Transport.Tests
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // From Allocation Id
         };
 
-        static private byte[] ErrorPacket => new byte[]
+        static private byte[] ErrorNotFoundPacket => new byte[]
         {
             0xda, 0x72, 0x00, 0x0c,                                                                         // Header
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Allocation Id
-            0x02,                                                                                           // Error Code
+            0x04,                                                                                           // Error Code
+        };
+
+        static private byte[] ErrorTimedOutPacket => new byte[]
+        {
+            0xda, 0x72, 0x00, 0x0c,                                                                         // Header
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Allocation Id
+            0x01,                                                                                           // Error Code
         };
 
         static private RelayAllocationId GetAllocationIdForClient(int clientKey)
