@@ -85,6 +85,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [Ignore("Unstable in APVs. See MTT-4345.")]
         public void DisconnectTimeout_NotReachedWithFrequentHeartbeats()
         {
             var settings = new NetworkSettings();

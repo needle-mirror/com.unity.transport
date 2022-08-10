@@ -98,6 +98,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [Ignore("Unstable in APVs. See MTT-4345.")]
         public void ConnectDisconnect_ConnectSucceedsAfterRetrying(
             [ValueSource("s_SecureModeParameters")] SecureProtocolMode secureMode)
         {

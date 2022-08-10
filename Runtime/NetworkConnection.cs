@@ -74,8 +74,11 @@ namespace Unity.Networking.Transport
             /// <summary>Internal send handle is invalid.</summary>
             NetworkSendHandleInvalid      = -8,
 
-            /// <summary>Tried to create an <see cref="IPCNetworkInterface"> on a non-loopback address.</summary>
+            /// <summary>Tried to create an <see cref="IPCNetworkInterface" /> on a non-loopback address.</summary>
             NetworkArgumentMismatch       = -9,
+
+            /// <summary>The underlying network socket has failed.</summary>
+            NetworkSocketError            = -10,
         }
     }
 

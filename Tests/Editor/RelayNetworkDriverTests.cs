@@ -29,6 +29,8 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
+        [Ignore("Unstable in APVs. See MTT-4345.")]
         public void RelayNetworkDriver_Bind_Succeed()
         {
             using var server = new RelayServerMock("127.0.0.1", m_port++);
@@ -46,6 +48,8 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
+        [Ignore("Unstable in APVs. See MTT-4345.")]
         public void RelayNetworkDriver_Bind_Retry()
         {
             const int k_RetryCount = 10;
@@ -80,6 +84,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
         public void RelayNetworkDriver_Bind_Fail()
         {
             using var server = new RelayServerMock("127.0.0.1", m_port++);
@@ -113,6 +118,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
         public void RelayNetworkDriver_Listen_Succeed()
         {
             using var server = new RelayServerMock("127.0.0.1", m_port++);
@@ -129,6 +135,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
         public void RelayNetworkDriver_Connect_Succeed()
         {
             using var server = new RelayServerMock("127.0.0.1", m_port++);
@@ -177,6 +184,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
         public void RelayNetworkDriver_Connect_Retry()
         {
             const int k_RetryCount = 10;
@@ -231,6 +239,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
         public void RelayNetworkDriver_Disconnect_Succeed()
         {
             using var server = new RelayServerMock("127.0.0.1", m_port++);
@@ -278,6 +287,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
         public void RelayNetworkDriver_Send_Succeed()
         {
             const int k_PayloadSize = 100;
@@ -323,6 +333,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
         public void RelayNetworkDriver_AllocationTimeOut()
         {
             using var server = new RelayServerMock("127.0.0.1", m_port++);

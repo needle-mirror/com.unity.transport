@@ -119,6 +119,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
+        [Ignore("Unstable in APVs. See MTT-4345.")]
         public IEnumerator SendMessage_OverflowedReceiveBuffer()
         {
             var settings = new NetworkSettings();

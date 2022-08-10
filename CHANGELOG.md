@@ -1,5 +1,17 @@
 # Change log
 
+## [1.2.0] - 2022-08-10
+
+### New features
+* If using the default network interface, the transport will attempt to transparently recreate the underlying network socket if it fails. This should increase robustness, especially on mobile where the OS might close sockets when an application is sent to the background.
+
+### Changes
+* A new `NetworkSocketError` value has been added to `Error.StatusCode`. This will be returned through `NetworkDriver.ReceiveErrorCode` when the automatic socket recreation mentioned above has failed (indicating an unrecoverable network failure).
+
+### Fixes
+* On iOS, communications will restart correctly if the application was in the background. Note that if using Relay, it's still possible for the allocation to have timed out while in the background. Recreation of a new allocation with a new `NetworkDriver` is still required in that scenario.
+* Fixed a possible stack overflow if the receive queue parameter was configured with a very large value (>10,000).
+
 ## [1.1.0] - 2022-06-14
 
 ### New features

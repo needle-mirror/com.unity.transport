@@ -200,12 +200,32 @@ namespace Unity.Networking.Transport
         private const int k_defaultTxQueueSize = 64;
         private const int k_defaultMaximumPayloadSize = 2000;
 
+        // Safety value for the maximum number of times we can recreate a socket. Recreating a
+        // socket so many times would indicate some deeper issue that we won't solve by opening
+        // new sockets all the time. This also prevents logging endlessly if we get stuck in a
+        // loop of recreating sockets very frequently.
+        private const uint k_MaxNumSocketRecreate = 1000;
+
+        // We process the results in batches because if we allocate a big number of results,
+        // it can cause a stack overflow.
+        const uint k_RequestsBatchSize = 64;
+
+        internal enum SocketStatus
+        {
+            SocketNormal,
+            SocketNeedsRecreate,
+            SocketFailed,
+        }
+
         internal unsafe struct BaselibData
         {
             public NetworkSocket m_Socket;
+            public SocketStatus m_SocketStatus;
             public Payloads m_PayloadsTx;
             public NetworkInterfaceEndPoint m_LocalEndpoint;
             public long m_LastUpdateTime;
+            public long m_LastSocketRecreateTime;
+            public uint m_NumSocketRecreate;
         }
 
         [ReadOnly]
@@ -340,8 +360,6 @@ namespace Unity.Networking.Transport
             m_Baselib.Dispose();
         }
 
-        #region ReceiveJob
-
         [BurstCompile]
         struct FlushSendJob : IJob
         {
@@ -350,64 +368,48 @@ namespace Unity.Networking.Transport
             public NativeArray<BaselibData> Baselib;
             public unsafe void Execute()
             {
-                // We process the results in batches because if we allocate a big number of results here,
-                // it can cause a stack overflow
-                const uint k_ResultsBufferSize = 64;
-                const int  k_MaxIterations = 500;
-                var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[(int)k_ResultsBufferSize];
+                var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[(int)k_RequestsBatchSize];
 
                 var error = default(ErrorState);
-                var pollCount = 0;
-                var pendingSend = Tx.InUse > 0;
-                var maxIterations = k_MaxIterations;
 
-                while (pendingSend)
+                // We ensure we never process more than the actual capacity to prevent unexpected deadlocks
+                for (var sendCount = 0; sendCount < Tx.Capacity; sendCount++)
                 {
-                    // We ensure we never process more than the actual capacity to prevent unexpected deadlocks
-                    while (pollCount++ < Tx.Capacity)
+                    var status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, &error);
+
+                    if (error.code != ErrorCode.Success)
                     {
-                        if (Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(Baselib[0].m_Socket, &error) != Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
-                            break;
+                        UnityEngine.Debug.LogError(string.Format("Error on baselib processing send ({0})", error.code));
+                        MarkSocketAsNeedingRecreate(Baselib);
+                        return;
                     }
 
-                    // At this point all the packets have been processed or the network can't send a packet right now
-                    // so we yield execution to give the opportunity to other threads to process as the potential network
-                    // pressure releases.
-                    Binding.Baselib_Thread_YieldExecution();
-                    // Next step we wait until processing sends complete.
-                    // The timeout was arbitrarily chosen as it seems to be enough for sending 5000 packets in our tests.
-                    Binding.Baselib_RegisteredNetwork_Socket_UDP_WaitForCompletedSend(Baselib[0].m_Socket, 20, &error);
+                    if (status != Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
+                        break;
+                }
 
-                    var count = 0;
-                    var resultBatchesCount = Tx.Capacity / k_ResultsBufferSize + 1;
-                    while ((count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, k_ResultsBufferSize, &error)) > 0)
+                var count = 0;
+                var resultBatchesCount = Tx.Capacity / k_RequestsBatchSize + 1;
+                while ((count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(Baselib[0].m_Socket, results, k_RequestsBatchSize, &error)) > 0)
+                {
+                    if (error.code != ErrorCode.Success)
                     {
-                        if (error.code != ErrorCode.Success)
-                        {
-                            // copy recv flow? e.g. pass
-                            return;
-                        }
-                        for (int i = 0; i < count; ++i)
-                        {
-                            // return results[i].status through userdata, mask? or allocate space at beginning?
-                            // pass through a new NetworkPacketSender.?
-                            Tx.ReleaseHandle((int)results[i].requestUserdata - 1);
-                        }
-
-                        if (resultBatchesCount-- < 0) // Deadlock guard
-                            break;
+                        MarkSocketAsNeedingRecreate(Baselib);
+                        return;
+                    }
+                    for (int i = 0; i < count; ++i)
+                    {
+                        // return results[i].status through userdata, mask? or allocate space at beginning?
+                        // pass through a new NetworkPacketSender.?
+                        Tx.ReleaseHandle((int)results[i].requestUserdata - 1);
                     }
 
-                    // We set the pollCount to zero that way we try and process any previous packets that may have failed because
-                    // internal buffers were full via a EAGAIN error which we don't actually know happened but assume it may have happen
-                    pollCount = 0;
-
-                    // InUse is not thread safe, needs to be called in a single threaded flush job
-                    // We ensure we never process more than the actual capacity to prevent unexpected deadlocks
-                    pendingSend = Tx.InUse > 0 && maxIterations-- > 0;
+                    if (resultBatchesCount-- < 0) // Deadlock guard
+                        break;
                 }
             }
         }
+
         [BurstCompile]
         struct ReceiveJob : IJob
         {
@@ -418,100 +420,124 @@ namespace Unity.Networking.Transport
 
             public unsafe void Execute()
             {
-                var count = 0;
-                var outstanding = Rx.InUse;
                 var error = default(ErrorState);
-                var requests = stackalloc Binding.Baselib_RegisteredNetwork_Request[Rx.Capacity];
 
-                if (outstanding > 0)
-                {
-                    var pollCount = 0;
-                    var status = default(Binding.Baselib_RegisteredNetwork_ProcessStatus);
-                    while ((status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(Baselib[0].m_Socket, &error)) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending
-                           && pollCount++ < Rx.Capacity) {}
+                // Update last update time in baselib data.
+                var baselib = Baselib[0];
+                baselib.m_LastUpdateTime = Receiver.LastUpdateTime;
+                Baselib[0] = baselib;
+
+                var pollCount = 0;
+                var status = default(Binding.Baselib_RegisteredNetwork_ProcessStatus);
+                while ((status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(Baselib[0].m_Socket, &error)) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending
+                        && pollCount++ < Rx.Capacity) {}
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    if (status == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
-                    {
-                        UnityEngine.Debug.LogWarning("There are pending receive packets after the baselib process receive");
-                    }
+                if (status == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
+                {
+                    UnityEngine.Debug.LogWarning("There are pending receive packets after the baselib process receive");
+                }
 #endif
 
-                    var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[outstanding];
+                var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[(int)k_RequestsBatchSize];
+                var totalCount = 0;
+                var totalFailedCount = 0;
+                var count = 0;
 
+                do
+                {
                     // Pop Completed Requests off the CompletionQ
-                    count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueRecv(Baselib[0].m_Socket, results, (uint)outstanding, &error);
+                    count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueRecv(Baselib[0].m_Socket, results, (uint)k_RequestsBatchSize, &error);
                     if (error.code != ErrorCode.Success)
                     {
-                        Receiver.ReceiveErrorCode = (int)error.code;
+                        Receiver.ReceiveErrorCode = (int)Error.StatusCode.NetworkSocketError;
                         return;
                     }
 
+                    totalCount += count;
+
                     // Copy and run Append on each Packet.
-
-                    var address = default(NetworkInterfaceEndPoint);
-
-                    var indices = stackalloc int[count];
                     for (int i = 0; i < count; i++)
                     {
-                        var index = (int)results[i].requestUserdata - 1;
-                        indices[i] = index;
-
                         if (results[i].status == Binding.Baselib_RegisteredNetwork_CompletionStatus.Failed)
+                        {
+                            totalFailedCount++;
                             continue;
+                        }
 
                         var receivedBytes = (int)results[i].bytesTransferred;
                         if (receivedBytes <= 0)
                             continue;
 
+                        var index = (int)results[i].requestUserdata - 1;
+
                         var packet = Rx.GetRequestFromHandle(index);
 
                         var remote = packet.remoteEndpoint.slice;
+                        var address = default(NetworkInterfaceEndPoint);
                         address.dataLength = (int)remote.size;
                         UnsafeUtility.MemCpy(address.data, (void*)remote.data, (int)remote.size);
 
                         Receiver.AppendPacket(packet.payload.data, ref address, receivedBytes);
-                    }
 
-                    // Reuse the requests after they have been processed.
-                    for (int i = 0; i < count; i++)
-                    {
-                        requests[i] = Rx.GetRequestFromHandle(indices[i]);
-                        requests[i].requestUserdata = (IntPtr)indices[i] + 1;
+                        Rx.ReleaseHandle(index);
                     }
                 }
+                while (count == k_RequestsBatchSize);
 
-                while (Rx.InUse < Rx.Capacity)
+                // All receive requests being marked as failed is as close as we're going to get to
+                // a signal that the socket has failed with the current baselib API (at least on
+                // platforms that use the basic POSIX sockets implementation under the hood). Note
+                // that we can't do the same check on send requests, since there might be legit
+                // scenarios where sends are failing temporarily without the socket being borked.
+                if (totalCount > 0 && totalFailedCount == totalCount)
                 {
-                    int handle = Rx.AcquireHandle();
-                    requests[count] = Rx.GetRequestFromHandle(handle);
-                    requests[count].requestUserdata = (IntPtr)handle + 1;
-                    ++count;
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    UnityEngine.Debug.LogError("All socket receive requests were marked as failed, likely because socket itself has failed.");
+#endif
+                    MarkSocketAsNeedingRecreate(Baselib);
                 }
-                if (count > 0)
+
+                var result = ScheduleAllReceives(Baselib[0].m_Socket, ref Rx);
+                if (result < 0)
                 {
-                    Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleRecv(Baselib[0].m_Socket, requests, (uint)count, &error);
-                    if (error.code != ErrorCode.Success)
-                        Receiver.ReceiveErrorCode = (int)error.code;
+                    Receiver.ReceiveErrorCode = (int)result;
+                    MarkSocketAsNeedingRecreate(Baselib);
                 }
             }
         }
-        #endregion
 
-        [Conditional("UNITY_IOS")]
-        private void RecreateSocketIfAppWasSuspended(long currentUpdateTime)
+        private static void MarkSocketAsNeedingRecreate(NativeArray<BaselibData> baselib)
+        {
+            var data = baselib[0];
+            data.m_SocketStatus = SocketStatus.SocketNeedsRecreate;
+            baselib[0] = data;
+        }
+
+        private void RecreateSocket(long updateTime)
         {
             var baselib = m_Baselib[0];
 
-            var foregroundTime = AppForegroundTracker.LastForegroundTimestamp;
-            if (foregroundTime > 0 && baselib.m_LastUpdateTime > 0 && foregroundTime > baselib.m_LastUpdateTime)
+            // If we already recreated the socket in the last update or if we hit the limit of
+            // socket recreations, then something's wrong at the socket layer and recreating it
+            // likely won't solve the issue. Just fail the socket in that scenario.
+            if (baselib.m_LastSocketRecreateTime == baselib.m_LastUpdateTime || baselib.m_NumSocketRecreate >= k_MaxNumSocketRecreate)
             {
-                Bind(baselib.m_LocalEndpoint);
+                UnityEngine.Debug.LogError("Unrecoverable socket failure. An unknown condition is preventing the application from reliably creating sockets.");
+                baselib.m_SocketStatus = SocketStatus.SocketFailed;
+                m_Baselib[0] = baselib;
             }
+            else
+            {
+                UnityEngine.Debug.LogWarning("Socket error encountered; attempting recovery by creating a new one.");
+                Bind(baselib.m_LocalEndpoint);
 
-            baselib = m_Baselib[0];
-            baselib.m_LastUpdateTime = currentUpdateTime;
-            m_Baselib[0] = baselib;
+                // Update last socket recreation time and number of socket recreations.
+                baselib = m_Baselib[0];
+                baselib.m_LastSocketRecreateTime = updateTime;
+                baselib.m_NumSocketRecreate++;
+                m_Baselib[0] = baselib;
+            }
         }
 
         /// <summary>
@@ -523,7 +549,14 @@ namespace Unity.Networking.Transport
         /// <returns>A <see cref="JobHandle"/> to our newly created ScheduleReceive Job.</returns>
         public JobHandle ScheduleReceive(NetworkPacketReceiver receiver, JobHandle dep)
         {
-            RecreateSocketIfAppWasSuspended(receiver.LastUpdateTime);
+            if (m_Baselib[0].m_SocketStatus == SocketStatus.SocketNeedsRecreate)
+                RecreateSocket(receiver.LastUpdateTime);
+
+            if (m_Baselib[0].m_SocketStatus == SocketStatus.SocketFailed)
+            {
+                receiver.ReceiveErrorCode = (int)Error.StatusCode.NetworkSocketError;
+                return dep;
+            }
 
             var job = new ReceiveJob
             {
@@ -542,6 +575,9 @@ namespace Unity.Networking.Transport
         /// <returns>A <see cref="JobHandle"/> to our newly created ScheduleSend Job.</returns>
         public JobHandle ScheduleSend(NativeQueue<QueuedSendMessage> sendQueue, JobHandle dep)
         {
+            if (m_Baselib[0].m_SocketStatus != SocketStatus.SocketNormal)
+                return dep;
+
             var job = new FlushSendJob
             {
                 Baselib = m_Baselib,
@@ -579,7 +615,7 @@ namespace Unity.Networking.Transport
                 checked((uint)configuration.receiveQueueCapacity),
                 &error);
             if (error.code != ErrorCode.Success)
-                return (int)error.code == -1 ? -1 : -(int)error.code;
+                return (int)error.code == -1 ? (int)Error.StatusCode.NetworkSocketError : -(int)error.code;
 
             // Close old socket now that new one has been successfully created.
             if (m_Baselib[0].m_Socket.handle != IntPtr.Zero)
@@ -596,31 +632,16 @@ namespace Unity.Networking.Transport
             }
 
             // Schedule receive right away so we do not loose packets received before the first call to update
-            int count = 0;
-            var requests = stackalloc Binding.Baselib_RegisteredNetwork_Request[m_PayloadsRx.Capacity];
-            while (m_PayloadsRx.InUse < m_PayloadsRx.Capacity)
-            {
-                int handle = m_PayloadsRx.AcquireHandle();
-                requests[count] = m_PayloadsRx.GetRequestFromHandle(handle);
-                requests[count].requestUserdata = (IntPtr)handle + 1;
-                ++count;
-            }
-            if (count > 0)
-            {
-                Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleRecv(
-                    socket,
-                    requests,
-                    (uint)count,
-                    &error);
-                // how should this be handled? what are the cases?
-                if (error.code != ErrorCode.Success)
-                    return (int)error.code == -1 ? -1 : -(int)error.code;
-            }
+            var result = ScheduleAllReceives(socket, ref m_PayloadsRx);
+            if (result < 0)
+                return result;
+
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AllSockets.OpenSockets.Add(new SocketList.SocketId {socket = socket});
 #endif
 
             baselib.m_Socket = socket;
+            baselib.m_SocketStatus = SocketStatus.SocketNormal;
             baselib.m_LocalEndpoint = GetLocalEndPoint(socket);
 
             m_Baselib[0] = baselib;
@@ -715,6 +736,35 @@ namespace Unity.Networking.Transport
             var baselib = (BaselibData*)userData;
             var id = handle.id;
             baselib->m_PayloadsTx.ReleaseHandle(id);
+        }
+
+        private static unsafe int ScheduleAllReceives(NetworkSocket socket, ref Payloads PayloadsRx)
+        {
+            var error = default(ErrorState);
+
+            var requests = stackalloc Binding.Baselib_RegisteredNetwork_Request[(int)k_RequestsBatchSize];
+            var count = 0;
+            do
+            {
+                count = 0;
+                while (count < k_RequestsBatchSize && PayloadsRx.InUse < PayloadsRx.Capacity)
+                {
+                    int handle = PayloadsRx.AcquireHandle();
+                    requests[count] = PayloadsRx.GetRequestFromHandle(handle);
+                    requests[count].requestUserdata = (IntPtr)handle + 1;
+                    ++count;
+                }
+                if (count > 0)
+                {
+                    Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleRecv(socket, requests, (uint)count, &error);
+                    // how should this be handled? what are the cases?
+                    if (error.code != ErrorCode.Success)
+                        return (int)error.code == -1 ? (int)Error.StatusCode.NetworkSocketError : -(int)error.code;
+                }
+            }
+            while (count == k_RequestsBatchSize);
+
+            return 0;
         }
 
         bool ValidateParameters(BaselibNetworkParameter param)

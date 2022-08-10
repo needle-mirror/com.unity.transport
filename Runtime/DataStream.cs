@@ -71,19 +71,13 @@ namespace Unity.Networking.Transport
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct DataStreamWriter
     {
-        struct IsLittleEndianStructKey {}
-        private static readonly SharedStatic<int> m_IsLittleEndian = SharedStatic<int>.GetOrCreate<IsLittleEndianStructKey>();
         public static bool IsLittleEndian
         {
             get
             {
-                if (m_IsLittleEndian.Data == 0)
-                {
-                    uint test = 1;
-                    byte* testPtr = (byte*)&test;
-                    m_IsLittleEndian.Data = testPtr[0] == 1 ? 1 : 2;
-                }
-                return m_IsLittleEndian.Data == 1;
+                uint test = 1;
+                byte* testPtr = (byte*)&test;
+                return testPtr[0] == 1;
             }
         }
 

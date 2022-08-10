@@ -462,6 +462,8 @@ namespace Unity.Networking.Transport
         int m_NetworkInterfaceIndex;
         NetworkSendInterface m_NetworkSendInterface;
 
+        internal INetworkInterface NetworkInterface => s_NetworkInterfaces[m_NetworkInterfaceIndex];
+
         int m_NetworkProtocolIndex;
         NetworkProtocol m_NetworkProtocolInterface;
 
