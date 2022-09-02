@@ -9,14 +9,14 @@ namespace Unity.Networking.Transport.Samples
     public class SoakStatisticsReporter
     {
         private string header =
-    @"<html>
+@"<html>
             <head>
                 <script type='text/javascript' src='https://www.gstatic.com/charts/loader.js'></script>
                 <script type='text/javascript'>
                 google.charts.load('current', { 'packages': ['corechart'] });";
 
         private string footer =
-    @"  </script>
+@"  </script>
                 </head>
                 <body>
                 </body>

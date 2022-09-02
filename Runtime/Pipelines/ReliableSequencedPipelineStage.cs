@@ -1,3 +1,4 @@
+using System;
 using AOT;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -6,21 +7,16 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
-    /// <summary>
-    /// The ReliableSequencedPipelineStage is used to send packets reliably and retain the order in which they are sent.
-    /// This PipelineStage has a hardcoded WindowSize of 32 inflight packets and will drop packets if its unable to
-    /// track them.
-    /// </summary>
     [BurstCompile]
     public unsafe struct ReliableSequencedPipelineStage : INetworkPipelineStage
     {
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             ReliableUtility.Parameters param = settings.GetReliableStageParameters();
-
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
@@ -61,8 +57,7 @@ namespace Unity.Networking.Transport
                 NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref inboundArray, safetyHandle);
 #endif
                 var reader = new DataStreamReader(inboundArray);
-                reader.ReadBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
-
+                reader.ReadBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 if (header.Type == (ushort)ReliableUtility.PacketType.Ack)
                 {
                     ReliableUtility.ReadAckPacket(ctx, header);
@@ -127,7 +122,7 @@ namespace Unity.Networking.Transport
                     requests |= NetworkPipelineStage.Requests.Error;
                     return (int)Error.StatusCode.NetworkSendQueueFull;
                 }
-                ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+                ctx.header.WriteBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 if (reliable->Resume != ReliableUtility.NullEntry)
                     requests |= NetworkPipelineStage.Requests.Resume;
 
@@ -142,7 +137,8 @@ namespace Unity.Networking.Transport
                 if (needsResume)
                     requests |= NetworkPipelineStage.Requests.Resume;
                 ctx.header.Clear();
-                ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+
+                ctx.header.WriteBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 reliable->PreviousTimestamp = ctx.timestamp;
                 return (int)Error.StatusCode.Success;
             }
@@ -152,13 +148,14 @@ namespace Unity.Networking.Transport
                 reliable->LastSentTime = ctx.timestamp;
 
                 ReliableUtility.WriteAckPacket(ctx, ref header);
-                ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+
+                ctx.header.WriteBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 reliable->PreviousTimestamp = ctx.timestamp;
 
                 // TODO: Sending dummy byte over since the pipeline won't send an empty payload (ignored on receive)
                 inboundBuffer.bufferWithHeadersLength = inboundBuffer.headerPadding + 1;
                 inboundBuffer.bufferWithHeaders = (byte*)UnsafeUtility.Malloc(inboundBuffer.bufferWithHeadersLength, 8, Allocator.Temp);
-                inboundBuffer.SetBufferFrombufferWithHeaders();
+                inboundBuffer.SetBufferFromBufferWithHeaders();
                 return (int)Error.StatusCode.Success;
             }
             reliable->PreviousTimestamp = ctx.timestamp;
@@ -173,11 +170,26 @@ namespace Unity.Networking.Transport
         {
             ReliableUtility.Parameters param;
             UnsafeUtility.MemCpy(&param, staticInstanceBuffer, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
-            if (sharedProcessBufferLength >= ReliableUtility.SharedCapacityNeeded(param) &&
-                (sendProcessBufferLength + recvProcessBufferLength) >= ReliableUtility.ProcessCapacityNeeded(param) * 2)
+
+            if (sharedProcessBufferLength != ReliableUtility.SharedCapacityNeeded(param))
             {
-                ReliableUtility.InitializeContext(sharedProcessBuffer, sharedProcessBufferLength, sendProcessBuffer, sendProcessBufferLength, recvProcessBuffer, recvProcessBufferLength, param);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("sharedProcessBufferLength is wrong length for ReliableUtility.Parameters!");
+#else
+                return;
+#endif
             }
+
+            if (sendProcessBufferLength + recvProcessBufferLength < ReliableUtility.ProcessCapacityNeeded(param) * 2)
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("sendProcessBufferLength + recvProcessBufferLength is wrong length for ReliableUtility.ProcessCapacityNeeded!");
+#else
+                return;
+#endif
+            }
+
+            ReliableUtility.InitializeContext(sharedProcessBuffer, sharedProcessBufferLength, sendProcessBuffer, sendProcessBufferLength, recvProcessBuffer, recvProcessBufferLength, param);
         }
     }
 }

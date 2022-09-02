@@ -42,7 +42,7 @@ namespace Unity.Networking.Transport.Samples
         {
             Debug.Log("Soak test initiated");
 
-            var endpoint = NetworkEndPoint.LoopbackIpv4;
+            var endpoint = NetworkEndpoint.LoopbackIpv4;
             endpoint.Port = 9000;
             if (!m_Started)
             {

@@ -5,7 +5,9 @@ namespace Unity.Networking.Transport.Relay
     [StructLayout(LayoutKind.Sequential)]
     internal struct RelayMessageHeader
     {
-        public const int Length = 4;
+        public const int k_Length = 4;
+        public const ushort k_Signature = 0x72DA;
+        public const byte k_Version = 0;
 
         public ushort Signature;
         public byte Version;
@@ -16,18 +18,25 @@ namespace Unity.Networking.Transport.Relay
             return Signature == 0x72DA && Version == 0;
         }
 
-        internal static RelayMessageHeader Create(RelayMessageType type)
+        public static RelayMessageHeader Create(RelayMessageType type)
         {
             return new RelayMessageHeader
             {
-                Signature = 0x72DA,
-                Version = 0,
+                Signature = k_Signature,
+                Version = k_Version,
                 Type = type,
             };
         }
+
+        public static void Write(ref PacketProcessor packetProcessor, RelayMessageType type)
+        {
+            packetProcessor.AppendToPayload<ushort>(k_Signature);
+            packetProcessor.AppendToPayload<byte>(k_Version);
+            packetProcessor.AppendToPayload<RelayMessageType>(type);
+        }
     }
 
-    internal enum RelayMessageType : byte
+    public enum RelayMessageType : byte
     {
         Bind = 0,
         BindReceived = 1,

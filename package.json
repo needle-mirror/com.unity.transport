@@ -1,29 +1,27 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.2.0",
-  "unity": "2020.3",
-  "unityRelease": "0f1",
-  "description": "Unity network transport layer - the low-level interface for sending UDP data",
+  "version": "2.0.0-exp.6",
+  "unity": "2022.2",
+  "unityRelease": "0a18",
+  "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
-    "com.unity.collections": "1.2.4",
-    "com.unity.burst": "1.6.6",
+    "com.unity.collections": "2.1.0-exp.4",
+    "com.unity.burst": "1.7.3",
     "com.unity.mathematics": "1.2.6"
   },
+  "relatedPackages": {
+    "com.unity.transport.tests": "0.0.0"
+  },
   "upmCi": {
-    "footprint": "b86aef366145fa59d88b43f35ef32b38cf576ef6"
+    "footprint": "ae0c94fd1e9687f90a185f24a4518a96261572a0"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "b4fadab8f255b0b13f371bea8d2819c2ca472648"
+    "revision": "23d0879f8d0b103358842e05e1a40c951b712dfe"
   },
   "samples": [
-    {
-      "displayName": "Custom Network Interface",
-      "description": "Shows how to build a custom network interface using the INetworkInterface API",
-      "path": "Samples~/CustomNetworkInterface"
-    },
     {
       "displayName": "Ping/Pong Sample",
       "description": "Several samples on the basics of jobs, mainthread setups using the Unity Transport",

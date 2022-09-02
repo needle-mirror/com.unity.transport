@@ -20,9 +20,10 @@ namespace Unity.Networking.Transport
 
         private const int k_MapInitialCapacity = 8;
 
-        private NativeHashMap<long, ParameterSlice> m_ParameterOffsets;
+        private NativeParallelHashMap<long, ParameterSlice> m_ParameterOffsets;
         private NativeList<byte> m_Parameters;
         private byte m_Initialized;
+        private byte m_ReadOnly;
 
         private bool EnsureInitializedOrError()
         {
@@ -30,7 +31,7 @@ namespace Unity.Networking.Transport
             {
                 m_Initialized = 1;
                 m_Parameters = new NativeList<byte>(Allocator.Temp);
-                m_ParameterOffsets = new NativeHashMap<long, ParameterSlice>(k_MapInitialCapacity, Allocator.Temp);
+                m_ParameterOffsets = new NativeParallelHashMap<long, ParameterSlice>(k_MapInitialCapacity, Allocator.Temp);
             }
 
             if (!m_Parameters.IsCreated)
@@ -56,8 +57,30 @@ namespace Unity.Networking.Transport
         public NetworkSettings(Allocator allocator)
         {
             m_Initialized = 1;
+            m_ReadOnly = 0;
             m_Parameters = new NativeList<byte>(allocator);
-            m_ParameterOffsets = new NativeHashMap<long, ParameterSlice>(k_MapInitialCapacity, allocator);
+            m_ParameterOffsets = new NativeParallelHashMap<long, ParameterSlice>(k_MapInitialCapacity, allocator);
+        }
+
+        internal NetworkSettings(NetworkSettings from, Allocator allocator)
+        {
+            m_Initialized = 1;
+            m_ReadOnly = 0;
+
+            if (from.m_Initialized == 0)
+            {
+                m_Parameters = new NativeList<byte>(allocator);
+                m_ParameterOffsets = new NativeParallelHashMap<long, ParameterSlice>(k_MapInitialCapacity, allocator);
+                return;
+            }
+
+            m_Parameters = new NativeList<byte>(from.m_Parameters.Length, allocator);
+            m_Parameters.AddRangeNoResize(from.m_Parameters);
+
+            var keys = from.m_ParameterOffsets.GetKeyArray(Allocator.Temp);
+            m_ParameterOffsets = new NativeParallelHashMap<long, ParameterSlice>(keys.Length, allocator);
+            for (int i = 0; i < keys.Length; i++)
+                m_ParameterOffsets.Add(keys[i], from.m_ParameterOffsets[keys[i]]);
         }
 
         public void Dispose()
@@ -72,6 +95,15 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <summary>Get a read-only copy of the settings.</summary>
+        /// <returns>A read-only copy of the settings.</returns>
+        public NetworkSettings AsReadOnly()
+        {
+            var settings = this;
+            settings.m_ReadOnly = 1;
+            return settings;
+        }
+
         /// <summary>
         /// Adds a new parameter to the list. There must be only one instance per parameter type.
         /// </summary>
@@ -82,6 +114,12 @@ namespace Unity.Networking.Transport
         {
             if (!EnsureInitializedOrError())
                 return;
+
+            if (m_ReadOnly != 0)
+            {
+                UnityEngine.Debug.LogError("NetworkSettings structure is read-only, modifications are not allowed.");
+                return;
+            }
 
             ValidateParameterOrError(ref parameter);
 
@@ -147,132 +185,5 @@ namespace Unity.Networking.Transport
 #endif
             }
         }
-
-        // TODO: Remove when INetworkParameter[] constructors are deprecated on NetworkDriver
-        #region LEGACY
-
-#if !UNITY_DOTSRUNTIME
-        internal static unsafe NetworkSettings FromArray(params INetworkParameter[] parameters)
-        {
-            var networkParameters = new NetworkSettings(Allocator.Temp);
-
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                var parameter = parameters[i];
-                var type = parameter.GetType();
-
-                // LEGACY transformations: Some parameters were previously assuming that
-                // the default 0 values converted to the actual default value.
-#if !UNITY_WEBGL
-                if (type == typeof(BaselibNetworkParameter))
-                {
-                    var p = (BaselibNetworkParameter)parameter;
-
-                    if (p.receiveQueueCapacity == 0)
-                        p.receiveQueueCapacity = BaselibNetworkParameterExtensions.k_defaultRxQueueSize;
-
-                    if (p.sendQueueCapacity == 0)
-                        p.sendQueueCapacity = BaselibNetworkParameterExtensions.k_defaultTxQueueSize;
-
-                    if (p.maximumPayloadSize == 0)
-                        p.maximumPayloadSize = BaselibNetworkParameterExtensions.k_defaultMaximumPayloadSize;
-
-                    parameter = p;
-                }
-#endif
-                if (type == typeof(Relay.RelayNetworkParameter))
-                {
-                    var p = (Relay.RelayNetworkParameter)parameter;
-
-                    if (p.RelayConnectionTimeMS == 0)
-                        p.RelayConnectionTimeMS = Relay.RelayNetworkParameter.k_DefaultConnectionTimeMS;
-
-                    parameter = p;
-                }
-#if ENABLE_MANAGED_UNITYTLS
-                else if (type == typeof(Unity.Networking.Transport.TLS.SecureNetworkProtocolParameter))
-                {
-                    var p = (Unity.Networking.Transport.TLS.SecureNetworkProtocolParameter)parameter;
-
-                    if (p.SSLHandshakeTimeoutMin == 0)
-                        p.SSLHandshakeTimeoutMin = Unity.Networking.Transport.TLS.SecureNetworkProtocol.DefaultParameters.SSLHandshakeTimeoutMin;
-
-                    if (p.SSLHandshakeTimeoutMax == 0)
-                        p.SSLHandshakeTimeoutMax = Unity.Networking.Transport.TLS.SecureNetworkProtocol.DefaultParameters.SSLHandshakeTimeoutMax;
-
-                    parameter = p;
-                }
-#endif
-
-                try
-                {
-                    ValidateParameterOrError(ref parameter);
-                }
-                catch (Exception e)
-                {
-                    networkParameters.Dispose();
-                    throw e;
-                }
-
-                var typeHash = BurstRuntime.GetHashCode64(type);
-                var parameterSlice = new ParameterSlice
-                {
-                    Offset = networkParameters.m_Parameters.Length,
-                    Size = UnsafeUtility.SizeOf(type),
-                };
-
-                networkParameters.m_ParameterOffsets.Add(typeHash, parameterSlice);
-                networkParameters.m_Parameters.Resize(networkParameters.m_Parameters.Length + parameterSlice.Size, NativeArrayOptions.UninitializedMemory);
-
-                var valuePtr = ((byte*)networkParameters.m_Parameters.GetUnsafePtr<byte>() + parameterSlice.Offset);
-                var parameterPtr = (byte*)UnsafeUtility.PinGCObjectAndGetAddress(parameter, out var gcHandle) + ObjectHeaderOffset;
-
-                UnsafeUtility.MemCpy(valuePtr, parameterPtr, parameterSlice.Size);
-                UnsafeUtility.ReleaseGCObject(gcHandle);
-            }
-
-            return networkParameters;
-        }
-
-        internal unsafe bool TryGet(Type parameterType, out INetworkParameter parameter)
-        {
-            parameter = default;
-
-            if (!m_Parameters.IsCreated)
-                return false;
-
-            var typeHash = BurstRuntime.GetHashCode64(parameterType);
-
-            if (m_ParameterOffsets.TryGetValue(typeHash, out var parameterSlice))
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (UnsafeUtility.SizeOf(parameterType) != parameterSlice.Size)
-                    throw new ArgumentException($"The size of the parameter type {parameterType} ({UnsafeUtility.SizeOf(parameterType)}) is different to the stored size ({parameterSlice.Size})");
-
-                if (m_Parameters.Length < parameterSlice.Offset + parameterSlice.Size)
-                    throw new OverflowException($"The registered parameter slice is out of bounds of the parameters buffer");
-#endif
-                parameter = Activator.CreateInstance(parameterType) as INetworkParameter;
-                var parameterPtr = (byte*)UnsafeUtility.PinGCObjectAndGetAddress(parameter, out var gcHandle) + ObjectHeaderOffset;
-                UnsafeUtility.MemCpy(parameterPtr, (byte*)m_Parameters.GetUnsafeReadOnlyPtr<byte>() + parameterSlice.Offset, parameterSlice.Size);
-                UnsafeUtility.ReleaseGCObject(gcHandle);
-                return true;
-            }
-
-            return false;
-        }
-
-        internal static int ObjectHeaderOffset => UnsafeUtility.SizeOf<ObjectOffsetType>();
-
-        private unsafe struct ObjectOffsetType
-        {
-            void* v0;
-        #if !ENABLE_CORECLR
-            void* v1;
-        #endif
-        }
-#endif // !UNITY_DOTSRUNTIME
-
-        #endregion
     }
 }

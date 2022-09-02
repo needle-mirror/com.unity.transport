@@ -27,7 +27,9 @@ namespace Unity.Networking.Transport.Relay
         /// <remarks>
         /// This status indicates that the allocation used to connect to the relay server is invalid,
         /// either because an invalid allocation was provided in <see cref="NetworkSettings.WithRelayParameters" />
-        /// or because the allocation timed out due to inactivity.
+        /// or because the allocation timed out due to inactivity (the latter can happen if the value
+        /// of relayConnectionTimeMS provided in <see cref="NetworkSettings.WithRelayParameters" />
+        /// is too high or if <see cref="NetworkDriver.ScheduleUpdate" /> is not called often enough).
         ///
         /// In both cases, this is an unrecoverable error. A new allocation needs to be created through
         /// the relay service, and a new <see cref="NetworkDriver" /> needs to be created with that
@@ -41,9 +43,9 @@ namespace Unity.Networking.Transport.Relay
         /// <summary>Get the current status of the connection to the relay server.</summary>
         public static RelayConnectionStatus GetRelayConnectionStatus(this NetworkDriver driver)
         {
-            if (driver.NetworkProtocol is RelayNetworkProtocol)
+            if (driver.m_NetworkStack.TryGetLayer<RelayLayer>(out var layer))
             {
-                return (RelayConnectionStatus)driver.ProtocolStatus;
+                return layer.ConnectionStatus;
             }
             else
             {

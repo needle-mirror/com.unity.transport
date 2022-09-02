@@ -9,8 +9,8 @@ namespace Unity.Networking.Transport.Samples
     selected ip. */
     public class PingClientUIBehaviour : MonoBehaviour
     {
-        // The EndPoint the ping client should ping, will be a non-created end point when ping should not run.
-        public static NetworkEndPoint ServerEndPoint { get; private set; }
+        // The Endpoint the ping client should ping, will be a non-created end point when ping should not run.
+        public static NetworkEndpoint ServerEndpoint { get; private set; }
 
         // Ping statistics
         static int s_PingTime;
@@ -22,7 +22,7 @@ namespace Unity.Networking.Transport.Samples
         {
             s_PingTime = 0;
             s_PingCounter = 0;
-            ServerEndPoint = default(NetworkEndPoint);
+            ServerEndpoint = default(NetworkEndpoint);
         }
 
         void OnGUI()
@@ -40,7 +40,7 @@ namespace Unity.Networking.Transport.Samples
         void UpdatePingClientUI()
         {
             GUILayout.Label("PING " + s_PingCounter + ": " + s_PingTime + "ms");
-            if (!ServerEndPoint.IsValid)
+            if (!ServerEndpoint.IsValid)
             {
                 // Ping is not currently running, display ui for starting a ping
                 if (GUILayout.Button("Start ping"))
@@ -48,9 +48,9 @@ namespace Unity.Networking.Transport.Samples
                     ushort port = 9000;
                     if (string.IsNullOrEmpty(m_CustomIp))
                     {
-                        var endpoint = NetworkEndPoint.LoopbackIpv4;
+                        var endpoint = NetworkEndpoint.LoopbackIpv4;
                         endpoint.Port = port;
-                        ServerEndPoint = endpoint;
+                        ServerEndpoint = endpoint;
                     }
                     else
                     {
@@ -60,7 +60,7 @@ namespace Unity.Networking.Transport.Samples
                             port = newPort;
 
                         Debug.Log($"Connecting to PingServer at {endpoint[0]}:{port}.");
-                        ServerEndPoint = NetworkEndPoint.Parse(endpoint[0], port);
+                        ServerEndpoint = NetworkEndpoint.Parse(endpoint[0], port);
                     }
                 }
 
@@ -71,7 +71,7 @@ namespace Unity.Networking.Transport.Samples
                 // Ping is running, display ui for stopping it
                 if (GUILayout.Button("Stop ping"))
                 {
-                    ServerEndPoint = default(NetworkEndPoint);
+                    ServerEndpoint = default(NetworkEndpoint);
                 }
             }
         }

@@ -1,5 +1,4 @@
 using Unity.Burst;
-using Unity.Networking.Transport;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
@@ -38,8 +37,8 @@ namespace Unity.Networking.Transport.Samples
             };
             if (driver.BeginSend(pipeline, connection[0], out var streamWriter) == 0)
             {
-                streamWriter.WriteBytes(message.data, SoakMessage.HeaderLength);
-                streamWriter.WriteBytes((byte*)packetData.GetUnsafeReadOnlyPtr(), packetData.Length);
+                streamWriter.WriteBytesUnsafe(message.data, SoakMessage.HeaderLength);
+                streamWriter.WriteBytesUnsafe((byte*)packetData.GetUnsafeReadOnlyPtr(), packetData.Length);
                 stats.SentBytes += driver.EndSend(streamWriter);
             }
 
@@ -73,7 +72,8 @@ namespace Unity.Networking.Transport.Samples
                 else if (cmd == NetworkEvent.Type.Data)
                 {
                     stats.ReceivedBytes += strm.Length;
-                    strm.ReadBytes(inbound.data, strm.Length);
+
+                    strm.ReadBytesUnsafe(inbound.data, strm.Length);
 
                     if (inbound.sequence > ctx.LatestReceivedSequenceNumber)
                     {

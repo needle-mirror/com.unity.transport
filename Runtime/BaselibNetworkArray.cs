@@ -1,9 +1,3 @@
-#if UNITY_STANDALONE_WIN || UNITY_GAMECORE || UNITY_XBOXONE || UNITY_EDITOR_WIN
-    #define BASELIB_USE_SPLIT_BUFFERS
-#else
-    #undef BASELIB_USE_SPLIT_BUFFERS
-#endif
-
 using System;
 using Unity.Baselib.LowLevel;
 using Unity.Mathematics;
@@ -14,25 +8,26 @@ using ErrorCode = Unity.Baselib.LowLevel.Binding.Baselib_ErrorCode;
 
 namespace Unity.Networking.Transport
 {
-    using size_t = UIntPtr;
-
     internal unsafe struct UnsafeBaselibNetworkArray : IDisposable
     {
         [NativeDisableUnsafePtrRestriction] UnsafePtrList<Binding.Baselib_RegisteredNetwork_Buffer> m_BufferPool;
+        private uint m_ElementSize;
+
+        public uint ElementSize => m_ElementSize;
 
         /// <summary>
         /// Initializes a new instance of the UnsafeBaselibNetworkArray struct.
         /// </summary>
         /// <param name="capacity"></param>
         /// <param name="typeSize"></param>
+        /// <param name="usePooling"></param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if the capacity is less then 0 or if the value exceeds <see cref="int.MaxValue"/></exception>
         /// <exception cref="Exception">Thrown on internal baselib errors</exception>
         public UnsafeBaselibNetworkArray(int capacity, int typeSize)
         {
+            m_ElementSize = (uint)typeSize;
+
             var totalSize = (long)typeSize;
-#if !BASELIB_USE_SPLIT_BUFFERS
-            totalSize = capacity * typeSize;
-#endif
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (typeSize < 0)
@@ -43,18 +38,15 @@ namespace Unity.Networking.Transport
 #endif
 
             var poolSize = capacity;
-#if !BASELIB_USE_SPLIT_BUFFERS
-            poolSize = 1;
-#endif
 
             m_BufferPool = new UnsafePtrList<Binding.Baselib_RegisteredNetwork_Buffer>(poolSize, Allocator.Persistent);
 
+            var pageInfo = stackalloc Binding.Baselib_Memory_PageSizeInfo[1];
+            Binding.Baselib_Memory_GetPageSizeInfo(pageInfo);
+            var defaultPageSize = (ulong)pageInfo->defaultPageSize;
+
             for (int i = 0; i < poolSize; i++)
             {
-                var pageInfo = stackalloc Binding.Baselib_Memory_PageSizeInfo[1];
-                Binding.Baselib_Memory_GetPageSizeInfo(pageInfo);
-                var defaultPageSize = (ulong)pageInfo->defaultPageSize;
-
                 var pageCount = (ulong)1;
                 if ((ulong)totalSize > defaultPageSize)
                 {
@@ -111,15 +103,13 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Gets a element at the specified index, with the size of <see cref="elementSize" />.
+        /// Gets a element at the specified index.
         /// </summary>
         /// <value>A <see cref="Binding.Baselib_RegisteredNetwork_BufferSlice" /> pointing to the index supplied.</value>
-        public Binding.Baselib_RegisteredNetwork_BufferSlice AtIndexAsSlice(int index, uint elementSize)
+        public Binding.Baselib_RegisteredNetwork_BufferSlice AtIndexAsSlice(int index)
         {
-            uint offset = 0;
             IntPtr data;
             Binding.Baselib_RegisteredNetwork_Buffer* buffer = null;
-#if BASELIB_USE_SPLIT_BUFFERS
     #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (index >= m_BufferPool.Length)
             {
@@ -128,18 +118,18 @@ namespace Unity.Networking.Transport
     #endif
             buffer = m_BufferPool[index];
             data = (IntPtr)((byte*)buffer->allocation.ptr);
-#else // BASELIB_USE_SPLIT_BUFFERS
-            buffer = m_BufferPool[0];
-            offset = elementSize * (uint)index;
-            data = (IntPtr)((byte*)buffer->allocation.ptr + offset);
-#endif // BASELIB_USE_SPLIT_BUFFERS
 
             Binding.Baselib_RegisteredNetwork_BufferSlice slice;
             slice.id = buffer->id;
             slice.data = data;
-            slice.offset = offset;
-            slice.size = elementSize;
+            slice.offset = 0;
+            slice.size = m_ElementSize;
             return slice;
+        }
+
+        public IntPtr GetBufferPtr(int index)
+        {
+            return m_BufferPool[index]->allocation.ptr;
         }
     }
 }

@@ -5,9 +5,6 @@ using UnityEngine.Assertions;
 
 namespace Unity.Networking.Transport
 {
-    /// <summary>
-    /// Utility class used to Decode a base64 string
-    /// </summary>
     internal static class Base64
     {
         /// <summary>

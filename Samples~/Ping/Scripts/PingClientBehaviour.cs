@@ -105,7 +105,7 @@ namespace Unity.Networking.Transport.Samples
             // enough since we can get multiple FixedUpdate per frame on slow clients
             m_updateHandle.Complete();
 
-            var serverEP = PingClientUIBehaviour.ServerEndPoint;
+            var serverEP = PingClientUIBehaviour.ServerEndpoint;
             // If the client ui indicates we should be sending pings but we do not have an active connection we create one
             if (serverEP.IsValid && !m_clientToServerConnection[0].IsCreated)
                 m_clientToServerConnection[0] = m_ClientDriver.Connect(serverEP);

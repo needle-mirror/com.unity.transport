@@ -5,13 +5,13 @@ namespace Unity.Networking.Transport.Relay
     [StructLayout(LayoutKind.Sequential)]
     internal struct RelayMessagePing
     {
-        public const int Length = RelayMessageHeader.Length + RelayAllocationId.k_Length + 2; // Header + FromAllocationId + SequenceNumber
+        public const int k_Length = RelayMessageHeader.k_Length + RelayAllocationId.k_Length + 2; // Header + FromAllocationId + SequenceNumber
 
         public RelayMessageHeader Header;
         public RelayAllocationId FromAllocationId;
         public ushort SequenceNumber;
 
-        internal static RelayMessagePing Create(RelayAllocationId fromAllocationId, ushort dataLength)
+        public static RelayMessagePing Create(RelayAllocationId fromAllocationId)
         {
             return new RelayMessagePing
             {
@@ -19,6 +19,13 @@ namespace Unity.Networking.Transport.Relay
                 FromAllocationId = fromAllocationId,
                 SequenceNumber = 1
             };
+        }
+
+        public static void Write(ref PacketProcessor packetProcessor, ref RelayAllocationId fromAllocationId)
+        {
+            RelayMessageHeader.Write(ref packetProcessor, RelayMessageType.Ping);
+            packetProcessor.AppendToPayload<RelayAllocationId>(fromAllocationId);
+            packetProcessor.AppendToPayload<ushort>(1);
         }
     }
 }

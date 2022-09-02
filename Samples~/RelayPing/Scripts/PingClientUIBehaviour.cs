@@ -49,39 +49,45 @@ namespace Unity.Networking.Transport.Samples
             await AuthenticationService.Instance.SignInAnonymouslyAsync();
             Debug.Log($"Logging in with PlayerID {AuthenticationService.Instance.PlayerId}");
 
-            if (AuthenticationService.Instance.IsSignedIn) {
+            if (AuthenticationService.Instance.IsSignedIn)
+            {
                 signedIn = true;
             }
         }
 
-        public void ClientBindAndConnect() {
-        
+        public void ClientBindAndConnect()
+        {
             var clientBehaviour = gameObject.AddComponent<PingClientBehaviour>() as PingClientBehaviour;
             StartCoroutine(clientBehaviour.ConnectAndBind(m_JoinCode));
         }
 
-        public void ServerBindAndConnect() {
-        
+        public void ServerBindAndConnect()
+        {
             var serverBehaviour = gameObject.AddComponent<PingServerBehaviour>() as PingServerBehaviour;
             StartCoroutine(serverBehaviour.ConnectAndBind());
         }
 
         void UpdatePingClientUI()
         {
-            if (!signedIn) {
-                if (GUILayout.Button("SignIn")) {
+            if (!signedIn)
+            {
+                if (GUILayout.Button("SignIn"))
+                {
                     OnSignIn();
                 }
             }
-            else {
-            
-                if (!isClient && !isServer){
-                    if (GUILayout.Button("Start Server") && (!isServer || !isClient)) {
+            else
+            {
+                if (!isClient && !isServer)
+                {
+                    if (GUILayout.Button("Start Server") && (!isServer || !isClient))
+                    {
                         isServer = true;
                         isClient = false;
                         ServerBindAndConnect();
                     }
-                    if (GUILayout.Button("Start Client") && (!isServer || !isClient)) {
+                    if (GUILayout.Button("Start Client") && (!isServer || !isClient))
+                    {
                         isClient = true;
                         isServer = false;
                         ClientBindAndConnect();
@@ -89,14 +95,17 @@ namespace Unity.Networking.Transport.Samples
                 }
 
                 GUILayout.Label("Join Code");
-                if (isServer || isClient) {
+                if (isServer || isClient)
+                {
                     GUILayout.Label(m_JoinCode);
                 }
-                else {
+                else
+                {
                     m_JoinCode = GUILayout.TextField(m_JoinCode);
                 }
-                
-                if (isClient) {
+
+                if (isClient)
+                {
                     GUILayout.Label("PING " + s_PingCounter + ": " + s_PingTime + "ms");
                 }
             }

@@ -42,10 +42,10 @@ namespace Unity.Networking.Transport.Samples
             m_ClientDriver.ScheduleUpdate().Complete();
 
             // If the client ui indicates we should be sending pings but we do not have an active connection we create one
-            if (PingClientUIBehaviour.ServerEndPoint.IsValid && !m_clientToServerConnection.IsCreated)
-                m_clientToServerConnection = m_ClientDriver.Connect(PingClientUIBehaviour.ServerEndPoint);
+            if (PingClientUIBehaviour.ServerEndpoint.IsValid && !m_clientToServerConnection.IsCreated)
+                m_clientToServerConnection = m_ClientDriver.Connect(PingClientUIBehaviour.ServerEndpoint);
             // If the client ui indicates we should not be sending pings but we do have a connection we close that connection
-            if (!PingClientUIBehaviour.ServerEndPoint.IsValid && m_clientToServerConnection.IsCreated)
+            if (!PingClientUIBehaviour.ServerEndpoint.IsValid && m_clientToServerConnection.IsCreated)
             {
                 m_clientToServerConnection.Disconnect(m_ClientDriver);
                 m_clientToServerConnection = default(NetworkConnection);

@@ -1,12 +1,13 @@
 using System;
-using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using Unity.Baselib.LowLevel;
 using Unity.Collections;
 
 namespace Unity.Networking.Transport.Utilities
 {
     /// <summary>
     /// A NativeMultiQueue is a set of several FIFO queues split into buckets.
-    /// Each bucket has its own first and last item, and each bucket can have
+    /// Each bucket has its own first and last item and each bucket can have
     /// items pushed and popped individually.
     /// </summary>
     internal struct NativeMultiQueue<T> : IDisposable where T : unmanaged
@@ -15,17 +16,13 @@ namespace Unity.Networking.Transport.Utilities
         private NativeList<int> m_QueueHeadTail;
         private NativeArray<int> m_MaxItems;
 
-        /// <summary>
-        /// Whether this queue has been allocated (and not yet deallocated).
-        /// </summary>
-        /// <value>True if this queue has been allocated (and not yet deallocated).</value>
         public bool IsCreated => m_Queue.IsCreated;
 
         /// <summary>
-        /// Instantiates a new NativeMultiQueue which has a single bucket and the
-        /// specified capacity for the number of items for that bucket. Accessing buckets
-        /// out of range will grow the number of buckets, and pushing more items than the
-        /// initial capacity will increase the number of items for each bucket.
+        /// New NativeMultiQueue has a single bucket and the specified number
+        /// of items for that bucket. Accessing buckets out of range will grow
+        /// the number of buckets and pushing more items than the initial capacity
+        /// will increase the number of items for each bucket.
         /// </summary>
         public NativeMultiQueue(int initialMessageCapacity)
         {
@@ -35,9 +32,6 @@ namespace Unity.Networking.Transport.Utilities
             m_QueueHeadTail = new NativeList<int>(2, Allocator.Persistent);
         }
 
-        /// <summary>
-        /// Releases all resources (memory and safety handles).
-        /// </summary>
         public void Dispose()
         {
             m_MaxItems.Dispose();
@@ -46,10 +40,9 @@ namespace Unity.Networking.Transport.Utilities
         }
 
         /// <summary>
-        /// Enqueue a new item to a specific bucket. If the specified bucket is larger
-        /// than the current amount of buckets, the queue's number of buckets will be
-        /// increased to match. If enqueueing the item would exceed the queue's capacity,
-        /// the queue's capacity will be increased.
+        /// Enqueue a new item to a specific bucket. If the bucket does not yet exist
+        /// the number of buckets will be increased and if the queue is full the number
+        /// of items for each bucket will be increased.
         /// </summary>
         public void Enqueue(int bucket, T value)
         {
@@ -84,8 +77,8 @@ namespace Unity.Networking.Transport.Utilities
         }
 
         /// <summary>
-        /// Dequeue an item from a specific bucket. If the bucket does not exist, or if the
-        /// bucket is empty, the call will fail and return false.
+        /// Dequeue an item from a specific bucket. If the bucket does not exist or if the
+        /// bucket is empty the call will fail and return false.
         /// </summary>
         public bool Dequeue(int bucket, out T value)
         {
@@ -115,8 +108,8 @@ namespace Unity.Networking.Transport.Utilities
         }
 
         /// <summary>
-        /// Peek the next item in a specific bucket. If the bucket does not exist, or if the
-        /// bucket is empty, the call will fail and return false.
+        /// Peek the next item in a specific bucket. If the bucket does not exist or if the
+        /// bucket is empty the call will fail and return false.
         /// </summary>
         public bool Peek(int bucket, out T value)
         {
@@ -137,7 +130,7 @@ namespace Unity.Networking.Transport.Utilities
         }
 
         /// <summary>
-        /// Remove all items from a specific bucket. If the bucket does not exist,
+        /// Remove all items from a specific bucket. If the bucket does not exist
         /// the call will not do anything.
         /// </summary>
         public void Clear(int bucket)
@@ -149,19 +142,9 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    /// <summary>
-    /// Utility class used when dealing with sequenced pipeline stages.
-    /// </summary>
-    /// <seealso cref="ReliableUtility">
     public static class SequenceHelpers
     {
-        /// <summary>
-        /// Calculate the difference between two sequence IDs, taking integer overflow/underflow into account.
-        /// For example, both AbsDistance(65535, 0) and AbsDistance(0, 65535) will return 1, not 65535.
-        /// </summary>
-        /// <param name="lhs">The first sequence ID. Compared against the second.</param>
-        /// <param name="rhs">The second sequence ID. Compared against the first.</param>
-        /// <returns>An integer value equal to the distance between the sequence IDs.</returns>
+        // Calculate difference between the sequence IDs taking into account wrapping, so when you go from 65535 to 0 the distance is 1
         public static int AbsDistance(ushort lhs, ushort rhs)
         {
             int distance;
@@ -172,28 +155,12 @@ namespace Unity.Networking.Transport.Utilities
             return distance;
         }
 
-        /// <summary>
-        /// This method was originally added in February 2019, but does not seem to be used anywhere currently.
-        /// Its original context seems to have been intended for a very simple version of checking whether a
-        /// packet's sequence ID was equal to or newer than the last received packet.
-        /// </summary>
-        /// <param name="current">The sequence ID of a newly-arrived packet to check</param>
-        /// <param name="old">The sequence ID of a previously received packet</param>
-        /// <returns>true if current is newer than old</returns>
         public static bool IsNewer(uint current, uint old)
         {
             // Invert the check so same does not count as newer
             return !(old - current < (1u << 31));
         }
 
-        /// <summary>
-        /// Describes whether the non-wrapping difference between two sequenceIDs is
-        /// less than 2^15 (or 0x8000, or 32768). (The "16" seems to be the 16th bit
-        /// in a 16-bit integer.)
-        /// </summary>
-        /// <param name="lhs">The first operand.</param>
-        /// <param name="rhs">The second operand.</param>
-        /// <returns>Whether or not the non-wrapping difference between the two operands is less than or equal to unsigned 0x7FFF.</returns>
         public static bool GreaterThan16(ushort lhs, ushort rhs)
         {
             const uint max_sequence_divide_2 = 0x7FFF;
@@ -201,38 +168,16 @@ namespace Unity.Networking.Transport.Utilities
                 lhs < rhs && rhs - lhs > (ushort)max_sequence_divide_2;
         }
 
-        /// <summary>
-        /// Describes whether the non-absolute difference between two sequenceIDs is
-        /// greater than or equal to 2^15 (or 0x8000, or 32768). (The "16" seems to
-        /// be the 16th bit in a 16-bit integer.)
-        /// </summary>
-        /// <param name="lhs">The first operand.</param>
-        /// <param name="rhs">The second operand.</param>
-        /// <returns>Whether or not the non-wrapping difference between the two operands is greater than unsigned 0x7FFF.</returns>
         public static bool LessThan16(ushort lhs, ushort rhs)
         {
             return GreaterThan16(rhs, lhs);
         }
 
-        /// <summary>
-        /// Describes whether a packet is stale in the context of sequenced pipelines.
-        /// </summary>
-        /// <param name="sequence">The more recent sequence ID.</param>
-        /// <param name="oldSequence">The older sequence ID.</param>
-        /// <param name="windowSize">The window size</param>
-        /// <returns>A boolean value containing the results of <see cref="LessThan16(ushort, ushort)"/> where lhs = sequence and rhs = oldSequence - windowSize.</returns>
         public static bool StalePacket(ushort sequence, ushort oldSequence, ushort windowSize)
         {
             return LessThan16(sequence, (ushort)(oldSequence - windowSize));
         }
 
-        /// <summary>
-        /// Converts a bitmask integer to a string representation of its binary expression, e.g.
-        /// a mask value of 4 will return a string with the 3rd bit set:
-        /// 00000000000000000000000000000100
-        /// </summary>
-        /// <param name="mask">The bitmask in integer format.</param>
-        /// <returns>A string that represents the bitmask.</returns>
         public static string BitMaskToString(uint mask)
         {
             //  31     24      16      8       0
@@ -252,18 +197,8 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    /// <summary>
-    /// Provides Extension methods for FixedStrings
-    /// </summary>
     public static class FixedStringHexExt
     {
-        /// <summary>
-        /// Appends the hex using the specified str
-        /// </summary>
-        /// <typeparam name="T">The string type. Has constraints where it must be a struct, an INativeList<byte> and IUTF8Bytes.</typeparam>
-        /// <param name="str">The string of type T. Passed in by reference, and will be modified by this method.</param>
-        /// <param name="val">The ushort representation of the hex value to convert to its string representation and append to T.</param>
-        /// <returns>The <see cref="FormatError"/> from the attempt to modify <see cref="str"/>, either None or Overflow.</returns>
         public static FormatError AppendHex<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
             int shamt = 12;
@@ -288,9 +223,6 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    /// <summary>
-    /// Provides Extension methods for the <see cref="NativeList"> class
-    /// </summary>
     public static class NativeListExt
     {
         /// <summary>
@@ -302,7 +234,7 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="sizeToFit">Requested size that should fit into list</param>
         public static void ResizeUninitializedTillPowerOf2<T>(this NativeList<T> list, int sizeToFit) where T : unmanaged
         {
-            var n = list.Length;
+            var n = list.Capacity;
 
             if (sizeToFit >= n)
             {
@@ -315,31 +247,78 @@ namespace Unity.Networking.Transport.Utilities
                 sizeToFit++;
                 //sizeToFit is now next power of 2 of initial sizeToFit
 
-                list.ResizeUninitialized(sizeToFit);
+                list.Capacity = sizeToFit;
             }
         }
     }
 
-
-    /// <summary>
-    /// A simple method to obtain a random ushort provided by the <see cref="Unity.Mathematics.Random"/> class.
-    /// </summary>
     public static class RandomHelpers
     {
-        /// <returns>a ushort in [1..ushort.MaxValue - 1] range</returns>
+        // returns ushort in [1..ushort.MaxValue] range
         public static ushort GetRandomUShort()
         {
-            var rnd = new Unity.Mathematics.Random((uint)Stopwatch.GetTimestamp());
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return (ushort)UnityEngine.Random.Range(0, ushort.MaxValue);
+#else
+            var rnd = new Unity.Mathematics.Random((uint)TimerHelpers.GetTicks());
             return (ushort)rnd.NextUInt(1, ushort.MaxValue - 1);
+#endif
         }
 
-        /// <returns>a ushort in [1..uint.MaxValue - 1] range</returns>
+        // returns ulong in [1..ulong.MaxValue] range
         public static ulong GetRandomULong()
         {
-            var rnd = new Unity.Mathematics.Random((uint)Stopwatch.GetTimestamp());
+#if UNITY_WEBGL && !UNITY_EDITOR
+            var high = (ulong)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+            var low = (ulong)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+#else
+            var rnd = new Unity.Mathematics.Random((uint)TimerHelpers.GetTicks());
             var high = rnd.NextUInt(0, uint.MaxValue - 1);
             var low = rnd.NextUInt(1, uint.MaxValue - 1);
+#endif
             return ((ulong)high << 32) | (ulong)low;
+        }
+
+        internal unsafe static ConnectionToken GetRandomConnectionToken()
+        {
+            var token = new ConnectionToken();
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+            for (int i = 0; i < ConnectionToken.k_Length; i++)
+                token.Value[i] = (byte)UnityEngine.Random.Range(0, 0xFF);
+#else
+            var rnd = new Unity.Mathematics.Random((uint)TimerHelpers.GetTicks());
+
+            for (int i = 0; i < ConnectionToken.k_Length; i++)
+                token.Value[i] = (byte)(rnd.NextUInt() & 0xFF);
+#endif
+
+            return token;
+        }
+    }
+
+    internal static class TimerHelpers
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong GetTicks()
+        {
+            return Binding.Baselib_Timer_GetHighPrecisionTimerTicks();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long GetCurrentTimestampMS()
+        {
+            // Normally we'd use Baselib_Timer_GetTicksToNanosecondsConversionRatio for more precise
+            // timestamp calculations, but it can't be used in DOTS Runtime (yet) because its
+            // bindings link directly to the version returning a struct, whereas normal bindings use
+            // the injected version that returns the struct through an out parameter.
+            return (long)(Binding.Baselib_Timer_GetTimeSinceStartupInSeconds() * 1000);
+        }
+
+        // Used in tests to sleep inside Burst-compiled code.
+        internal static void Sleep(uint ms)
+        {
+            Binding.Baselib_Timer_WaitForAtLeast(ms);
         }
     }
 }

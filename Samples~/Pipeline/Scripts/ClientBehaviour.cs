@@ -20,7 +20,7 @@ namespace Unity.Networking.Transport.Samples
             m_SequencedPipeline = m_Driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
             m_Connection = default(NetworkConnection);
 
-            var endpoint = NetworkEndPoint.LoopbackIpv4;
+            var endpoint = NetworkEndpoint.LoopbackIpv4;
             endpoint.Port = 9000;
             m_Connection = m_Driver.Connect(endpoint);
         }
@@ -45,7 +45,7 @@ namespace Unity.Networking.Transport.Samples
             NetworkEvent.Type cmd;
 
             while ((cmd = m_Connection.PopEvent(m_Driver, out stream)) !=
-                NetworkEvent.Type.Empty)
+                   NetworkEvent.Type.Empty)
             {
                 if (cmd == NetworkEvent.Type.Connect)
                 {

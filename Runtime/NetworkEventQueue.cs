@@ -6,54 +6,34 @@ using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Networking.Transport
 {
-    /// <summary>Represents an event on a connection.</summary>
     [StructLayout(LayoutKind.Explicit)]
     public struct NetworkEvent
     {
-        /// <summary>The different types of events that can be returned for a connection.</summary>
+        /// <summary>
+        /// NetworkEvent.Type enumerates available network events for this driver.
+        /// </summary>
         public enum Type : short
         {
-            /// <summary>No event actually occured. Should be ignored.</summary>
             Empty = 0,
-            /// <summary>Data was received on the connection.</summary>
             Data,
-            /// <summary>The connection is now established.</summary>
             Connect,
-            /// <summary>The connection is now closed.</summary>
             Disconnect
         }
 
-        /// <summary>The type of the event.</summary>
         [FieldOffset(0)] internal Type type;
-        
-        /// <summary>The pipeline on which the event was received (for Data events).</summary>
         [FieldOffset(2)] internal short pipelineId;
-        
-        /// <summary>Internal ID of the connection.</summary>
         [FieldOffset(4)] internal int connectionId;
-
-        /// <summary>Status of the event. Used to store the Disconnect reason.</summary>
         [FieldOffset(8)] internal int status;
-
-        /// <summary>Offset of the event's data in the internal data stream.</summary>
         [FieldOffset(8)] internal int offset;
-        
-        /// <summary>Size of the event's data.</summary>
         [FieldOffset(12)] internal int size;
     }
 
-    /// <summary>A queue to store <see cref="NetworkEvent"> per connection.</summary>
     internal struct NetworkEventQueue : IDisposable
     {
         private int MaxEvents
         {
             get { return m_ConnectionEventQ.Length / (m_ConnectionEventHeadTail.Length / 2); }
         }
-        
-        /// <summary>
-        /// Initializes a new instance of a <see cref="NetworkEventQueue"/>.
-        /// </summary>
-        /// <param name="queueSizePerConnection">The queue size per connection.</param>
         public NetworkEventQueue(int queueSizePerConnection)
         {
             m_MasterEventQ = new NativeQueue<SubQueueItem>(Allocator.Persistent);
@@ -64,9 +44,6 @@ namespace Unity.Networking.Transport
             m_ConnectionEventHeadTail.Add(0);
         }
 
-        /// <summary>
-        /// Disposes of the queue.
-        /// </summary>
         public void Dispose()
         {
             m_MasterEventQ.Dispose();
@@ -74,28 +51,13 @@ namespace Unity.Networking.Transport
             m_ConnectionEventHeadTail.Dispose();
         }
 
-        /// <summary>
-        /// Pops an event from the queue. The returned stream is only valid until the call to the
-        /// method or until the main driver updates.
-        /// </summary>
-        /// <param name="id">ID of the connection the event is on.</param>
-        /// <param name="offset">Offset of the event's data in the stream.</param>
-        /// <param name="size">Size of the event's data in the stream.</param>
-        /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
+        // The returned stream is valid until PopEvent is called again or until the main driver updates
+
         public NetworkEvent.Type PopEvent(out int id, out int offset, out int size)
         {
             return PopEvent(out id, out offset, out size, out var _);
         }
 
-        /// <summary>
-        /// Pops an event from the queue. The returned stream is only valid until the call to the
-        /// method or until the main driver updates.
-        /// </summary>
-        /// <param name="id">ID of the connection the event is on.</param>
-        /// <param name="offset">Offset of the event's data in the stream.</param>
-        /// <param name="size">Size of the event's data in the stream.</param>
-        /// <param name="pipelineId">Pipeline on which the data event was received.</param>
-        /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
         public NetworkEvent.Type PopEvent(out int id, out int offset, out int size, out int pipelineId)
         {
             offset = 0;
@@ -119,28 +81,11 @@ namespace Unity.Networking.Transport
             }
         }
 
-        /// <summary>
-        /// Pops an event from the queue for a specific connection. The returned stream is only
-        /// valid until the call to the method or until the main driver updates.
-        /// </summary>
-        /// <param name="connectionId">ID of the connection we want the event from.</param>
-        /// <param name="offset">Offset of the event's data in the stream.</param>
-        /// <param name="size">Size of the event's data in the stream.</param>
-        /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
         public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size)
         {
             return PopEventForConnection(connectionId, out offset, out size, out var _);
         }
 
-        /// <summary>
-        /// Pops an event from the queue for a specific connection. The returned stream is only
-        /// valid until the call to the method or until the main driver updates.
-        /// </summary>
-        /// <param name="connectionId">ID of the connection we want the event from.</param>
-        /// <param name="offset">Offset of the event's data in the stream.</param>
-        /// <param name="size">Size of the event's data in the stream.</param>
-        /// <param name="pipelineId">Pipeline on which the data event was received.</param>
-        /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
         public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size, out int pipelineId)
         {
             offset = 0;
@@ -171,11 +116,6 @@ namespace Unity.Networking.Transport
             return ev.type;
         }
 
-        /// <summary>
-        /// Get the number of events in the queue for a given connection.
-        /// </summary>
-        /// <param name="connectionId">The ID of the connection to get event count of.</param>
-        /// <returns>The number of events for the connection.</returns>
         public int GetCountForConnection(int connectionId)
         {
             if (connectionId < 0 || connectionId >= m_ConnectionEventHeadTail.Length / 2)
@@ -239,7 +179,7 @@ namespace Unity.Networking.Transport
         private NativeQueue<SubQueueItem> m_MasterEventQ;
         private NativeList<NetworkEvent> m_ConnectionEventQ;
         private NativeList<int> m_ConnectionEventHeadTail;
-        
+
         public Concurrent ToConcurrent()
         {
             Concurrent concurrent;
@@ -247,7 +187,7 @@ namespace Unity.Networking.Transport
             concurrent.m_ConnectionEventHeadTail = new Concurrent.ConcurrentConnectionQueue(m_ConnectionEventHeadTail);
             return concurrent;
         }
-        
+
         public struct Concurrent
         {
             [NativeContainer]
@@ -298,28 +238,11 @@ namespace Unity.Networking.Transport
                 get { return m_ConnectionEventQ.Length / (m_ConnectionEventHeadTail.Length / 2); }
             }
 
-            /// <summary>
-            /// Pops an event from the queue for a specific connection. The returned stream is only
-            /// valid until the call to the method or until the main driver updates.
-            /// </summary>
-            /// <param name="connectionId">ID of the connection we want the event from.</param>
-            /// <param name="offset">Offset of the event's data in the stream.</param>
-            /// <param name="size">Size of the event's data in the stream.</param>
-            /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
             public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size)
             {
                 return PopEventForConnection(connectionId, out offset, out size, out var _);
             }
 
-            /// <summary>
-            /// Pops an event from the queue for a specific connection. The returned stream is only
-            /// valid until the call to the method or until the main driver updates.
-            /// </summary>
-            /// <param name="connectionId">ID of the connection we want the event from.</param>
-            /// <param name="offset">Offset of the event's data in the stream.</param>
-            /// <param name="size">Size of the event's data in the stream.</param>
-            /// <param name="pipelineId">Pipeline on which the data event was received.</param>
-            /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
             public NetworkEvent.Type PopEventForConnection(int connectionId, out int offset, out int size, out int pipelineId)
             {
                 offset = 0;

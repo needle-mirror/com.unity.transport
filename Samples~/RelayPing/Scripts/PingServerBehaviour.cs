@@ -35,11 +35,12 @@ namespace Unity.Networking.Transport.Samples
             m_connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
         }
 
-        public IEnumerator ConnectAndBind() {
+        public IEnumerator ConnectAndBind()
+        {
             var initTask = UnityServices.InitializeAsync();
-            while(!initTask.IsCompleted)
+            while (!initTask.IsCompleted)
                 yield return null;
-            
+
             var regionsTask = Unity.Services.Relay.Relay.Instance.ListRegionsAsync();
             while (!regionsTask.IsCompleted)
                 yield return null;
@@ -55,7 +56,7 @@ namespace Unity.Networking.Transport.Samples
             var allocationTask = Unity.Services.Relay.Relay.Instance.CreateAllocationAsync(5, regionId);
             while (!allocationTask.IsCompleted)
                 yield return null;
-            
+
             if (allocationTask.IsFaulted)
             {
                 Debug.LogError("Allocation request failed.");
@@ -76,7 +77,7 @@ namespace Unity.Networking.Transport.Samples
 
             PingClientUIBehaviour.m_JoinCode = joinCodeTask.Result;
 
-            RelayServerEndpoint defaultEndPoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
+            RelayServerEndpoint defaultEndpoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
                 true, false, allocation.RelayServer.IpV4, allocation.RelayServer.Port);
 
             foreach (var endPoint
@@ -84,27 +85,27 @@ namespace Unity.Networking.Transport.Samples
             {
 #if ENABLE_MANAGED_UNITYTLS
                 if (endPoint.Secure == true && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndPoint = endPoint;
+                    defaultEndpoint = endPoint;
 #else
                 if (endPoint.Secure == false && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndPoint = endPoint;
+                    defaultEndpoint = endPoint;
 #endif
             }
 
-            var serverEndpoint = NetworkEndPoint.Parse(defaultEndPoint.Host, (ushort)defaultEndPoint.Port);
+            var serverEndpoint = NetworkEndpoint.Parse(defaultEndpoint.Host, (ushort)defaultEndpoint.Port);
 
             var allocationId = RelayUtilities.ConvertFromAllocationIdBytes(allocation.AllocationIdBytes);
             var connectionData = RelayUtilities.ConvertConnectionData(allocation.ConnectionData);
             var key = RelayUtilities.ConvertFromHMAC(allocation.Key);
 
             var relayServerData = new RelayServerData(ref serverEndpoint, 0, ref allocationId, ref connectionData,
-                ref connectionData, ref key, defaultEndPoint.Secure);
+                ref connectionData, ref key, defaultEndpoint.Secure);
 
             relayServerData.ComputeNewNonce();
 
             InitDriver(ref relayServerData);
 
-            if (m_ServerDriver.Bind(NetworkEndPoint.AnyIpv4) != 0)
+            if (m_ServerDriver.Bind(NetworkEndpoint.AnyIpv4) != 0)
             {
                 Debug.LogError("Server failed to bind");
             }

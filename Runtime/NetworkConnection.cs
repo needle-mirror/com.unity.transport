@@ -1,182 +1,130 @@
 using System;
+using System.ComponentModel;
 using Unity.Collections;
 
 namespace Unity.Networking.Transport
 {
     namespace Error
     {
-        /// <summary>Reason for a disconnection event.</summary>
-        /// <remarks>
-        /// One of these values may be present as a single byte in the <see cref="DataStreamReader">
-        /// obtained with <see cref="NetworkDriver.PopEvent"> if the event type is
-        /// <see cref="NetworkEvent.Type.Disconnect">.
-        /// </remarks>
+        /// <summary>
+        /// DisconnectReason enumerates all disconnect reasons.
+        /// </summary>
         public enum DisconnectReason : byte
         {
-            // Don't assign explicit values.
+            // This enum is matched by NetworkStreamDisconnectReason in Netcode for Entities, so any
+            // change to it should be discussed and properly synchronized with them first.
 
-            /// <summary>Used internally when no other reason fits.</summary>
-            /// <remarks>
-            /// This shouldn't normally appear as a result of calling <see cref="NetworkDriver.PopEvent">.
-            /// </remarks>
-            Default,
-
-            /// <summary>
-            /// Indicates the connection timed out (see <see cref="NetworkConfigParameter.disconnectTimeoutMS">).
-            /// </summary>
+            /// <summary>Indicates a normal disconnection as a result of calling Disconnect on the connection.</summary>
+            Default, // don't assign explicit values
+            /// <summary>Indicates the connection timed out.</summary>
             Timeout,
-
-            /// <summary>
-            /// Indicates the connection failed to establish after too many failed attempts
-            /// (see <see cref="NetworkConfigParameter.maxConnectAttempts"/>).
-            /// </summary>
+            /// <summary>Indicates the connection failed to establish a connection after <see cref="NetworkConfigParameter.maxConnectAttempts"/>.</summary>
             MaxConnectionAttempts,
-
-            /// <summary>
-            /// Indicates the connection was closed normally by the remote peer after calling
-            /// <see cref="NetworkDriver.Disconnect"> or <see cref="NetworkConnection.close">.
-            /// </summary>
+            /// <summary>Indicates the connection was closed remotely.</summary>
             ClosedByRemote,
-
-            /// <summary>Used internally to track the number of reasons. Keep last.</summary>
+            /// <summary>Used only for count. Keep last and don't assign explicit values</summary>
             Count
         }
 
-        /// <summary>Status code returned by many functions in the API.</summary>
-        /// <remarks>Any value less than 0 denotes a failure.</remarks>
         public enum StatusCode
         {
-            /// <summary>Success; no error encountered.</summary>
             Success                       =  0,
-
-            /// <summary>Unknown connection (internal ID doesn't exist).</summary>
             NetworkIdMismatch             = -1,
-
-            /// <summary>Unknown connection (internal ID in use by newer connection).</summary>
             NetworkVersionMismatch        = -2,
-
-            /// <summary>Invalid operation given connection's state.</summary>
             NetworkStateMismatch          = -3,
-
-            /// <summary>Packet data is too large to handle.</summary>
             NetworkPacketOverflow         = -4,
-
-            /// <summary>Network send queue is full.</summary>
             NetworkSendQueueFull          = -5,
-
-            /// <summary>A packet's header is invalid.</summary>
-            // TODO Not in use anymore, should we delete?
             NetworkHeaderInvalid          = -6,
-
-            /// <summary>Tried to process the same connection multiple times in a parallel job.</summary>
             NetworkDriverParallelForErr   = -7,
-
-            /// <summary>Internal send handle is invalid.</summary>
             NetworkSendHandleInvalid      = -8,
-
-            /// <summary>Tried to create an <see cref="IPCNetworkInterface" /> on a non-loopback address.</summary>
             NetworkArgumentMismatch       = -9,
-
-            /// <summary>The underlying network socket has failed.</summary>
-            NetworkSocketError            = -10,
+            NetworkReceiveQueueFull       = -10,
+            NetworkSocketError            = -11,
         }
     }
 
     /// <summary>
-    /// Public representation of a connection. Holds all information needed by the
-    /// <see cref="NetworkDriver"> to link it to an internal virtual connection.
+    /// The NetworkConnection is a struct that hold all information needed by the driver to link it with a virtual
+    /// connection. The NetworkConnection is a public representation of a connection.
     /// </summary>
     public struct NetworkConnection : IEquatable<NetworkConnection>
     {
-        /// <summary>Index of the connection in the internal connection list.</summary>
-        internal int m_NetworkId;
-        
-        /// <summary>Version of the connection at the above index (indices can be reused).</summary>
-        internal int m_NetworkVersion;
+        internal ConnectionId m_ConnectionId;
 
-        /// <summary>Connection States</summary>
+        /// <summary>
+        /// ConnectionState enumerates available connection states a connection can have.
+        /// </summary>
         public enum State
         {
-            /// <summary>Indicates the connection is disconnected.</summary>
+            /// <summary>Indicates the connection is disconnected</summary>
             Disconnected,
-            /// <summary>Indicates the connection is being established.</summary>
+
+            /// <summary>
+            /// Indicates the connection is in the process of being disconnected.
+            /// This is an internal state and it is mapped to Disconnected at the
+            /// NetworkDriver level.
+            /// </summary>
+            [EditorBrowsable(EditorBrowsableState.Never)] Disconnecting,
+
+            /// <summary>Indicates the connection is trying to connect.</summary>
             Connecting,
-            /// <summary>Indicates the connection is connected.</summary>
-            Connected
+
+            /// <summary>Indicates the connection is connected.. </summary>
+            Connected,
+        }
+
+        internal NetworkConnection(ConnectionId connectionId)
+        {
+            m_ConnectionId = connectionId;
         }
 
         /// <summary>
-        /// Disconnects a connection and marks it for deletion. The connection will be removed on
-        /// the next frame. Same as <see cref="Close{T}">.
+        /// Disconnects a virtual connection and marks it for deletion. This connection will be removed on next the next frame.
         /// </summary>
-        /// <param name="driver">Driver to which the connection belongs.</param>
-        /// <returns>An Error.StatusCode value (0 on success, -1 otherwise).</returns>
+        /// <param name="driver">The driver that owns the virtual connection.</param>
         public int Disconnect(NetworkDriver driver)
         {
             return driver.Disconnect(this);
         }
 
         /// <summary>
-        /// Receive an event for this specific connection. Should be called until it returns
-        /// <see cref="NetworkEvent.Type.Empty"/>, even if the connection is disconnected.
+        /// Receive an event for this specific connection. Should be called until it returns <see cref="NetworkEvent.Type.Empty"/>, even if the socket is disconnected.
         /// </summary>
-        /// <param name="driver">Driver to which the connection belongs.</param>
-        /// <param name="stream">
-        /// A <see cref="DataStreamReader">, that will only be populated if a <see cref="NetworkEvent.Type.Data"/>
-        /// (or possibly <see cref="NetworkEvent.Type.Disconnect">) event was received.
+        /// <param name="driver">The driver that owns the virtual connection.</param>
+        /// <param name="strm">A DataStreamReader, that will only be populated if a <see cref="NetworkEvent.Type.Data"/>
+        /// event was received.
         /// </param>
-        /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
         public NetworkEvent.Type PopEvent(NetworkDriver driver, out DataStreamReader stream)
         {
             return driver.PopEventForConnection(this, out stream);
         }
 
-        /// <summary>
-        /// Receive an event for this specific connection. Should be called until it returns
-        /// <see cref="NetworkEvent.Type.Empty"/>, even if the connection is disconnected.
-        /// </summary>
-        /// <param name="driver">Driver to which the connection belongs.</param>
-        /// <param name="stream">
-        /// A <see cref="DataStreamReader">, that will only be populated if a <see cref="NetworkEvent.Type.Data"/>
-        /// (or possibly <see cref="NetworkEvent.Type.Disconnect">) event was received.
-        /// </param>
-        /// <param name="pipeline">
-        /// The <see cref="NetworkPipeline"> on which the event was received. Will only be populated
-        /// for <see cref="NetworkEvent.Type.Data"> events.
-        /// </param>
-        /// <returns>The <see cref="NetworkEvent.Type"> of the event.</returns>
         public NetworkEvent.Type PopEvent(NetworkDriver driver, out DataStreamReader stream, out NetworkPipeline pipeline)
         {
             return driver.PopEventForConnection(this, out stream, out pipeline);
         }
 
         /// <summary>
-        /// Disconnects a connection and marks it for deletion. The connection will be removed on
-        /// the next frame. Same as <see cref="Disconnect{T}">.
+        /// Close an active NetworkConnection, similar to <see cref="Disconnect{T}"/>.
         /// </summary>
-        /// <param name="driver">Driver to which the connection belongs.</param>
-        /// <returns>An Error.StatusCode value (0 on success, -1 otherwise).</returns>
+        /// <param name="driver">The driver that owns the virtual connection.</param>
         public int Close(NetworkDriver driver)
         {
-            if (m_NetworkId >= 0)
+            if (m_ConnectionId.Id >= 0)
                 return driver.Disconnect(this);
-            return (int)Error.StatusCode.NetworkIdMismatch;
+            return -1;
         }
 
-        /// <summary>Checks to see if a connection is created.</summary>
-        /// <remarks>
-        /// Connections are considered as created only if they've been obtained by a call to
-        /// <see cref="NetworkDriver.Accept"> or <see cref="NetworkDriver.Connect">.
-        /// </remarks>
-        /// <returns>Whether the connection is created or not.</returns>
+        /// <summary>
+        /// Check to see if a NetworkConnection is Created.
+        /// </summary>
+        /// <returns>`true` if the NetworkConnection has been correctly created by a call to
+        /// <see cref="NetworkDriver.Accept"/> or <see cref="NetworkDriver.Connect"/></returns>
         public bool IsCreated
         {
-            get { return m_NetworkVersion != 0; }
+            get { return m_ConnectionId.Version != 0; }
         }
 
-        /// <summary>Gets the state of the connection.</summary>
-        /// <param name="driver">Driver to which the connection belongs.</param>
-        /// <returns>The <see cref="State{T}"> value for the connection.</returns>
         public State GetState(NetworkDriver driver)
         {
             return driver.GetConnectionState(this);
@@ -184,30 +132,35 @@ namespace Unity.Networking.Transport
 
         public static bool operator==(NetworkConnection lhs, NetworkConnection rhs)
         {
-            return lhs.m_NetworkId == rhs.m_NetworkId && lhs.m_NetworkVersion == rhs.m_NetworkVersion;
+            return lhs.m_ConnectionId == rhs.m_ConnectionId;
         }
 
         public static bool operator!=(NetworkConnection lhs, NetworkConnection rhs)
         {
-            return lhs.m_NetworkId != rhs.m_NetworkId || lhs.m_NetworkVersion != rhs.m_NetworkVersion;
+            return lhs.m_ConnectionId != rhs.m_ConnectionId;
         }
-        
+
         public override bool Equals(object o)
         {
             return this == (NetworkConnection)o;
         }
-        
+
         public bool Equals(NetworkConnection o)
         {
             return this == o;
         }
-        
+
         public override int GetHashCode()
         {
-            return (m_NetworkId << 8) ^ m_NetworkVersion;
+            return m_ConnectionId.GetHashCode();
         }
 
-        /// <summary>Gets the value of the connection's internal ID.</summary>
-        public int InternalId => m_NetworkId;
+        public override string ToString()
+        {
+            return $"NetworkConnection[id{InternalId},v{Version}]";
+        }
+
+        public int InternalId => m_ConnectionId.Id;
+        public int Version => m_ConnectionId.Version;
     }
 }

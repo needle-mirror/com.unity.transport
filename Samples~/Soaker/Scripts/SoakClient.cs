@@ -14,7 +14,7 @@ namespace Unity.Networking.Transport.Samples
         public NetworkPipeline Pipeline;
         public NetworkPipelineStageId ReliableStageId;
         public NetworkPipelineStageId SimulatorStageId;
-        public NetworkEndPoint ServerEndPoint;
+        public NetworkEndpoint ServerEndpoint;
         public string CustomIp = "";
 
         public NativeArray<NetworkConnection> ConnectionHandle;
@@ -29,12 +29,12 @@ namespace Unity.Networking.Transport.Samples
         {
             var settings = new NetworkSettings();
             settings.WithSimulatorStageParameters(
-                maxPacketSize: packetSize, maxPacketCount: 30, packetDelayMs: 25, packetDropPercentage: 10);
+                maxPacketSize: NetworkParameterConstants.MTU, maxPacketCount: 30, packetDelayMs: 25, packetDropPercentage: 10, mode: ApplyMode.AllPackets);
             DriverHandle = NetworkDriver.Create(settings);
             //Pipeline = DriverHandle.CreatePipeline(typeof(UnreliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
             Pipeline = DriverHandle.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
-            ReliableStageId = NetworkPipelineStageCollection.GetStageId(typeof(ReliableSequencedPipelineStage));
-            SimulatorStageId = NetworkPipelineStageCollection.GetStageId(typeof(SimulatorPipelineStage));
+            ReliableStageId = NetworkPipelineStageId.Get<ReliableSequencedPipelineStage>();
+            SimulatorStageId = NetworkPipelineStageId.Get<SimulatorPipelineStage>();
             if (packetSize > NetworkParameterConstants.MTU)
             {
                 Debug.LogWarning("Truncating packet size to MTU");
@@ -71,9 +71,9 @@ namespace Unity.Networking.Transport.Samples
             SoakStatisticsHandle[1] = new SoakStatisticsPoint();
         }
 
-        public void Start(NetworkEndPoint endpoint)
+        public void Start(NetworkEndpoint endpoint)
         {
-            ServerEndPoint = endpoint;
+            ServerEndpoint = endpoint;
             //Reset the context
             var ctx = SoakJobContextsHandle[0];
             SoakJobContextsHandle[0] = new SoakJobContext
@@ -119,9 +119,9 @@ namespace Unity.Networking.Transport.Samples
                 DumpSimulatorStatistics();
             }
 
-            if (ServerEndPoint.IsValid && !ConnectionHandle[0].IsCreated)
-                ConnectionHandle[0] = DriverHandle.Connect(ServerEndPoint);
-            else if (!ServerEndPoint.IsValid && ConnectionHandle[0].IsCreated)
+            if (ServerEndpoint.IsValid && !ConnectionHandle[0].IsCreated)
+                ConnectionHandle[0] = DriverHandle.Connect(ServerEndpoint);
+            else if (!ServerEndpoint.IsValid && ConnectionHandle[0].IsCreated)
                 ConnectionHandle[0].Disconnect(DriverHandle);
         }
 

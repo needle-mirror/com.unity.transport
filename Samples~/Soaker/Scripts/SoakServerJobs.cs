@@ -3,6 +3,7 @@ using Unity.Networking.Transport;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine.Assertions;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Networking.Transport.Samples
 {
@@ -62,7 +63,7 @@ namespace Unity.Networking.Transport.Samples
                     {
                         unsafe
                         {
-                            strm.ReadBytes(inbound.data, strm.Length);
+                            strm.ReadBytesUnsafe(inbound.data, strm.Length);
                             Assert.AreEqual(strm.Length, inbound.length + SoakMessage.HeaderLength);
 
                             outbound.id = inbound.id;
@@ -70,7 +71,7 @@ namespace Unity.Networking.Transport.Samples
 
                             if (driver.BeginSend(pipeline, connections[i].Connection, out var soakData) == 0)
                             {
-                                soakData.WriteBytes(outbound.data, SoakMessage.HeaderLength);
+                                soakData.WriteBytesUnsafe(outbound.data, SoakMessage.HeaderLength);
                                 driver.EndSend(soakData);
                             }
                         }

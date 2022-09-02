@@ -2,9 +2,6 @@ using Unity.Collections;
 
 namespace Unity.Networking.Transport
 {
-    /// <summary>
-    /// Utility class used to compute HMACSHA256 hash
-    /// </summary>
     internal static class HMACSHA256
     {
         /// <summary>

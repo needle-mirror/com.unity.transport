@@ -14,15 +14,7 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": [
-        "ENABLE_JOBS"
-    ],
-    "versionDefines": [
-        {
-            "name": "com.unity.jobs",
-            "expression": "0.0",
-            "define": "ENABLE_JOBS"
-        }
-    ],
+    "defineConstraints": [],
+    "versionDefines": [],
     "noEngineReferences": false
 }

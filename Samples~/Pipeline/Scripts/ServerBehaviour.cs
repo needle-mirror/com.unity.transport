@@ -20,7 +20,7 @@ namespace Unity.Networking.Transport.Samples
             //m_UnreliablePipeline = NetworkPipeline.Null;
             m_SequencedPipeline = m_Driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
 
-            var endpoint = NetworkEndPoint.AnyIpv4;
+            var endpoint = NetworkEndpoint.AnyIpv4;
             endpoint.Port = 9000;
             if (m_Driver.Bind(endpoint) != 0)
                 Debug.Log("Failed to bind to port 9000");
@@ -65,7 +65,7 @@ namespace Unity.Networking.Transport.Samples
 
                 NetworkEvent.Type cmd;
                 while ((cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream)) !=
-                    NetworkEvent.Type.Empty)
+                       NetworkEvent.Type.Empty)
                 {
                     if (cmd == NetworkEvent.Type.Data)
                     {

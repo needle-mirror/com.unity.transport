@@ -14,7 +14,7 @@ namespace Unity.Networking.Transport.Samples
         {
             // Create the server driver, bind it to a port and start listening for incoming connections
             m_ServerDriver = NetworkDriver.Create();
-            var addr = NetworkEndPoint.AnyIpv4;
+            var addr = NetworkEndpoint.AnyIpv4;
             addr.Port = 9000;
             if (m_ServerDriver.Bind(addr) != 0)
                 Debug.Log("Failed to bind to port 9000");

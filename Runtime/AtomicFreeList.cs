@@ -12,6 +12,7 @@ namespace Unity.Networking.Transport.Utilities.LowLevel.Unsafe
         // free indices...
         [NativeDisableUnsafePtrRestriction]
         private int* m_Buffer;
+        private int m_BufferSize;
         private int m_Length;
         private Allocator m_Allocator;
 
@@ -29,15 +30,20 @@ namespace Unity.Networking.Transport.Utilities.LowLevel.Unsafe
         {
             m_Allocator = allocator;
             m_Length = capacity;
-            var size = UnsafeUtility.SizeOf<int>() * (capacity + 2);
-            m_Buffer = (int*)UnsafeUtility.Malloc(size, UnsafeUtility.AlignOf<int>(), allocator);
-            UnsafeUtility.MemClear(m_Buffer, size);
+            m_BufferSize = UnsafeUtility.SizeOf<int>() * (capacity + 2);
+            m_Buffer = (int*)UnsafeUtility.Malloc(m_BufferSize, UnsafeUtility.AlignOf<int>(), allocator);
+            UnsafeUtility.MemClear(m_Buffer, m_BufferSize);
         }
 
         public void Dispose()
         {
             if (IsCreated)
                 UnsafeUtility.Free(m_Buffer, m_Allocator);
+        }
+
+        public void Reset()
+        {
+            UnsafeUtility.MemClear(m_Buffer, m_BufferSize);
         }
 
         /// <summary>

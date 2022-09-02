@@ -89,15 +89,6 @@ namespace Unity.Networking.Transport.Samples
         {
             var gen = new SoakStatisticsReporter();
             gen.GenerateReport(m_Report, m_Manager.ClientInfos());
-            /*
-            MemoryStream ms = new MemoryStream();
-            DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(SoakStatisticsReport));
-            ser.WriteObject(ms, report);
-
-            byte[] json = ms.ToArray();
-            ms.Close();
-            Debug.Log(Encoding.UTF8.GetString(json, 0, json.Length));
-            */
         }
 
         void OnGUI()
@@ -117,33 +108,6 @@ namespace Unity.Networking.Transport.Samples
                     StopSoak();
                 }
             }
-
-            /*
-            foreach (var client in m_SoakClients)
-            {
-                //GUILayout.Label("PING " + client.SoakJobStatisticsHandle[0].FrameId + ": " + client.SoakJobStatisticsHandle[0].PingTime + "ms");
-                if (!client.ServerEndPoint.IsValid)
-                {
-                    if (GUILayout.Button("Start ping"))
-                    {
-                        if (string.IsNullOrEmpty(client.CustomIp))
-                            client.ServerEndPoint = new IPEndPoint(IPAddress.Loopback, 9000);
-                        else
-                        {
-                            client.ServerEndPoint = new IPEndPoint(IPAddress.Parse(client.CustomIp), 9000);
-                        }
-                    }
-                    client.CustomIp = GUILayout.TextField(client.CustomIp);
-                }
-                else
-                {
-                    if (GUILayout.Button("Stop ping"))
-                    {
-                        client.ServerEndPoint = default(NetworkEndPoint);
-                    }
-                }
-            }
-            */
         }
     }
 }

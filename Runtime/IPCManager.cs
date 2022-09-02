@@ -1,12 +1,11 @@
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Networking.Transport.Utilities;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Protocols;
-using Random = Unity.Mathematics.Random;
+using Unity.Jobs.LowLevel.Unsafe;
+using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
@@ -17,13 +16,13 @@ namespace Unity.Networking.Transport
         [StructLayout(LayoutKind.Explicit)]
         internal unsafe struct IPCData
         {
-            [FieldOffset(0)] public int from;
-            [FieldOffset(4)] public int length;
-            [FieldOffset(8)] public fixed byte data[NetworkParameterConstants.MTU];
+            [FieldOffset(0)] public ushort fromPort;
+            [FieldOffset(2)] public int length;
+            [FieldOffset(6)] public fixed byte data[NetworkParameterConstants.MTU];
         }
 
         private NativeMultiQueue<IPCData> m_IPCQueue;
-        private NativeHashMap<ushort, int> m_IPCChannels;
+        private NativeParallelHashMap<ushort, int> m_IPCChannels;
 
         internal static JobHandle ManagerAccessHandle;
 
@@ -36,7 +35,7 @@ namespace Unity.Networking.Transport
             if (m_RefCount == 0)
             {
                 m_IPCQueue = new NativeMultiQueue<IPCData>(128);
-                m_IPCChannels = new NativeHashMap<ushort, int>(64, Allocator.Persistent);
+                m_IPCChannels = new NativeParallelHashMap<ushort, int>(64, Allocator.Persistent);
             }
             ++m_RefCount;
         }
@@ -46,28 +45,47 @@ namespace Unity.Networking.Transport
             --m_RefCount;
             if (m_RefCount == 0)
             {
-                ManagerAccessHandle.Complete();
+                CompleteManagerAccess();
                 m_IPCQueue.Dispose();
                 m_IPCChannels.Dispose();
             }
         }
 
-        internal unsafe void Update(NetworkInterfaceEndPoint local, NativeQueue<QueuedSendMessage> queue)
+        internal unsafe void Update(NetworkEndpoint local, ref PacketsQueue sendQueue)
         {
-            QueuedSendMessage val;
-            while (queue.TryDequeue(out val))
+            for (int i = 0; i < sendQueue.Count; i++)
             {
+                var packetProcessor = sendQueue[i];
+
+                if (!GetChannelByEndpoint(ref packetProcessor.EndpointRef, out var toChannel))
+                {
+                    if (packetProcessor.EndpointRef.Port == 0)
+                        continue;
+
+                    CreateEndpoint(packetProcessor.EndpointRef.Port);
+                }
+
                 var ipcData = new IPCData();
-                UnsafeUtility.MemCpy(ipcData.data, val.Data, val.DataLength);
-                ipcData.length = val.DataLength;
-                ipcData.from = *(int*)local.data;
-                m_IPCQueue.Enqueue(*(int*)val.Dest.data, ipcData);
+                packetProcessor.CopyPayload(ipcData.data, NetworkParameterConstants.MTU);
+                ipcData.length = packetProcessor.Length;
+                ipcData.fromPort = local.Port;
+
+                m_IPCQueue.Enqueue(toChannel, ipcData);
             }
         }
 
-        public unsafe NetworkInterfaceEndPoint CreateEndPoint(ushort port)
+        [BurstDiscard]
+        private void CompleteManagerAccess()
         {
+            if (JobsUtility.IsExecutingJob)
+                return;
+
             ManagerAccessHandle.Complete();
+        }
+
+        public unsafe NetworkEndpoint CreateEndpoint(ushort port)
+        {
+            CompleteManagerAccess();
             int id = 0;
             if (port == 0)
             {
@@ -90,75 +108,65 @@ namespace Unity.Networking.Transport
                 }
             }
 
-            var endpoint = default(NetworkInterfaceEndPoint);
-            endpoint.dataLength = 4;
-            *(int*)endpoint.data = id;
+            var endpoint = NetworkEndpoint.LoopbackIpv4.WithPort(port);
 
             return endpoint;
         }
 
-        public unsafe bool GetEndPointPort(NetworkInterfaceEndPoint ep, out ushort port)
+        public unsafe bool GetChannelByEndpoint(ref NetworkEndpoint endpoint, out int channel)
         {
-            ManagerAccessHandle.Complete();
-            int id = *(int*)ep.data;
-            var values = m_IPCChannels.GetValueArray(Allocator.Temp);
-            var keys = m_IPCChannels.GetKeyArray(Allocator.Temp);
-            port = 0;
-            for (var i = 0; i < m_IPCChannels.Count(); ++i)
+            if (!endpoint.IsLoopback)
             {
-                if (values[i] == id)
-                {
-                    port = keys[i];
-                    return true;
-                }
+                channel = -1;
+                return false;
             }
 
-            return false;
+            return m_IPCChannels.TryGetValue(endpoint.Port, out channel);
         }
 
-        public unsafe int PeekNext(NetworkInterfaceEndPoint local, void* slice, out int length, out NetworkInterfaceEndPoint from)
+        public unsafe int PeekNext(NetworkEndpoint local, void* slice, out int length, out NetworkEndpoint from)
         {
-            ManagerAccessHandle.Complete();
+            CompleteManagerAccess();
             IPCData data;
             from = default;
             length = 0;
 
-            if (m_IPCQueue.Peek(*(int*)local.data, out data))
+            if (!GetChannelByEndpoint(ref local, out var localChannel))
+                return 0;
+
+            if (m_IPCQueue.Peek(localChannel, out data))
             {
                 UnsafeUtility.MemCpy(slice, data.data, data.length);
 
                 length = data.length;
             }
 
-            GetEndPointByHandle(data.from, out from);
+            from = NetworkEndpoint.LoopbackIpv4.WithPort(data.fromPort);
 
             return length;
         }
 
-        public unsafe int ReceiveMessageEx(NetworkInterfaceEndPoint local, void* payloadData, int payloadLen, ref NetworkInterfaceEndPoint remote)
+        public unsafe int ReceiveMessageEx(NetworkEndpoint local, void* payloadData, int payloadLen, ref NetworkEndpoint remote)
         {
-            IPCData data;
-            if (!m_IPCQueue.Peek(*(int*)local.data, out data))
+            if (!GetChannelByEndpoint(ref local, out var localChannel))
                 return 0;
-            GetEndPointByHandle(data.from, out remote);
+
+            IPCData data;
+
+            if (!m_IPCQueue.Dequeue(localChannel, out data))
+            {
+                return 0;
+            }
+
+            remote = NetworkEndpoint.LoopbackIpv4.WithPort(data.fromPort);
 
             var totalLength = Math.Min(payloadLen, data.length);
             UnsafeUtility.MemCpy(payloadData, data.data, totalLength);
 
             if (totalLength < data.length)
                 return -10040; // out of memory
-            m_IPCQueue.Dequeue(*(int*)local.data, out data);
 
             return totalLength;
-        }
-
-        private unsafe void GetEndPointByHandle(int handle, out NetworkInterfaceEndPoint endpoint)
-        {
-            var temp = default(NetworkInterfaceEndPoint);
-            temp.dataLength = 4;
-            *(int*)temp.data = handle;
-
-            endpoint = temp;
         }
     }
 }

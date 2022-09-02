@@ -26,8 +26,8 @@ namespace Unity.Networking.Transport.Samples
             m_ServerDriver = NetworkDriver.Create();
             //m_Pipeline = m_ServerDriver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
             m_Pipeline = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-            m_ReliableStageId = NetworkPipelineStageCollection.GetStageId(typeof(ReliableSequencedPipelineStage));
-            var addr = NetworkEndPoint.AnyIpv4;
+            m_ReliableStageId = NetworkPipelineStageId.Get<ReliableSequencedPipelineStage>();
+            var addr = NetworkEndpoint.AnyIpv4;
             addr.Port = 9000;
             if (m_ServerDriver.Bind(addr) != 0)
                 Debug.Log("Failed to bind to port 9000");

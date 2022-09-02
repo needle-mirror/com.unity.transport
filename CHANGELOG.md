@@ -1,126 +1,141 @@
 # Change log
 
-## [1.2.0] - 2022-08-10
-
-### New features
-* If using the default network interface, the transport will attempt to transparently recreate the underlying network socket if it fails. This should increase robustness, especially on mobile where the OS might close sockets when an application is sent to the background.
-
-### Changes
-* A new `NetworkSocketError` value has been added to `Error.StatusCode`. This will be returned through `NetworkDriver.ReceiveErrorCode` when the automatic socket recreation mentioned above has failed (indicating an unrecoverable network failure).
+## [2.0.0-exp.6] - 2022-09-02
 
 ### Fixes
-* On iOS, communications will restart correctly if the application was in the background. Note that if using Relay, it's still possible for the allocation to have timed out while in the background. Recreation of a new allocation with a new `NetworkDriver` is still required in that scenario.
-* Fixed a possible stack overflow if the receive queue parameter was configured with a very large value (>10,000).
+* Fixed changelog. 
 
-## [1.1.0] - 2022-06-14
+## [2.0.0-exp.5] - 2022-09-01
 
 ### New features
-* A `DataStreamReader` can now be passed to another job without triggering the job safety system.
+* Preliminary WebSocket support. To have a `NetworkDriver` use WebSockets, create it with the appropriate network interface (e.g. `NetworkDriver.Create(new WebSocketNetworkInterface())`). To enable TLS support, create the driver with `NetworkSettings` configured with `WithSecureClientParameters`/`WithSecureServerParameters` (on the client, only the hostname needs to be provided).
+* `NetworkSettings.WithSecureClientParameters` and `NetworkSettings.WithSecureServerParameters` now have versions where the certificates and hostnames are provided as normal strings, instead of fixed strings.
+
+### Changes
+* `Protocol` field was removed from the `SecureNetworkProtocolParameter` structure. The protocol is now determined automatically from the network interface being used.
+* Updated to Collections 2.1.0-exp.1
+* `FragmentationPipelineStage.FragContext` was made internal as it is an internal implementation detail that serves no purpose being exposed publicly.
+* Multiple APIs were removed or made internal in `ReliableUtility` (more than is practical to list here). These were all internal implementation details that served no purpose being exposed publicly. The only remaining public APIs in `ReliableUtility` are those used to gather statistics from a reliable pipeline (as demonstrated in the Soaker sample).
+* All APIs except `Parameters` and `Context` in `SimulatorUtility` were made internal as they are implementation details that serve no purpose being exposed publicly.
+* It is no longer possible to configure the read timeout in the secure parameters as values other than the default (0) were never properly supported.
+* It is no longer possible to configure the handshake minimum/maximum timeouts in the secure parameters. These values are now derived from the `connectTimeoutMS` and `maxConnectAttempts` values configured with `NetworkSettings.WithNetworkConfigParameters`.
+* Hostnames in secure parameters are now `FixedString512Bytes` instead of `FixedString32Bytes`, allowing any possibly hostname to be used instead of only short ones.
+* `NetworkSendQueueHandle` was removed. It was not used for anything anymore (previously it was used for custom implementations of `INetworkInterface`).
+* `NetworkInterfaceSendHandle` and `SendHandleFlags` were made internal. With the removal of `NetworkSendInterface`, these served no purpose anymore.
+* `INetworkInterface.Initialize` now receives a `ref packetPadding` parameter that can be increased to reserve space for headers.
+* `BaselibNetworkInterface` was renamed to `UDPNetworkInterface`.
+
+### Fixes
+* Fixed an issue where when sending data on a connection and closing that connection in the same update, the data message would not be sent properly.
+* Fixed a stack overflow exception when send/receive queue capacity was set very high (>10,000).
+* Fixed an issue where `SimulatorPipelineStage` would always use the same seed for its random number generator.
+
+### Upgrade guide
+
+## [2.0.0-exp.4] - 2022-08-03
+
+### New features
+* A new global network simulator has been added, configurable through `NetworkSettings.WithNetworkSimulatorParameters` (settings can be modified at runtime with `NetworkDriver.ModifyNetworkSimulatorParameters`). Unlike `SimulatorPipelineStage`, it applies its parameters to _all_ traffic (including control messages). Note that it is currently _much_ less featureful than `SimulatorPipelineStage` (only supports dropping packets for now), so we still recommend using the latter for all network simulation.
+* Added a new `NetworkDriver.ModifySimulatorStageParameters` API to modify the parameters of the `SimulatorPipelineStage` at runtime.
+* `NetworkDriver` now exposes the `NetworkSettings` currently in use through the `CurrentSettings` property. These settings are read-only.
+* To implement the above functionality, `NetworkSettings` now provides a `AsReadOnly` method that returns a read-only copy of the settings.
+
+## [2.0.0-exp.3] - 2022-07-11
+
+### New features
+
+### Changes
+* Updated to Burst 1.7.3.
+* Changed: A call to `NetworkDriver.Disconnect` now requires a subsequent call to `NetworkDriver.Update` for the disconnect packet to be effectively sent (Previously `NetworkDriver.FlushSend` was enough).
+* Changed: The protocol used to establish connections now supports protocol versioning. This should help maintain compatibility for future releases, but unfortunately it's now incompatible with the protocol used in version 1.X.
+
+### Fixes
+
+### Upgrade guide
+* For `NetworkDriver.FlushSend` calls that follows a call to `NetworkDriver.Disconnect`, change it to `NetworkDriver.Update`.
+* The communication protocol used to establish connections has had a breaking change and is now incompatible with Unity Transport 1.X. Clients and servers will need to be updated at the same time to maintain compatibility.
+
+## [2.0.0-exp.2] - 2022-06-07
+
+### New features
+* Added a new version of `NetworkDriver.CreatePipeline` that takes a `NativeArray` of `NetworkPipelineStageId` as an argument. The old version taking an array of `Type` objects is still fully supported.
+
+### Changes
+* Removed: `NetworkSettings.WithDataStreamParameters` has been deleted. The data stream size (the only parameter this API controlled) is now always dynamically-sized to avoid out-of-memory errors.
+* Removed: `NetworkSettings.WithPipelineParameters` has been deleted. Initial sizing of the pipeline buffers is now handled internally.
+* Removed: `NetworkPipelineStageCollection` has been deleted. See upgrade guide below for details of how to replace its usages.
+* Updated to Collections 2.0.0-pre.32.
+* Updated to Burst 1.7.2.
+* Removed: `NetworkDriver.LastUpdateTime` has been deleted. This value was an internal detail not meant to be consumed by users, and its time reference couldn't be reliably related to typical C# timestamps.
+
+### Fixes
+* Removed an error log when receiving messages on a closed DTLS connection (this scenario is common if there were in-flight messages at the moment of disconnection).
+* `BeginSend` would not return an error if called on a closed connection before the next `ScheduleUpdate` call.
+* Fix broken link in package documentation.
+* On iOS, recreate the socket used for communications when coming back from app suspension. This solves an issue where communications would fail after the app was in the background for a few seconds and iOS decided to reclaim its resources.
+
+### Upgrade guide
+* Registering custom pipeline stages is now done on a per-`NetworkDriver` basis rather than globally through `NetworkPipelineStageCollection`. Concretely, that means replacing calls to `NetworkPipelineStageCollection.RegisterPipelineStage` with calls to `NetworkDriver.RegisterPipelineStage` for each instance of `NetworkDriver` that will make use of the custom pipeline stage.
+* `NetworkPipelineStageId` is now obtained through the static `NetworkPipelineStageId.Get` method, rather than with `NetworkPipelineStageCollection.GetStageId`. Updating only requires replacing calls like `NetworkPipelineStageCollection.GetStageId(typeof(Foo))` with `NetworkPipelineStageId.Get<Foo>()`.
+* `NetworkDriver.LocalEndPoint` and `NetworkDriver.RemoteEndPoint` were renamed to `NetworkDriver.GetLocalEndpoint` and `NetworkDriver.RemoteEndpoint`, respectively. This should be updated automatically.
+* `INetworkInterface.LocalEndPoint` has been renamed to `INetworkInterface.LocalEndpoint` for consistency with other usages of the term in the API. Since this is an interface property, it must be manually updated (see upgrade guide below).
+* Custom implementations of `INetworkInterface` must now implement the `LocalEndpoint` property instead of `LocalEndPoint`. This is purely a change in naming, the behavior should remain the same as before.
+
+## [2.0.0-exp.1] - 2022-04-29
+
+### New features
+* Added automatic device reconnection (enabled by default). This feature will attempt to re-establish the connection after some inactivity. This feature is intended to handle IP address changes on mobile devices. The inactivity timeout can be controlled by the new parameter `reconnectionTimeoutMS` in `NetworkConfigParameter`. Setting it to 0 disabled the feature.
+* When using the Relay protocol, error messages sent by the Relay server are now properly captured and logged.
+* `PacketsQueue` and `PacketProcessor` APIs were added for sending and operating over packets in the `INetworkInterface`.
 * A `GetRelayConnectionStatus` method has been added to `NetworkDriver` to query the status of the connection to the Relay server.
 
 ### Changes
-* `NetworkSettings.WithDataStreamParameters` is now obsolete. The functionality still works and will remain supported for version 1.X of the package, but will be removed in version 2.0. The reason for the removal is that in 2.0 the data stream size is always dynamically-sized to avoid out-of-memory errors.
-* `NetworkSettings.WithPipelineParameters` is now obsolete. The functionality still works and will remain supported for version 1.X of the package, but will be removed in version 2.0, where pipeline buffer sizing is handled internally.
-* Updated Burst dependency to 1.6.6.
-* Updated Collections dependency to 1.2.4.
-* Updated Mathematics dependency to 1.2.6.
-
-### Fixes
-* `BeginSend` would not return an error if called on a closed connection before the next `ScheduleUpdate` call.
-* Fixed a warning if using the default maximum payload size with DTLS.
-* Removed an error log when receiving messages on a closed DTLS connection (this scenario is common if there were in-flight messages at the moment of disconnection).
-* Fix broken link in package documentation.
-
-## [1.0.0] - 2022-03-28
-
-### Changes
-* Changed version to 1.0.0.
-
-## [1.0.0-pre.16] - 2022-03-24
-
-### Changes
-* Don't warn when overwriting settings in `NetworkSettings` (e.g. when calling the same `WithFooParameters` method twice).
-* Added new methods to set security parameters: `NetworkSettings.WithSecureClientParameters` and `NetworkSettings.WithSecureServerParameters`. These replace the existing `WithSecureParameters`, which is now obsolete.
-* Updated Collections dependency to 1.2.3.
-
-### Fixes
-* Fixed client certificate not being passed to UnityTLS on secure connections. This prevented client authentication from properly working.
-* Fixed: Reliable pipeline drop statistics inaccurate.
-
-## [1.0.0-pre.15] - 2022-03-11
-
-### Changes
+* Updated to Collections 2.0.0-pre.15
+* Updated to Burst 1.7.1.
+* Updated to Mathematics 1.2.6.
+* Minimal Unity Editor version supported is now 2022.2.0a11.
+* Added `NetworkSettings` struct and API for defining network parameters.
+* Added `reconnectionTimeoutMS` in `NetworkConfigParameter` to support device reconnection (see above).
+* Creating a pipeline with `FragmentationPipelineStage` _after_ `ReliableSequencedPipelineStage` is now forbidden (will throw an exception if collections checks are enabled). That order never worked properly to begin with. The reverse order is fully supported and is the recommended way to configure a reliable pipeline with support for large packets.
+* If collections checks are enabled, trying to create an IPv6 `NetworkEndPoint` will now throw an exception on consoles that don't support IPv6 (PS4, PS5, Switch).
+* Documentation has been moved to the [offical multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/1.0.0/introduction).
+* The `INetworkInterface.ScheduleSend()` method signature was modified to receive a `SendJobArguments` struct instead of a `NativeQueue`. A `PacketsQueue` parameter is passed in this new struct.
+* `sendQueueCapacity` and `receiveQueueCapacity` parameters moved from `BaselibNetworkParameter` to `NetworkConfigParameter`.
+* Removed: `BaselibNetworkParameter.maximumPayloadSize` is not needed anymore as it is handled internally.
+* Removed: `INetworkInterface.CreateSendInterface` is not needed anymore, the send queue is managed internally by the `NetworkDriver`. Operations from the `INetworkInterface` must be done through the `ScheduleSend` and `ScheduleReceive` methods. This removes the need of function pointers which where casing GC allocations on `BeginSend`, `EndSend` and `AbortSend` when burst is not enabled.
+* Added: `SendJobArguments` and `ReceiveJobArguments` structs to pass arguments to the send and receive jobs of the `INetworkInterface`.
+* Obsolete: `NetworkDriver` constructor is now obsolete, instead use `NetworkDriver.Create` methods. This improves burst compatibility as generic methods allows to know the INeworkInterface type at compilation time.
+* Obsolete: `NetworkPacketReceiver` is now deprecated. Use the `ReceiveJobArguments.ReceiveQueue` and `PacketProcessor` instead.
+* `NetworkDriver.LastUpdateTime` is now consistent across different copies of a driver. It is now also set by the job scheduled with `ScheduleUpdate`, so any job scheduled before it will not see the updated value. This also means the value will not be updated right after `ScheduleUpdate` returns (only once its jobs completes).
 * An error is now logged if failing to decrypt a DTLS message when using Relay.
 * Decreased default Relay keep-alive period to 3 seconds (was 9 seconds). The value can still be configured through the `relayConnectionTimeMS` parameter of `NetworkSettings.WithRelayParameters`.
-
-### Fixes
-* Updated Relay sample to the most recent Relay SDK APIs (would fail to compile with latest packages).
-
-## [1.0.0-pre.14] - 2022-03-01
-
-### Changes
-* `IValidatableNetworkParameter.Validate()` method is now part of `INetworkParameter`.
-* Added: `NetworkDriver.Create<>()` generic methods.
-
-### Fixes
-* Fixed compilation on WebGL. Note that the platform is still unsupported, but at least including the package in a WebGL project will not create compilation errors anymore. Creating a `NetworkDriver` in WebGL projects will now produce a warning.
-
-## [1.0.0-pre.13] - 2022-02-14
-
-### New features
-* When using the Relay protocol, error messages sent by the Relay server are now properly captured and logged.
-
-### Fixes
-* Fixed: Issue where an overflow of the `ReliableSequencedPipelineStage` sequence numbers would not be handled properly.
-
-## [1.0.0-pre.12] - 2022-01-24
-
-### Fixes
-* Clean up changelog for package promotion.
-
-## [1.0.0-pre.11] - 2022-01-24
-
-### Changes
-* Updated to Burst 1.6.4.
-* Updated to Mathematics 1.2.5.
-* Documentation has been moved to the [offical multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/1.0.0/introduction).
-
-### Fixes
-* Fixed a division by zero in `SimulatorPipelineStage` when `PacketDropInterval` is set.
-* Don't warn when receiving repeated connection accept messages (case 1370591).
-* Fixed an exception when receiving a data message from an unknown connection.
-
-## [1.0.0-pre.10] - 2021-12-02
-
-### Fixes
-* On fragmented and reliable pipelines, sending a large packet when the reliable window was almost full could result in the packet being lost.
-* Fixed "pending sends" warning being emitted very often when sending to remote hosts.
-* Revert decrease of MTU to 1384 on Xbox platforms (now back at 1400). It would cause issues for cross-platform communications.
-
-## [1.0.0-pre.9] - 2021-11-26
-
-### Changes
-* Disabled Roslyn Analyzers provisionally
-
-### Fixes
-* Fixed: Compiler error due to Roslyn Analyzers causing a wrong compiler argument
-
-## [1.0.0-pre.8] - 2021-11-18
-
-### Changes
-* Creating a pipeline with `FragmentationPipelineStage` _after_ `ReliableSequencedPipelineStage` is now forbidden (will throw an exception if collections checks are enabled). That order never worked properly to begin with. The reverse order is fully supported and is the recommended way to configure a reliable pipeline with support for large packets.
-* Added `NetworkSettings` struct and API for defining network parameters. See [NetworkSettings documentation](https://docs-multiplayer.unity3d.com/transport/1.0.0/network-settings) for more information.
-* Added Roslyn Analyzers for ensuring proper extension of NetworkParameters and NetworkSettings API.
-* Update Collections package to 1.1.0
+* `NetworkDriver` now requires that the `INetworkInterface` provided is an unmanaged type. Managed `INetworkInterfaces` are still supported but are required to be wrapped into an unmanaged type: `myInterface.WrapToUnmanaged()`.
+* Instantiating a `NetworkDriver` is now only supported through the `NetworkDriver.Create` methods.
+* Don't warn when overwriting settings in `NetworkSettings` (e.g. when calling the same `WithFooParameters` method twice).
+* Added new methods to set security parameters: `NetworkSettings.WithSecureClientParameters` and `NetworkSettings.WithSecureServerParameters`. These replace the existing `WithSecureParameters`.
+* `NetworkInterfaceEndPoint` usage replaced with `NetworkEndPoint`.
+* Removed: `INetworkInterface.CreateInterfaceEndPoint` and `INetworkInterface.GetGenericEndPoint` removed as interfaces use now `NetworkEndPoint`.
+* Renamed `NetworkEndPoint` to `NetworkEndpoint`. This should be automatically updated.
 
 ### Fixes
 * Fixed: Error message when scheduling an update on an unbound `NetworkDriver` (case 1370584)
-* Fixed: `BeginSend` wouldn't return an error if the required payload size was larger than the supported payload size when close to the MTU
 * Fixed: Removed boxing in `NetworkDriver` initialization by passing `NetworkSettings` parameter instead of `INetworkParameter[]`
-* Fixed a crash on XboxOne(X/S) when using the fragmentation pipeline (case 1370473)
+* Fixed: `BeginSend` wouldn't return an error if the required payload size was larger than the supported payload size when close to the MTU
+* Fixed: Issue where an overflow of the `ReliableSequencedPipelineStage` sequence numbers would not be handled properly.
+* Updated Relay sample to the most recent Relay SDK APIs (would fail to compile with latest packages).
+* Fixed client certificate not being passed to UnityTLS on secure connections. This prevented client authentication from properly working.
+* Fixed: Reliable pipeline drop statistics inaccurate.
 
 ### Upgrade guide
 * `INetworkPipelineStage` and `INetworkInterface` initialization methods now receive a `NetworkSettings` parameter instead of `INetworkParameter[]`.
+* `SimulatorPipelineStageInSend` is no longer required and can be safely removed from your pipeline construction. To replace it, `SimulatorPipelineStage` now supports handling both sending and receiving via `ApplyMode.AllPackets`.
+* On fragmented and reliable pipelines, sending a large packet when the reliable window was almost full could result in the packet being lost.
+* Revert decrease of MTU to 1384 on Xbox platforms (now back at 1400). It would cause issues for cross-platform communications.
+* For custom implementation of the `INetworkInterface`: Remove the `CreateSendInterface` and update the `ScheduleSend` and `ScheduleReceive` signature; to iterate over the send/receive queue use the `PacketsQueue[]` operator.
+* Move the definition of the `sendQueueCapacity` and `receiveQueueCapacity` parameters from the `WithBaselibNetworkParameters()` to the `WithNetworkConfigParameters()`.
+* Update all `new NetworkDriver()` usages to `NetworkDriver.Create()`.
+* For custom implementations of `INetworkInterface` that are managed types, use the `INetworkInterface.WrapToUnmanaged()` configuring the `NetworkDriver`.
+* For custom implementations of `INetworkInterface`: Remove `CreateInterfaceEndPoint` and `GetGenericEndPoint` implementations and update `NetworkInterfaceEndPoint` usages to `NetworkEndPoint`.
 
 ## [1.0.0-pre.7] - 2021-10-21
 
@@ -171,8 +186,8 @@
 * Fixed: Updated collection types in `SecureNetworkProtocol.cs`
 * Fixed: Fixed race condition between UTP and Relay disconnects
 * Fixed: Relay not being able to use the fragmentation pipelinestage
-### Upgrade guide
 
+### Upgrade guide
 ## [1.0.0-pre.3] - 2021-09-01
 ### New features
 * Removed references of TransportSamples from readme as they are not currently included in the package
@@ -199,6 +214,19 @@
 * Upgraded burst to 1.5.5
 
 ### Changes
+### Fixes
+### Upgrade guide
+
+## [0.9.0] - 2021-05-10
+### New features
+* Added support for long serialization and delta compression.
+* Upgraded collections to 1.0.0-pre.1
+* Added a new network interface for WebSockets, can be used in both native and web builds.
+
+### Changes
+* Minimum required Unity version has changed to 2020.3.0f1.
+* The transport package can be compiled with the tiny c# profile and for WebGL, but WebGL builds only support IPC - not sockets.
+
 ### Fixes
 ### Upgrade guide
 

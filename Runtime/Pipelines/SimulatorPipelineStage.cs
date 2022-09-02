@@ -1,3 +1,4 @@
+using System;
 using AOT;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -6,11 +7,6 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
-    /// <summary>
-    /// The SimulatorPipelineStage could be added on either the client or server to simulate bad network conditions.
-    /// It's best to add it as the last stage in the pipeline, then it will either drop the packet or add a delay right
-    /// before it would go on the wire.
-    /// </summary>
     [BurstCompile]
     public unsafe struct SimulatorPipelineStage : INetworkPipelineStage
     {
@@ -18,25 +14,19 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
-        /// <summary>
-        /// Statics the initialize using the specified static instance buffer
-        /// </summary>
-        /// <param name="staticInstanceBuffer">The static instance buffer</param>
-        /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
-        /// <param name="settings">The net params</param>
-        /// <returns>The network pipeline stage</returns>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             SimulatorUtility.Parameters param = settings.GetSimulatorStageParameters();
-
-            UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<SimulatorUtility.Parameters>());
+            var simulatorParamsSizeOf = UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
+            if (simulatorParamsSizeOf != staticInstanceBufferLength) throw new InvalidOperationException($"simulatorParamsSizeOf {simulatorParamsSizeOf}");
+            UnsafeUtility.MemCpy(staticInstanceBuffer, &param, simulatorParamsSizeOf);
 
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
                 ReceiveCapacity: param.MaxPacketCount * (param.MaxPacketSize + UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
-                SendCapacity: 0,
+                SendCapacity: param.MaxPacketCount * (param.MaxPacketSize + UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
                 HeaderCapacity: 0,
                 SharedStateCapacity: UnsafeUtility.SizeOf<SimulatorUtility.Context>()
             );
@@ -44,38 +34,108 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
-        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+        static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
             byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
             SimulatorUtility.Parameters param = default;
-
             UnsafeUtility.MemCpy(&param, staticInstanceBuffer, UnsafeUtility.SizeOf<SimulatorUtility.Parameters>());
-            if (sharedProcessBufferLength >= UnsafeUtility.SizeOf<SimulatorUtility.Parameters>())
+
+            if (staticInstanceBufferLength != UnsafeUtility.SizeOf<SimulatorUtility.Parameters>())
             {
-                SimulatorUtility.InitializeContext(param, sharedProcessBuffer);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("staticInstanceBufferLength is wrong length for SimulatorUtility.Parameters!");
+#else
+                return;
+#endif
             }
+
+            if (sharedProcessBufferLength != UnsafeUtility.SizeOf<SimulatorUtility.Context>())
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("sharedProcessBufferLength is wrong length for SimulatorUtility.Context!");
+#else
+                return;
+#endif
+            }
+
+            SimulatorUtility.InitializeContext(param, sharedProcessBuffer);
         }
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
+        static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
+            var context = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
+            var param = *(SimulatorUtility.Parameters*)ctx.staticInstanceBuffer;
+
+            if (param.Mode == ApplyMode.ReceivedPacketsOnly || param.Mode == ApplyMode.Off)
+                return (int)Error.StatusCode.Success;
+
+            var inboundPacketSize = inboundBuffer.headerPadding + inboundBuffer.bufferLength;
+            if (inboundPacketSize > param.MaxPacketSize)
+            {
+                UnityEngine.Debug.LogWarning($"Incoming packet too large for SimulatorPipeline internal storage buffer. Passing through. [buffer={(inboundBuffer.headerPadding + inboundBuffer.bufferLength)} MaxPacketSize={param.MaxPacketSize}]");
+                return (int)Error.StatusCode.NetworkPacketOverflow;
+            }
+
+            var timestamp = ctx.timestamp;
+
+            if (inboundBuffer.bufferLength > 0)
+            {
+                context->PacketCount++;
+
+                if (SimulatorUtility.ShouldDropPacket(context, param, timestamp))
+                {
+                    context->PacketDropCount++;
+                    inboundBuffer = default;
+                    return (int)Error.StatusCode.Success;
+                }
+
+                if (param.FuzzFactor > 0)
+                {
+                    SimulatorUtility.FuzzPacket(context, ref param, ref inboundBuffer);
+                }
+
+                if (SimulatorUtility.ShouldDuplicatePacket(context, ref param))
+                {
+                    if (SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref inboundBuffer, ref requests, timestamp))
+                    {
+                        context->PacketCount++;
+                        context->PacketDuplicatedCount++;
+                    }
+                }
+
+                if (SimulatorUtility.TrySkipDelayingPacket(ref param, ref requests, context) || !SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref inboundBuffer, ref requests, timestamp))
+                {
+                    return (int)Error.StatusCode.Success;
+                }
+            }
+
+            InboundSendBuffer returnPacket = default;
+            if (SimulatorUtility.GetDelayedPacket(ref ctx, ref returnPacket, ref requests, timestamp))
+            {
+                inboundBuffer = returnPacket;
+                return (int)Error.StatusCode.Success;
+            }
+
+            inboundBuffer = default;
             return (int)Error.StatusCode.Success;
         }
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
+        static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var context = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
             var param = *(SimulatorUtility.Parameters*)ctx.staticInstanceBuffer;
-            var simulator = new SimulatorUtility(param.MaxPacketCount, param.MaxPacketSize, param.PacketDelayMs, param.PacketJitterMs);
+
+            if (param.Mode == ApplyMode.SentPacketsOnly || param.Mode == ApplyMode.Off)
+                return;
 
             if (inboundBuffer.bufferLength > param.MaxPacketSize)
             {
-                //UnityEngine.Debug.LogWarning("Incoming packet too large for internal storage buffer. Passing through. [buffer=" + inboundBuffer.Length + " packet=" + param->MaxPacketSize + "]");
-                // TODO: Add error code for this
+                UnityEngine.Debug.LogWarning(FixedString.Format("Incoming packet too large for internal storage buffer. Passing through. [buffer={0} packet={1}]", inboundBuffer.bufferLength, param.MaxPacketSize));
                 return;
             }
 
@@ -86,7 +146,7 @@ namespace Unity.Networking.Transport
             {
                 context->PacketCount++;
 
-                if (simulator.ShouldDropPacket(context, param, timestamp))
+                if (SimulatorUtility.ShouldDropPacket(context, param, timestamp))
                 {
                     context->PacketDropCount++;
                     inboundBuffer = default;
@@ -99,15 +159,25 @@ namespace Unity.Networking.Transport
                 bufferVec.buffer = inboundBuffer.buffer;
                 bufferVec.bufferLength = inboundBuffer.bufferLength;
                 bufferVec.headerPadding = 0;
-                if (context->PacketDelayMs == 0 ||
-                    !simulator.DelayPacket(ref ctx, bufferVec, ref requests, timestamp))
+
+
+                if (SimulatorUtility.ShouldDuplicatePacket(context, ref param))
+                {
+                    if (SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref bufferVec, ref requests, timestamp))
+                    {
+                        context->PacketCount++;
+                        context->PacketDuplicatedCount++;
+                    }
+                }
+
+                if (SimulatorUtility.TrySkipDelayingPacket(ref param, ref requests, context) || !SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref bufferVec, ref requests, timestamp))
                 {
                     return;
                 }
             }
 
             InboundSendBuffer returnPacket = default;
-            if (simulator.GetDelayedPacket(ref ctx, ref returnPacket, ref requests, timestamp))
+            if (SimulatorUtility.GetDelayedPacket(ref ctx, ref returnPacket, ref requests, timestamp))
             {
                 inboundBuffer.buffer = returnPacket.bufferWithHeaders;
                 inboundBuffer.bufferLength = returnPacket.bufferWithHeadersLength;
@@ -120,22 +190,13 @@ namespace Unity.Networking.Transport
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 
-    /// <summary>
-    /// The simulator pipeline stage in send
-    /// </summary>
     [BurstCompile]
+    [Obsolete("SimulatorPipelineStage now supports handling both sending and receiving via ApplyMode.AllPackets. You can safely remove this stage from your pipelines. (RemovedAfter 2022-03-01)")]
     public unsafe struct SimulatorPipelineStageInSend : INetworkPipelineStage
     {
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-        /// <summary>
-        /// Statics the initialize using the specified static instance buffer
-        /// </summary>
-        /// <param name="staticInstanceBuffer">The static instance buffer</param>
-        /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
-        /// <param name="settings">The net params</param>
-        /// <returns>The network pipeline stage</returns>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             SimulatorUtility.Parameters param = settings.GetSimulatorStageParameters();
@@ -155,30 +216,57 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.InitializeConnectionDelegate))]
-        private static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
+        static void InitializeConnection(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
             byte* sharedProcessBuffer, int sharedProcessBufferLength)
         {
             SimulatorUtility.Parameters param = default;
-
             UnsafeUtility.MemCpy(&param, staticInstanceBuffer, UnsafeUtility.SizeOf<SimulatorUtility.Parameters>());
-            if (sharedProcessBufferLength >= UnsafeUtility.SizeOf<SimulatorUtility.Parameters>())
+
+            if (staticInstanceBufferLength != UnsafeUtility.SizeOf<SimulatorUtility.Parameters>())
             {
-                SimulatorUtility.InitializeContext(param, sharedProcessBuffer);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("staticInstanceBufferLength is wrong length for SimulatorUtility.Parameters!");
+#else
+                return;
+#endif
             }
+
+            if (sharedProcessBufferLength != UnsafeUtility.SizeOf<SimulatorUtility.Context>())
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("sharedProcessBufferLength is wrong length for SimulatorUtility.Context!");
+#else
+                return;
+#endif
+            }
+
+            if (param.Mode == ApplyMode.AllPackets)
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                throw new InvalidOperationException("SimulatorPipelineStageInSend applies to sent packets only, and is deprecated. Please use SimulatorPipleineStage with SimulatorUtility.Parameters.Mode = ApplyMode.AllPackets.");
+#else
+                return;
+#endif
+            }
+
+            SimulatorUtility.InitializeContext(param, sharedProcessBuffer);
         }
 
+        // This is a copy/paste duplication of SimulatorPipelineStage.Send as this class is now deprecated.
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.SendDelegate))]
-        private static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
+        static int Send(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
             var context = (SimulatorUtility.Context*)ctx.internalSharedProcessBuffer;
             var param = *(SimulatorUtility.Parameters*)ctx.staticInstanceBuffer;
+            if (param.Mode == ApplyMode.ReceivedPacketsOnly || param.Mode == ApplyMode.Off)
+                return (int)Error.StatusCode.Success;
 
-            var simulator = new SimulatorUtility(param.MaxPacketCount, param.MaxPacketSize, param.PacketDelayMs, param.PacketJitterMs);
-            if (inboundBuffer.headerPadding + inboundBuffer.bufferLength > param.MaxPacketSize)
+            var inboundPacketSize = inboundBuffer.headerPadding + inboundBuffer.bufferLength;
+            if (inboundPacketSize > param.MaxPacketSize)
             {
-                //UnityEngine.Debug.LogWarning("Incoming packet too large for internal storage buffer. Passing through. [buffer=" + (inboundBuffer.headerPadding+inboundBuffer.buffer.Length) + " packet=" + param.MaxPacketSize + "]");
+                UnityEngine.Debug.LogWarning($"Incoming packet too large for SimulatorPipeline internal storage buffer. Passing through. [buffer={(inboundBuffer.headerPadding + inboundBuffer.bufferLength)} MaxPacketSize={param.MaxPacketSize}]");
                 return (int)Error.StatusCode.NetworkPacketOverflow;
             }
 
@@ -188,27 +276,35 @@ namespace Unity.Networking.Transport
             {
                 context->PacketCount++;
 
-                if (simulator.ShouldDropPacket(context, param, timestamp))
+                if (SimulatorUtility.ShouldDropPacket(context, param, timestamp))
                 {
                     context->PacketDropCount++;
                     inboundBuffer = default;
                     return (int)Error.StatusCode.Success;
                 }
 
-                if (context->FuzzFactor > 0)
+                if (param.FuzzFactor > 0)
                 {
-                    simulator.FuzzPacket(context, ref inboundBuffer);
+                    SimulatorUtility.FuzzPacket(context, ref param, ref inboundBuffer);
                 }
 
-                if (context->PacketDelayMs == 0 ||
-                    !simulator.DelayPacket(ref ctx, inboundBuffer, ref requests, timestamp))
+                if (SimulatorUtility.ShouldDuplicatePacket(context, ref param))
+                {
+                    if (SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref inboundBuffer, ref requests, timestamp))
+                    {
+                        context->PacketCount++;
+                        context->PacketDuplicatedCount++;
+                    }
+                }
+
+                if (SimulatorUtility.TrySkipDelayingPacket(ref param, ref requests, context) || !SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref inboundBuffer, ref requests, timestamp))
                 {
                     return (int)Error.StatusCode.Success;
                 }
             }
 
             InboundSendBuffer returnPacket = default;
-            if (simulator.GetDelayedPacket(ref ctx, ref returnPacket, ref requests, timestamp))
+            if (SimulatorUtility.GetDelayedPacket(ref ctx, ref returnPacket, ref requests, timestamp))
             {
                 inboundBuffer = returnPacket;
                 return (int)Error.StatusCode.Success;
@@ -219,14 +315,11 @@ namespace Unity.Networking.Transport
 
         [BurstCompile(DisableDirectCall = true)]
         [MonoPInvokeCallback(typeof(NetworkPipelineStage.ReceiveDelegate))]
-        private static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer,
+        static void Receive(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer,
             ref NetworkPipelineStage.Requests requests, int systemHeaderSize)
         {
         }
 
-        /// <summary>
-        /// Gets the value of the static size
-        /// </summary>
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 }

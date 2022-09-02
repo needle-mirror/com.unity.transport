@@ -1,11 +1,17 @@
 {
     "name": "Unity.Networking.Transport",
+    "rootNamespace": "",
     "references": [
-           "Unity.Burst",
-           "Unity.Collections",
-           "Unity.Mathematics"
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Mathematics"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
-    "allowUnsafeCode": true
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "noEngineReferences": false
 }

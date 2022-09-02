@@ -9,23 +9,10 @@ namespace Unity.Networking.Transport.Relay
     /// </summary>
     public unsafe struct RelayAllocationId : IEquatable<RelayAllocationId>, IComparable<RelayAllocationId>
     {
-        /// <summary>
-        /// The length in bytes of the Allocation Id.
-        /// </summary>
         public const int k_Length = 16;
-        /// <summary>
-        /// The raw data of the Allocation Id.
-        /// </summary>
         public fixed byte Value[k_Length];
 
         // Used by Relay SDK
-        /// <summary>
-        /// Converts a byte pointer to a RelayAllocationId.
-        /// </summary>
-        /// <param name="dataPtr">The pointer to the data of the Allocation Id.</param>
-        /// <param name="length">The length of the data.</param>
-        /// <exception cref="ArgumentException">Provided byte array length is invalid, must be {k_Length} but got {length}.</exception>
-        /// <returns>Returns a RelayAllocationId constructed from the provided data.</returns>
         public static RelayAllocationId FromBytePointer(byte* dataPtr, int length)
         {
             if (length != k_Length)
@@ -41,6 +28,17 @@ namespace Unity.Networking.Transport.Relay
             var allocationId = new RelayAllocationId();
             UnsafeUtility.MemCpy(allocationId.Value, dataPtr, k_Length);
             return allocationId;
+        }
+
+        internal NetworkEndpoint ToNetworkEndpoint()
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (UnsafeUtility.SizeOf<NetworkEndpoint>() < UnsafeUtility.SizeOf<RelayAllocationId>())
+                throw new InvalidOperationException($"RellayAllocationId ({UnsafeUtility.SizeOf<RelayAllocationId>()} bytes) does not fit into a NetworkEndpoint ({UnsafeUtility.SizeOf<NetworkEndpoint>()} bytes)");
+#endif
+            var endpoint = default(NetworkEndpoint);
+            *(RelayAllocationId*)&endpoint = this;
+            return endpoint;
         }
 
         public static bool operator==(RelayAllocationId lhs, RelayAllocationId rhs)
@@ -89,6 +87,21 @@ namespace Unity.Networking.Transport.Relay
             fixed(void* p = Value)
             {
                 return UnsafeUtility.MemCmp(p, other.Value, k_Length);
+            }
+        }
+    }
+
+    internal static class RellayAllocationIdExtensions
+    {
+        public static unsafe ref RelayAllocationId AsRelayAllocationId(this ref NetworkEndpoint address)
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (UnsafeUtility.SizeOf<NetworkEndpoint>() < UnsafeUtility.SizeOf<RelayAllocationId>())
+                throw new InvalidOperationException($"RellayAllocationId ({UnsafeUtility.SizeOf<RelayAllocationId>()} bytes) does not fit into a NetworkEndpoint ({UnsafeUtility.SizeOf<NetworkEndpoint>()} bytes)");
+#endif
+            fixed(NetworkEndpoint* addressPtr = &address)
+            {
+                return ref *(RelayAllocationId*)addressPtr;
             }
         }
     }

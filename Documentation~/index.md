@@ -12,7 +12,7 @@ The full documentation for the package can be found on the [Unity multiplayer do
 
 This version of `com.unity.transport` is compatible with the following Unity versions and platforms:
 
-* 2020.1.2 and later.
+* 2020.3 and later.
 * All platforms supported by Unity are supported, except WebGL.
 
 ## Document revision history

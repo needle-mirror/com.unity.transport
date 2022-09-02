@@ -3,9 +3,6 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
-    /// <summary>
-    /// The NullPipelineStage is the default pipeline stage and used to send packets unreliably
-    /// </summary>
     [BurstCompile]
     public unsafe struct NullPipelineStage : INetworkPipelineStage
     {
@@ -31,9 +28,7 @@ namespace Unity.Networking.Transport
         }
 
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
-
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
-
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings netParams)
