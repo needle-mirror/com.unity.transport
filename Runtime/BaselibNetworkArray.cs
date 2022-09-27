@@ -49,12 +49,12 @@ namespace Unity.Networking.Transport
 
             m_BufferPool = new UnsafePtrList<Binding.Baselib_RegisteredNetwork_Buffer>(poolSize, Allocator.Persistent);
 
+            var pageInfo = stackalloc Binding.Baselib_Memory_PageSizeInfo[1];
+            Binding.Baselib_Memory_GetPageSizeInfo(pageInfo);
+            var defaultPageSize = (ulong)pageInfo->defaultPageSize;
+
             for (int i = 0; i < poolSize; i++)
             {
-                var pageInfo = stackalloc Binding.Baselib_Memory_PageSizeInfo[1];
-                Binding.Baselib_Memory_GetPageSizeInfo(pageInfo);
-                var defaultPageSize = (ulong)pageInfo->defaultPageSize;
-
                 var pageCount = (ulong)1;
                 if ((ulong)totalSize > defaultPageSize)
                 {

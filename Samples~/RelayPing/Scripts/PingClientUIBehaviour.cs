@@ -1,12 +1,9 @@
-#if ENABLE_RELAY
-
 using System;
 using System.Collections;
 using UnityEngine;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Relay;
-using Unity.Services.Relay.Allocations;
 using Unity.Services.Relay.Models;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
@@ -103,5 +100,3 @@ namespace Unity.Networking.Transport.Samples
         }
     }
 }
-
-#endif

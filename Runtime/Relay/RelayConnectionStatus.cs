@@ -1,7 +1,3 @@
-using System;
-using Unity.Networking.Transport;
-using UnityEngine;
-
 namespace Unity.Networking.Transport.Relay
 {
     /// <summary>State of the connection to the relay server.</summary>
@@ -34,26 +30,5 @@ namespace Unity.Networking.Transport.Relay
         /// allocation.
         /// </remarks>
         AllocationInvalid
-    }
-
-    public static class NetworkDriverRelayExtensions
-    {
-        /// <summary>Get the current status of the connection to the relay server.</summary>
-        public static RelayConnectionStatus GetRelayConnectionStatus(this NetworkDriver driver)
-        {
-            if (driver.NetworkProtocol is RelayNetworkProtocol)
-            {
-                return (RelayConnectionStatus)driver.ProtocolStatus;
-            }
-            else
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Can't call GetRelayConnectionStatus when not using the Relay.");
-#else
-                Debug.LogError("Can't call GetRelayConnectionStatus when not using the Relay.");
-                return RelayConnectionStatus.NotEstablished;
-#endif
-            }
-        }
     }
 }

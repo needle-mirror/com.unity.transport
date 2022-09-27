@@ -1,5 +1,28 @@
 # Change log
 
+## [1.3.0] - 2022-09-27
+
+### New features
+* It is now possible to obtain `RelayAllocationId`, `RelayConnectionData`, and `RelayHMACKey` structures from byte arrays using their static `FromByteArray` method.
+* A new constructor for `RelayServerData` is now provided with argument types that better match those available in the models returned by the Relay SDK. The "RelayPing" sample has been updated to use this constructor.
+* New constructors for `RelayServerData` are now provided with argument types that better match those available in the models returned by the Relay SDK. The "RelayPing" sample has been updated to use them constructor.
+* `NetworkSettings` now has a `IsCreated` property which can be used to check if it's been disposed of or not.
+* New versions of `NetworkSettings.WithSecureClientParameters` and `NetworkSettins.WithSecureServerParameters` are provided that take strings as parameters instead of references to fixed strings. The older versions are still available and fully supported.
+* A new version of `NetworkSettings.WithSecureClientParameters` is provided that only takes the server name as a parameter. This can be used when the server is using certificates from a recognized CA.
+
+### Changes
+* A warning is now emitted if binding to a port where another application is listening. The binding operation still succeeds in that scenario, but this will fail in Unity Transport 2.0 (which disables address reuse on the sockets used by the default interface).
+* The constructor for `RelayServerData` that was taking strings for the allocation ID, connection data, and key is now deprecated. Use the new constructor (see above) or the existing lower-level constructor instead.
+* The `RelayServerData.ComputeNewNonce` method is now deprecated. One can provide a custom nonce using the "low level" constructor of `RelayServerData`. The new constructor will select a new one automatically.
+* If using Relay, it is now possible to call `Connect` without an endpoint (the endpoint would be ignored anyway). This extension to `NetworkDriver` is provided in the `Unity.Networking.Transport.Relay` namespace.
+
+### Fixes
+* Fixed a possible stack overflow if the receive or send queue parameters were configured with very large values (>15,000).
+* Prevented an issue where a warning about having too many pipeline updates would be spammed after a connection was closed.
+* Fixed an issue where a duplicated reliable packet wouldn't be processed correctly, which could possibly lead to the entire reliable pipeline stage stalling (not being able to send new packets).
+* Fixed an issue where pipeline updates would be run too many times, which would waste CPU and could lead to the warning about having too many pipeline updates being erroneously logged.
+* Fixed issues with `ReliableSequencePipelineStage` that would, in rare circumstances, lead to failure to deliver a reliable packet.
+
 ## [1.2.0] - 2022-08-10
 
 ### New features

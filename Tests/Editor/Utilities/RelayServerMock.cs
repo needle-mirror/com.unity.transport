@@ -14,6 +14,9 @@ namespace Unity.Networking.Transport.Tests
         private string m_Address;
         private ushort m_Port;
 
+        private static readonly string k_ConnectionDataBase64 = "sGsP0X8REiXn+PS51+lQDPBjowDlvV5zPgh15puL5YXFd3XdQ/oHkXh0a+m8A3riVvtUdZvZloYNpsi19flB6cvfpXNvib9SQ5UUMH0V+hNVExAog21jLA7PlBPp2eLHtKeCRflhR2pSq6FmRplmXLfdu4fV3eCgruvpr/pr6lVxeATN5k13OiY4lnEv5otyUsfkKFyIO+Sann97MsEklKgoAtVmlw6QurBVb+W3GDIyAHYF15UrQkkHE46fBkCbgFdry2hDQjn+6uXnxC3LVPfJw0jS4FpdbLfiUik/qATkZyX9eu97PNLw9lL1aogDLRG/ztmpi4Slwpl3awXr";
+        private static readonly string k_HMACKeyBase64 = "cSzQ2I5ZCQ7vnHMt9fDB2/+xDkL2VUKoUT7AVNYhe+kaTQLptQ0gUbco/Qgiicow89VtxOXcw92IozbdDG848w==";
+
         private ConcurrentDictionary<RelayAllocationId, EndPoint> m_ClientsAddresses =
             new ConcurrentDictionary<RelayAllocationId, EndPoint>();
 
@@ -27,15 +30,11 @@ namespace Unity.Networking.Transport.Tests
         public RelayServerData GetRelayConnectionData(int clientKey)
         {
             var endpoint = NetworkEndPoint.Parse(m_Address, m_Port);
-            return new RelayServerData(
-                endpoint:           ref endpoint,
-                nonce:              23,
-                allocationId:       GetAllocationIdForClient(clientKey),
-                connectionData:     "sGsP0X8REiXn+PS51+lQDPBjowDlvV5zPgh15puL5YXFd3XdQ/oHkXh0a+m8A3riVvtUdZvZloYNpsi19flB6cvfpXNvib9SQ5UUMH0V+hNVExAog21jLA7PlBPp2eLHtKeCRflhR2pSq6FmRplmXLfdu4fV3eCgruvpr/pr6lVxeATN5k13OiY4lnEv5otyUsfkKFyIO+Sann97MsEklKgoAtVmlw6QurBVb+W3GDIyAHYF15UrQkkHE46fBkCbgFdry2hDQjn+6uXnxC3LVPfJw0jS4FpdbLfiUik/qATkZyX9eu97PNLw9lL1aogDLRG/ztmpi4Slwpl3awXr",
-                hostConnectionData: "sGsP0X8REiXn+PS51+lQDPBjowDlvV5zPgh15puL5YXFd3XdQ/oHkXh0a+m8A3riVvtUdZvZloYNpsi19flB6cvfpXNvib9SQ5UUMH0V+hNVExAog21jLA7PlBPp2eLHtKeCRflhR2pSq6FmRplmXLfdu4fV3eCgruvpr/pr6lVxeATN5k13OiY4lnEv5otyUsfkKFyIO+Sann97MsEklKgoAtVmlw6QurBVb+W3GDIyAHYF15UrQkkHE46fBkCbgFdry2hDQjn+6uXnxC3LVPfJw0jS4FpdbLfiUik/qATkZyX9eu97PNLw9lL1aogDLRG/ztmpi4Slwpl3awXr",
-                key:                "cSzQ2I5ZCQ7vnHMt9fDB2/+xDkL2VUKoUT7AVNYhe+kaTQLptQ0gUbco/Qgiicow89VtxOXcw92IozbdDG848w==",
-                false
-            );
+            var allocationId = GetAllocationIdForClient(clientKey);
+            var connectionData = RelayConnectionData.FromByteArray(Convert.FromBase64String(k_ConnectionDataBase64));
+            var key = RelayHMACKey.FromByteArray(Convert.FromBase64String(k_HMACKeyBase64));
+
+            return new RelayServerData(ref endpoint, 23, ref allocationId, ref connectionData, ref connectionData, ref key, false);
         }
 
         public bool IsBound(int clientKey)
@@ -77,7 +76,7 @@ namespace Unity.Networking.Transport.Tests
 
                 SetupForConnect(clientId + 1);
 
-                var clientToHost = client.Connect(GetRelayConnectionData(0).Endpoint);
+                var clientToHost = client.Connect();
 
                 if (default(NetworkConnection) == clientToHost)
                     return false;

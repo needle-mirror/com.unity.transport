@@ -96,11 +96,6 @@ namespace Unity.Networking.Transport.Relay
                 valid = false;
                 UnityEngine.Debug.LogError($"{nameof(ServerData.Endpoint)} value ({ServerData.Endpoint}) must be a valid value");
             }
-            if (ServerData.Nonce == default)
-            {
-                valid = false;
-                UnityEngine.Debug.LogError($"{nameof(ServerData.Nonce)} value ({ServerData.Nonce}) must be a valid value");
-            }
             if (ServerData.AllocationId == default)
             {
                 valid = false;

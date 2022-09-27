@@ -24,6 +24,9 @@ namespace Unity.Networking.Transport
         private NativeList<byte> m_Parameters;
         private byte m_Initialized;
 
+        /// <summary>If the settings have been created (e.g. not disposed).</summary>
+        public bool IsCreated => m_Initialized == 0 || m_Parameters.IsCreated;
+
         private bool EnsureInitializedOrError()
         {
             if (m_Initialized == 0)

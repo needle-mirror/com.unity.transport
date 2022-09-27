@@ -43,6 +43,17 @@ namespace Unity.Networking.Transport.Relay
             return allocationId;
         }
 
+        /// <summary>Convert a byte array to a <see cref="RelayAllocationId"/></summary>
+        /// <param name="data">Array to convert.</param>
+        /// <returns>New <see cref="RelayAllocationId"/>.</returns>
+        public static RelayAllocationId FromByteArray(byte[] data)
+        {
+            fixed (byte* ptr = data)
+            {
+                return RelayAllocationId.FromBytePointer(ptr, data.Length);
+            }
+        }
+
         public static bool operator==(RelayAllocationId lhs, RelayAllocationId rhs)
         {
             return lhs.Compare(rhs) == 0;

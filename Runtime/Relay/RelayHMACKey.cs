@@ -42,5 +42,16 @@ namespace Unity.Networking.Transport.Relay
             UnsafeUtility.MemCpy(hmacKey.Value, data, length);
             return hmacKey;
         }
+
+        /// <summary>Convert a byte array to a <see cref="RelayHMACKey"/></summary>
+        /// <param name="data">Array to convert.</param>
+        /// <returns>New <see cref="RelayHMACKey"/>.</returns>
+        public static RelayHMACKey FromByteArray(byte[] data)
+        {
+            fixed (byte* ptr = data)
+            {
+                return RelayHMACKey.FromBytePointer(ptr, data.Length);
+            }
+        }
     }
 }

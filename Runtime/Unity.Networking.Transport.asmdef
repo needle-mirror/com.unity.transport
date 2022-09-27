@@ -1,11 +1,19 @@
 {
     "name": "Unity.Networking.Transport",
     "references": [
-           "Unity.Burst",
-           "Unity.Collections",
-           "Unity.Mathematics"
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Mathematics",
+        "Unity.Services.Relay"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
-    "allowUnsafeCode": true
+    "allowUnsafeCode": true,
+    "versionDefines": [
+        {
+            "name": "com.unity.services.relay",
+            "expression": "1.0",
+            "define": "RELAY_SDK_INSTALLED"
+        }
+    ]
 }

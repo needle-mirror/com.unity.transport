@@ -9,7 +9,6 @@ using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
 using Unity.Services.Relay;
-using Unity.Services.Relay.Allocations;
 using Unity.Services.Relay.Models;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
@@ -76,32 +75,7 @@ namespace Unity.Networking.Transport.Samples
 
             PingClientUIBehaviour.m_JoinCode = joinCodeTask.Result;
 
-            RelayServerEndpoint defaultEndPoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
-                true, false, allocation.RelayServer.IpV4, allocation.RelayServer.Port);
-
-            foreach (var endPoint
-                     in allocation.ServerEndpoints)
-            {
-#if ENABLE_MANAGED_UNITYTLS
-                if (endPoint.Secure == true && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndPoint = endPoint;
-#else
-                if (endPoint.Secure == false && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndPoint = endPoint;
-#endif
-            }
-
-            var serverEndpoint = NetworkEndPoint.Parse(defaultEndPoint.Host, (ushort)defaultEndPoint.Port);
-
-            var allocationId = RelayUtilities.ConvertFromAllocationIdBytes(allocation.AllocationIdBytes);
-            var connectionData = RelayUtilities.ConvertConnectionData(allocation.ConnectionData);
-            var key = RelayUtilities.ConvertFromHMAC(allocation.Key);
-
-            var relayServerData = new RelayServerData(ref serverEndpoint, 0, ref allocationId, ref connectionData,
-                ref connectionData, ref key, defaultEndPoint.Secure);
-
-            relayServerData.ComputeNewNonce();
-
+            var relayServerData = new RelayServerData(allocation, "udp");
             InitDriver(ref relayServerData);
 
             if (m_ServerDriver.Bind(NetworkEndPoint.AnyIpv4) != 0)

@@ -564,6 +564,11 @@ namespace Unity.Networking.Transport
                 // If the call comes from update, the sendHandle is set to default.
                 bool inUpdateCall = sendHandle.data == IntPtr.Zero;
 
+                // Save the latest error returned by a pipeline send. We need to do so because we
+                // can't rely on an error being bubbled up immediately once encountered, since a
+                // successful resume call could overwrite it.
+                int savedErrorCode = 0;
+
                 var resumeQ = new NativeList<int>(16, Allocator.Temp);
                 int resumeQStart = 0;
 
@@ -629,7 +634,10 @@ namespace Unity.Networking.Transport
                         if (inboundBuffer.bufferWithHeadersLength == 0)
                         {
                             if ((requests & NetworkPipelineStage.Requests.Error) != 0 && !inUpdateCall)
+                            {
                                 retval = sendResult;
+                                savedErrorCode = sendResult;
+                            }
                             break;
                         }
 
@@ -722,7 +730,9 @@ namespace Unity.Networking.Transport
                 }
                 if (sendHandle.data != IntPtr.Zero)
                     driver.AbortSend(sendHandle);
-                return retval;
+
+                // If we encountered an error, it takes precedence over the last returned value.
+                return savedErrorCode < 0 ? savedErrorCode : retval;
             }
 
             private unsafe int ProcessSendStage(int startStage, int internalBufferOffset, int internalSharedBufferOffset,
@@ -1037,22 +1047,23 @@ namespace Unity.Networking.Transport
             for (int connectionOffset = 0; connectionOffset < m_SendBuffer.Length; connectionOffset += sizePerConnection[SendSizeOffset])
                 sendBufferLock[connectionOffset / 4] = 0;
 
-            NativeArray<UpdatePipeline> sendUpdates = new NativeArray<UpdatePipeline>(m_SendStageNeedsUpdateRead.Count + m_SendStageNeedsUpdate.Length, Allocator.Temp);
+            NativeList<UpdatePipeline> sendUpdates = new NativeList<UpdatePipeline>(m_SendStageNeedsUpdateRead.Count + m_SendStageNeedsUpdate.Length, Allocator.Temp);
 
             UpdatePipeline updateItem;
-            updateCount = 0;
             while (m_SendStageNeedsUpdateRead.TryDequeue(out updateItem))
             {
                 if (driver.GetConnectionState(updateItem.connection) == NetworkConnection.State.Connected)
-                    sendUpdates[updateCount++] = updateItem;
+                    AddSendUpdate(updateItem.connection, updateItem.stage, updateItem.pipeline, sendUpdates);
             }
 
-            int startLength = updateCount;
             for (int i = 0; i < m_SendStageNeedsUpdate.Length; i++)
             {
+                updateItem = m_SendStageNeedsUpdate[i];
                 if (driver.GetConnectionState(m_SendStageNeedsUpdate[i].connection) == NetworkConnection.State.Connected)
-                    sendUpdates[updateCount++] = m_SendStageNeedsUpdate[i];
+                    AddSendUpdate(updateItem.connection, updateItem.stage, updateItem.pipeline, sendUpdates);
             }
+
+            updateCount = sendUpdates.Length;
 
             NativeList<UpdatePipeline> currentUpdates = new NativeList<UpdatePipeline>(128, Allocator.Temp);
             // Move the updates requested in this iteration to the concurrent queue so it can be read/parsed in update routine

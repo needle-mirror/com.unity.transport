@@ -157,7 +157,7 @@ namespace Unity.Networking.Transport.Tests
 
                 server.SetupForConnect(1);
 
-                var clientToHost = client.Connect(server.GetRelayConnectionData(0).Endpoint);
+                var clientToHost = client.Connect();
 
                 Assert.AreNotEqual(default(NetworkConnection), clientToHost);
 
@@ -210,7 +210,7 @@ namespace Unity.Networking.Transport.Tests
                 var retriesLeft = k_RetryCount;
                 server.SetupForConnectRetry(1, k_RetryCount, () => -- retriesLeft);
 
-                var clientToHost = client.Connect(server.GetRelayConnectionData(0).Endpoint);
+                var clientToHost = client.Connect();
 
                 Assert.AreNotEqual(default(NetworkConnection), clientToHost);
 
@@ -355,7 +355,7 @@ namespace Unity.Networking.Transport.Tests
 
                 server.SetupForConnectTimeout(1);
 
-                var clientToHost = client.Connect(server.GetRelayConnectionData(0).Endpoint);
+                var clientToHost = client.Connect();
 
                 RelayServerMock.WaitForCondition(() =>
                 {

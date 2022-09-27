@@ -608,6 +608,8 @@ namespace Unity.Networking.Transport
             Binding.Baselib_NetworkAddress localAddress;
             Binding.Baselib_RegisteredNetwork_Endpoint_GetNetworkAddress(local, &localAddress, &error);
 
+            var wouldFailWithoutAddressReuse = WouldBindFailWithoutAddressReuse(localAddress);
+
             var socket = Binding.Baselib_RegisteredNetwork_Socket_UDP_Create(
                 &localAddress,
                 Binding.Baselib_NetworkAddress_AddressReuse.Allow,
@@ -640,12 +642,36 @@ namespace Unity.Networking.Transport
             AllSockets.OpenSockets.Add(new SocketList.SocketId {socket = socket});
 #endif
 
+            if (baselib.m_SocketStatus != SocketStatus.SocketNeedsRecreate && wouldFailWithoutAddressReuse)
+            {
+                var port = GetGenericEndPoint(endpoint).Port;
+                UnityEngine.Debug.LogWarning($"Port {port} is likely already in use by another application. " +
+                    "Socket was still created, but expect erroneous behavior. This condition will become a " +
+                    "failure starting in version 2.0 of Unity Transport.");
+            }
+
             baselib.m_Socket = socket;
             baselib.m_SocketStatus = SocketStatus.SocketNormal;
             baselib.m_LocalEndpoint = GetLocalEndPoint(socket);
 
             m_Baselib[0] = baselib;
             return 0;
+        }
+
+        private unsafe bool WouldBindFailWithoutAddressReuse(Binding.Baselib_NetworkAddress address)
+        {
+            var error = default(ErrorState);
+            var socket = Binding.Baselib_RegisteredNetwork_Socket_UDP_Create(
+                &address,
+                Binding.Baselib_NetworkAddress_AddressReuse.DoNotAllow,
+                checked((uint)configuration.sendQueueCapacity),
+                checked((uint)configuration.receiveQueueCapacity),
+                &error);
+
+            if (error.code == ErrorCode.Success)
+                Binding.Baselib_RegisteredNetwork_Socket_UDP_Close(socket);
+
+            return error.code == ErrorCode.AddressInUse;
         }
 
         /// <summary>

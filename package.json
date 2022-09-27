@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
@@ -11,12 +11,12 @@
     "com.unity.mathematics": "1.2.6"
   },
   "upmCi": {
-    "footprint": "b86aef366145fa59d88b43f35ef32b38cf576ef6"
+    "footprint": "31f22ba11171691d997674e0ee95fb20c0442cd3"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "b4fadab8f255b0b13f371bea8d2819c2ca472648"
+    "revision": "6ca6b799abad242031e9148bebeee95d74fb5df2"
   },
   "samples": [
     {

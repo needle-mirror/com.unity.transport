@@ -55,6 +55,49 @@ namespace Unity.Networking.Transport.TLS
 
     public static class SecureParameterExtensions
     {
+        /// <summary>Set client security parameters (for use with official CA certificates).</summary>
+        /// <param name="serverName">Hostname of the server to connect to.</param>
+        /// <param name="readTimeout">Secure read timeout (in milliseconds).</param>
+        /// <param name="handshakeTimeoutMax">Maximum handshake timeout (in milliseconds).</param>
+        /// <param name="handshakeTimeoutMin">Minimum handshake timeout (in milliseconds).</param>
+        public static ref NetworkSettings WithSecureClientParameters(
+            ref this NetworkSettings    settings,
+            ref FixedString32Bytes     serverName,
+            uint                        readTimeout                  = 0,
+            uint                        handshakeTimeoutMax          = 60000,
+            uint                        handshakeTimeoutMin          = 1000)
+        {
+            var parameter = new SecureNetworkProtocolParameter
+            {
+                Pem                         = default,
+                Rsa                         = default,
+                RsaKey                      = default,
+                Hostname                    = serverName,
+                Protocol                    = SecureTransportProtocol.DTLS,
+                ClientAuthenticationPolicy  = SecureClientAuthPolicy.None,
+                SSLReadTimeoutMs            = readTimeout,
+                SSLHandshakeTimeoutMax      = handshakeTimeoutMax,
+                SSLHandshakeTimeoutMin      = handshakeTimeoutMin,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>Set client security parameters (for use with official CA certificates).</summary>
+        /// <param name="serverName">Hostname of the server to connect to.</param>
+        public static ref NetworkSettings WithSecureClientParameters(
+            ref this NetworkSettings    settings,
+            string                      serverName)
+        {
+            var fixedServerName = new FixedString32Bytes(serverName);
+
+            settings.WithSecureClientParameters(ref fixedServerName);
+
+            return ref settings;
+        }
+
         /// <summary>Set client security parameters (server authentication only).</summary>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
@@ -84,6 +127,22 @@ namespace Unity.Networking.Transport.TLS
             };
 
             settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>Set client security parameters (server authentication only).</summary>
+        /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
+        /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        public static ref NetworkSettings WithSecureClientParameters(
+            ref this NetworkSettings    settings,
+            string                      caCertificate,
+            string                      serverName)
+        {
+            var fixedCaCertificate = new FixedString4096Bytes(caCertificate);
+            var fixedServerName = new FixedString32Bytes(serverName);
+
+            settings.WithSecureClientParameters(ref fixedCaCertificate, ref fixedServerName);
 
             return ref settings;
         }
@@ -125,6 +184,32 @@ namespace Unity.Networking.Transport.TLS
             return ref settings;
         }
 
+        /// <summary>Set client security parameters (for client authentication).</summary>
+        /// <param name="certificate">Client's certificate (PEM format).</param>
+        /// <param name="privateKey">Client's private key (PEM format).</param>
+        /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
+        /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        public static ref NetworkSettings WithSecureClientParameters(
+            ref this NetworkSettings    settings,
+            string                      certificate,
+            string                      privateKey,
+            string                      caCertificate,
+            string                      serverName)
+        {
+            var fixedCertificate = new FixedString4096Bytes(certificate);
+            var fixedPrivateKey = new FixedString4096Bytes(privateKey);
+            var fixedCaCertificate = new FixedString4096Bytes(caCertificate);
+            var fixedServerName = new FixedString32Bytes(serverName);
+
+            settings.WithSecureClientParameters(
+                ref fixedCertificate,
+                ref fixedPrivateKey,
+                ref fixedCaCertificate,
+                ref fixedServerName);
+
+            return ref settings;
+        }
+
         /// <summary>Set server security parameters (server authentication only).</summary>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
@@ -154,6 +239,22 @@ namespace Unity.Networking.Transport.TLS
             };
 
             settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        /// <summary>Set server security parameters (server authentication only).</summary>
+        /// <param name="certificate">Server's certificate chain (PEM format).</param>
+        /// <param name="privateKey">Server's private key (PEM format).</param>
+        public static ref NetworkSettings WithSecureServerParameters(
+            ref this NetworkSettings    settings,
+            string                      certificate,
+            string                      privateKey)
+        {
+            var fixedCertificate = new FixedString4096Bytes(certificate);
+            var fixedPrivateKey = new FixedString4096Bytes(privateKey);
+
+            settings.WithSecureServerParameters(ref fixedCertificate, ref fixedPrivateKey);
 
             return ref settings;
         }
@@ -196,6 +297,36 @@ namespace Unity.Networking.Transport.TLS
 
             return ref settings;
         }
+
+        /// <summary>Set server security parameters (for client authentication).</summary>
+        /// <param name="certificate">Server's certificate chain (PEM format).</param>
+        /// <param name="privateKey">Server's private key (PEM format).</param>
+        /// <param name="caCertificate">CA certificate that signed the client certificates (PEM format).</param>
+        /// <param name="clientName">Common name (CN) in the client certificates.</param>
+        /// <param name="clientAuthenticationPolicy">Client authentication policy.</param>
+        public static ref NetworkSettings WithSecureServerParameters(
+            ref this NetworkSettings    settings,
+            string                      certificate,
+            string                      privateKey,
+            string                      caCertificate,
+            string                      clientName,
+            SecureClientAuthPolicy      clientAuthenticationPolicy = SecureClientAuthPolicy.Required)
+        {
+            var fixedCertificate = new FixedString4096Bytes(certificate);
+            var fixedPrivateKey = new FixedString4096Bytes(privateKey);
+            var fixedCaCertificate = new FixedString4096Bytes(caCertificate);
+            var fixedClientName = new FixedString32Bytes(clientName);
+
+            settings.WithSecureServerParameters(
+                ref fixedCertificate,
+                ref fixedPrivateKey,
+                ref fixedCaCertificate,
+                ref fixedClientName,
+                clientAuthenticationPolicy);
+
+            return ref settings;
+        }
+
 
         [Obsolete("Use WithSecureClientParameters or WithSecureServerParameters instead.")]
         public static ref NetworkSettings WithSecureParameters(

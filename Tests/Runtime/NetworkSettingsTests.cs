@@ -85,6 +85,28 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
+        public void NetworkSettings_IsCreated_TrueAfterDefaultConstructor()
+        {
+            var settings = new NetworkSettings();
+            Assert.IsTrue(settings.IsCreated);
+        }
+
+        [Test]
+        public void NetworkSettings_IsCreated_TrueAfterAllocatorConstructor()
+        {
+            var settings = new NetworkSettings(Allocator.Temp);
+            Assert.IsTrue(settings.IsCreated);
+        }
+
+        [Test]
+        public void NetworkSettings_IsCreated_FalseAfterDispose()
+        {
+            var settings = new NetworkSettings();
+            settings.Dispose();
+            Assert.IsFalse(settings.IsCreated);
+        }
+
+        [Test]
         public void NetworkSettings_TryGet_ReturnsCorrectly()
         {
             var settings = new NetworkSettings();
@@ -246,24 +268,6 @@ namespace Unity.Networking.Transport.Tests
                 var setRegex = new Regex(@"^With.*Parameters$");
                 var getRegex = new Regex(@"^Get.*Parameters$");
                 Assert.IsTrue(setRegex.IsMatch(method.Name) || getRegex.IsMatch(method.Name), $"The method '{method.Name}' must follow the rule 'With[...]Parameters' or 'Get[...]Parameters'");
-            }
-        }
-
-        [Test]
-        public void NetworkSettings_ExtensionMethods_RefParameters()
-        {
-            var extensionMethods = GetNetworkSettingsExtensions();
-
-            foreach (var method in extensionMethods)
-            {
-                var parameters = method.GetParameters();
-                foreach (var parameter in parameters)
-                {
-                    var parameterType = parameter.ParameterType;
-
-                    if (!parameterType.IsPrimitive && !parameterType.IsEnum)
-                        Assert.IsTrue(parameterType.IsByRef, $"The parameter '{parameter.Name}' of the method '{method.Name}' should be passed by reference");
-                }
             }
         }
 

@@ -107,14 +107,12 @@ namespace Unity.Networking.Transport
         {
             // Request an update to see if a queued packet needs to be resent later or if an ack packet should be sent
             requests = NetworkPipelineStage.Requests.Update;
-            bool needsResume = false;
 
             var header = new ReliableUtility.PacketHeader();
             var reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
 
-            needsResume = ReliableUtility.ReleaseOrResumePackets(ctx);
-            if (needsResume)
-                requests |= NetworkPipelineStage.Requests.Resume;
+            // Release any packets that might have been acknowledged since the last call.
+            ReliableUtility.ReleaseAcknowledgedPackets(ctx);
 
             if (inboundBuffer.bufferLength > 0)
             {
@@ -127,25 +125,39 @@ namespace Unity.Networking.Transport
                     requests |= NetworkPipelineStage.Requests.Error;
                     return (int)Error.StatusCode.NetworkSendQueueFull;
                 }
-                ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
-                if (reliable->Resume != ReliableUtility.NullEntry)
-                    requests |= NetworkPipelineStage.Requests.Resume;
 
-                reliable->PreviousTimestamp = ctx.timestamp;
-                return (int)Error.StatusCode.Success;
-            }
-
-            if (reliable->Resume != ReliableUtility.NullEntry)
-            {
-                reliable->LastSentTime = ctx.timestamp;
-                inboundBuffer = ReliableUtility.ResumeSend(ctx, out header, ref needsResume);
-                if (needsResume)
-                    requests |= NetworkPipelineStage.Requests.Resume;
                 ctx.header.Clear();
                 ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
                 reliable->PreviousTimestamp = ctx.timestamp;
                 return (int)Error.StatusCode.Success;
             }
+
+            // At this point we know we're either in a resume or update call.
+
+            if (reliable->Resume != ReliableUtility.NullEntry)
+            {
+                reliable->LastSentTime = ctx.timestamp;
+
+                bool dummy = false;
+                inboundBuffer = ReliableUtility.ResumeSend(ctx, out header, ref dummy);
+
+                // Check if we need to resume again after this packet.
+                reliable->Resume = ReliableUtility.GetNextSendResumeSequence(ctx);
+                if (reliable->Resume != ReliableUtility.NullEntry)
+                    requests |= NetworkPipelineStage.Requests.Resume;
+
+                ctx.header.Clear();
+                ctx.header.WriteBytes((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+                reliable->PreviousTimestamp = ctx.timestamp;
+                return (int)Error.StatusCode.Success;
+            }
+
+            // At this point we know we're in an update call.
+
+            // Check if we need to resume (e.g. resent packets).
+            reliable->Resume = ReliableUtility.GetNextSendResumeSequence(ctx);
+            if (reliable->Resume != ReliableUtility.NullEntry)
+                requests |= NetworkPipelineStage.Requests.Resume;
 
             if (ReliableUtility.ShouldSendAck(ctx))
             {
@@ -161,6 +173,7 @@ namespace Unity.Networking.Transport
                 inboundBuffer.SetBufferFrombufferWithHeaders();
                 return (int)Error.StatusCode.Success;
             }
+
             reliable->PreviousTimestamp = ctx.timestamp;
             return (int)Error.StatusCode.Success;
         }

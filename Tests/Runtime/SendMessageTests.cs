@@ -119,33 +119,6 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
-        [Ignore("Unstable in APVs. See MTT-4345.")]
-        public IEnumerator SendMessage_OverflowedReceiveBuffer()
-        {
-            var settings = new NetworkSettings();
-            settings.WithDataStreamParameters(size: UdpCHeader.Length + SessionIdToken.k_Length);
-
-            using (var server = NetworkDriver.Create(settings))
-            using (var client = NetworkDriver.Create(settings))
-            {
-                ConnectServerAndClient(NetworkEndPoint.LoopbackIpv4, server, client, out _, out var connection);
-
-                client.BeginSend(connection, out var writer);
-                writer.WriteBytes(new NativeArray<byte>(100, Allocator.Temp));
-                client.EndSend(writer);
-
-                LogAssert.Expect(LogType.Error, "Error on receive, errorCode = 10040");
-
-                client.ScheduleUpdate().Complete();
-                server.ScheduleUpdate().Complete();
-
-                Assert.AreEqual(10040, server.ReceiveErrorCode);
-
-                yield return null;
-            }
-        }
-
-        [UnityTest, UnityPlatform(RuntimePlatform.LinuxEditor, RuntimePlatform.WindowsEditor, RuntimePlatform.OSXEditor)]
         public IEnumerator SendMessage_ErrorIfNotRead()
         {
             using (var server = NetworkDriver.Create())

@@ -3,12 +3,12 @@
         {
             "ValidationTest": "Restricted File Type Validation",
             "ExceptionMessage": "/Samples~/CustomNetworkInterface/Scripts/network.bindings~/build.bat cannot be included in a package.",
-            "PackageVersion": "1.2.0"
+            "PackageVersion": "1.3.0"
         },
         {
             "ValidationTest": "Restricted File Type Validation",
             "ExceptionMessage": "/Samples~/CustomNetworkInterface/Scripts/network.bindings~/shell.bat cannot be included in a package.",
-            "PackageVersion": "1.2.0"
+            "PackageVersion": "1.3.0"
         }
     ],
     "WarningExceptions": []

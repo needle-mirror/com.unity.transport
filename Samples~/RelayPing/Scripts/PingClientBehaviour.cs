@@ -7,7 +7,6 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Relay;
-using Unity.Services.Relay.Allocations;
 using Unity.Services.Relay.Models;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
@@ -64,37 +63,12 @@ namespace Unity.Networking.Transport.Samples
 
             var allocation = joinTask.Result;
 
-            var allocationId = RelayUtilities.ConvertFromAllocationIdBytes(allocation.AllocationIdBytes);
-
-            var connectionData = RelayUtilities.ConvertConnectionData(allocation.ConnectionData);
-            var hostConnectionData = RelayUtilities.ConvertConnectionData(allocation.HostConnectionData);
-            var key = RelayUtilities.ConvertFromHMAC(allocation.Key);
-
             Debug.Log($"client: {allocation.ConnectionData[0]} {allocation.ConnectionData[1]}");
             Debug.Log($"host: {allocation.HostConnectionData[0]} {allocation.HostConnectionData[1]}");
 
             Debug.Log($"client: {allocation.AllocationId}");
 
-            RelayServerEndpoint defaultEndPoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
-                true, false, allocation.RelayServer.IpV4, allocation.RelayServer.Port);
-
-            foreach (var endPoint
-                     in allocation.ServerEndpoints)
-            {
-#if ENABLE_MANAGED_UNITYTLS
-                if (endPoint.Secure == true && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndPoint = endPoint;
-#else
-                if (endPoint.Secure == false && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndPoint = endPoint;
-#endif
-            }
-
-            var serverEndpoint = NetworkEndPoint.Parse(defaultEndPoint.Host, (ushort)defaultEndPoint.Port);
-
-            var relayServerData = new RelayServerData(ref serverEndpoint, 0, ref allocationId, ref connectionData, ref hostConnectionData, ref key, defaultEndPoint.Secure);
-            relayServerData.ComputeNewNonce();
-
+            var relayServerData = new RelayServerData(allocation, "udp");
             InitDriver(ref relayServerData);
 
             if (m_ClientDriver.Bind(NetworkEndPoint.AnyIpv4) != 0)
@@ -108,7 +82,7 @@ namespace Unity.Networking.Transport.Samples
                     yield return null;
                 }
 
-                m_clientToServerConnection[0] = m_ClientDriver.Connect(serverEndpoint);
+                m_clientToServerConnection[0] = m_ClientDriver.Connect();
 
                 while (m_ClientDriver.GetConnectionState(m_clientToServerConnection[0]) == NetworkConnection.State.Connecting)
                 {

@@ -438,7 +438,7 @@ namespace Unity.Networking.Transport.Tests
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 0)->SendTime = 990;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 0, 990);
 
-                ReliableUtility.ReleaseOrResumePackets(pipelineContext);
+                ReliableUtility.ReleaseAcknowledgedPackets(pipelineContext);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, 65535 should be released, 0 should still be there
@@ -500,7 +500,7 @@ namespace Unity.Networking.Transport.Tests
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 2, 990);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 2, 1000, 16);
 
-                ReliableUtility.ReleaseOrResumePackets(pipelineContext);
+                ReliableUtility.ReleaseAcknowledgedPackets(pipelineContext);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, both packets should be released
@@ -556,7 +556,7 @@ namespace Unity.Networking.Transport.Tests
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 65535, 980);
                 ReliableUtility.StoreReceiveTimestamp(pipelineContext.internalSharedProcessBuffer, 65535, 990, 16);
 
-                ReliableUtility.ReleaseOrResumePackets(pipelineContext);
+                ReliableUtility.ReleaseAcknowledgedPackets(pipelineContext);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, 65535 should be released
@@ -608,7 +608,7 @@ namespace Unity.Networking.Transport.Tests
                 stream.WriteInt((int)10);
                 ReliableUtility.SetPacket(sendBufferPtr, 16, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
-                ReliableUtility.ReleaseOrResumePackets(pipelineContext);
+                ReliableUtility.ReleaseAcknowledgedPackets(pipelineContext);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, packet 16 should be released
@@ -663,7 +663,7 @@ namespace Unity.Networking.Transport.Tests
                 stream.WriteInt((int)11);
                 ReliableUtility.SetPacket(sendBufferPtr, 65535, (byte*)stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
-                ReliableUtility.ReleaseOrResumePackets(pipelineContext);
+                ReliableUtility.ReleaseAcknowledgedPackets(pipelineContext);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, slot with seqId 0 and 65535 should have been released
@@ -726,7 +726,7 @@ namespace Unity.Networking.Transport.Tests
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 2)->SendTime = 1000;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 2, 1000);
 
-                ReliableUtility.ReleaseOrResumePackets(pipelineContext);
+                ReliableUtility.ReleaseAcknowledgedPackets(pipelineContext);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, packet 3 should be released (has been acked), 2 should stick around
@@ -788,7 +788,7 @@ namespace Unity.Networking.Transport.Tests
                 ReliableUtility.GetPacketInformation(sendBufferPtr, 3)->SendTime = 1000;
                 ReliableUtility.StoreTimestamp(pipelineContext.internalSharedProcessBuffer, 3, 1000);
 
-                ReliableUtility.ReleaseOrResumePackets(pipelineContext);
+                ReliableUtility.ReleaseAcknowledgedPackets(pipelineContext);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
 
                 // Validate that packet tracking state is correct, packet 3 should be released (has been acked), 2 should stick around

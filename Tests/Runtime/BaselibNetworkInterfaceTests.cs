@@ -48,6 +48,27 @@ namespace Unity.Networking.Transport.Tests
             }
         }
 
+        [Test]
+        public void Baselib_IfBindWouldFailWithoutAddressReuse_Warns()
+        {
+            using (var baselibInterface1 = new BaselibNetworkInterface())
+            using (var baselibInterface2 = new BaselibNetworkInterface())
+            {
+                var settings = new NetworkSettings();
+                baselibInterface1.Initialize(settings);
+                baselibInterface2.Initialize(settings);
+
+                baselibInterface1.CreateInterfaceEndPoint(NetworkEndPoint.AnyIpv4.WithPort(4242), out var endpoint);
+
+                Assert.Zero(baselibInterface1.Bind(endpoint));
+                Assert.Zero(baselibInterface2.Bind(endpoint));
+
+                LogAssert.Expect(LogType.Warning, "Port 4242 is likely already in use by another application. " +
+                    "Socket was still created, but expect erroneous behavior. This condition will become a " +
+                    "failure starting in version 2.0 of Unity Transport.");
+            }
+        }
+
         private void FakeSocketFailure(BaselibNetworkInterface baselibInterface)
         {
             var baselib = baselibInterface.m_Baselib[0];
