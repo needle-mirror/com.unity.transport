@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.0.0-exp.6",
+  "version": "2.0.0-exp.7",
   "unity": "2022.2",
   "unityRelease": "0a18",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
@@ -14,12 +14,12 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "upmCi": {
-    "footprint": "ae0c94fd1e9687f90a185f24a4518a96261572a0"
+    "footprint": "462808f15d236493cb0da5308b1dacc0da3c2a8c"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "23d0879f8d0b103358842e05e1a40c951b712dfe"
+    "revision": "cdc3da7767c6d4981931968b246055980585ef30"
   },
   "samples": [
     {

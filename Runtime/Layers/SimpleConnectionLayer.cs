@@ -32,8 +32,7 @@ namespace Unity.Networking.Transport
         {
             Data = 1,
             Disconnect = 2,
-            Ping = 3,
-            Pong = 4,
+            Heartbeat = 3,
         }
 
         private struct SimpleConnectionData
@@ -42,7 +41,7 @@ namespace Unity.Networking.Transport
             public ConnectionToken Token;
             public ConnectionState State;
             public long LastReceiveTime;
-            public long LastNonDataSend;
+            public long LastSendTime;
             public int ConnectionAttempts;
             public Error.DisconnectReason DisconnectReason;
         }
@@ -221,6 +220,9 @@ namespace Unity.Networking.Transport
                     packetProcessor.PrependToPayload((byte)MessageType.Data);
 
                     packetProcessor.ConnectionRef = connectionData.UnderlyingConnection;
+
+                    connectionData.LastSendTime = Time;
+                    ConnectionsData[connection] = connectionData;
                 }
 
                 // Send all control messages
@@ -239,7 +241,7 @@ namespace Unity.Networking.Transport
                     controlCommand.CopyTo(ref packetProcessor);
 
                     var connectionData = ConnectionsData[controlCommand.Connection];
-                    connectionData.LastNonDataSend = Time;
+                    connectionData.LastSendTime = Time;
                     ConnectionsData[controlCommand.Connection] = connectionData;
 
                     packetProcessor.ConnectionRef = connectionData.UnderlyingConnection;
@@ -357,7 +359,7 @@ namespace Unity.Networking.Transport
                         // The connection was just created, we need to initialize it.
                         connectionData.State = ConnectionState.AwaitingAccept;
                         connectionData.Token = RandomHelpers.GetRandomConnectionToken();
-                        connectionData.LastNonDataSend = Time;
+                        connectionData.LastSendTime = Time;
                         connectionData.ConnectionAttempts++;
 
                         TokensHashMap.Add(connectionData.Token, connectionId);
@@ -370,8 +372,8 @@ namespace Unity.Networking.Transport
                 }
 
                 // Check for connect timeout and connection attempts.
-                // Note that while connecting, LastNonDataSend can only track connection requests.
-                if (Time - connectionData.LastNonDataSend > ConnectTimeout)
+                // Note that while connecting, LastSendTime can only track connection requests.
+                if (Time - connectionData.LastSendTime > ConnectTimeout)
                 {
                     if (connectionData.ConnectionAttempts >= MaxConnectionAttempts)
                     {
@@ -385,7 +387,7 @@ namespace Unity.Networking.Transport
                     else
                     {
                         connectionData.ConnectionAttempts++;
-                        connectionData.LastNonDataSend = Time;
+                        connectionData.LastSendTime = Time;
 
                         ConnectionsData[connectionId] = connectionData;
 
@@ -412,11 +414,9 @@ namespace Unity.Networking.Transport
                 }
 
                 // Check for the heartbeat timeout.
-                if (HeartbeatTimeout > 0 &&
-                    Time - connectionData.LastReceiveTime > HeartbeatTimeout &&
-                    Time - connectionData.LastNonDataSend > HeartbeatTimeout)
+                if (HeartbeatTimeout > 0 && Time - connectionData.LastSendTime > HeartbeatTimeout)
                 {
-                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Ping, ref connectionData.Token));
+                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Heartbeat, ref connectionData.Token));
                 }
             }
 
@@ -473,15 +473,7 @@ namespace Unity.Networking.Transport
                             packetProcessor.ConnectionRef = connectionId;
                             break;
                         }
-                        case MessageType.Ping:
-                        {
-                            PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
-                            packetProcessor.Drop();
-
-                            ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Pong, ref connectionToken));
-                            break;
-                        }
-                        case MessageType.Pong:
+                        case MessageType.Heartbeat:
                         {
                             PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
                             packetProcessor.Drop();
@@ -557,22 +549,21 @@ namespace Unity.Networking.Transport
                     {
                         case HandshakeType.ConnectionRequest:
                         {
-                            // Received a duplicated connection request. Which is OK as client could be retrying.
-                            if (connectionId.IsCreated)
+                            // Whole new connection request for a new connection.
+                            if (!connectionId.IsCreated)
                             {
-                                ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionAccept, ref connectionToken));
-                                return true;
+                                connectionId = Connections.StartConnecting(ref packetProcessor.EndpointRef);
+                                Connections.FinishConnectingFromRemote(ref connectionId);
+                                connectionData = new SimpleConnectionData
+                                {
+                                    State = ConnectionState.Established,
+                                    Token = connectionToken,
+                                    UnderlyingConnection = packetProcessor.ConnectionRef,
+                                };
+                                TokensHashMap.Add(connectionToken, connectionId);
                             }
 
-                            connectionId = Connections.StartConnecting(ref packetProcessor.EndpointRef);
-                            Connections.FinishConnectingFromRemote(ref connectionId);
-                            connectionData = new SimpleConnectionData
-                            {
-                                State = ConnectionState.Established,
-                                Token = connectionToken,
-                                UnderlyingConnection = packetProcessor.ConnectionRef,
-                            };
-                            TokensHashMap.Add(connectionToken, connectionId);
+                            connectionData.LastSendTime = Time;
                             ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionAccept, ref connectionToken));
                             break;
                         }
@@ -720,7 +711,7 @@ namespace Unity.Networking.Transport
                         // The connection was just created, we need to initialize it.
                         connectionData.State = ConnectionState.AwaitingAccept;
                         connectionData.Token = RandomHelpers.GetRandomConnectionToken();
-                        connectionData.LastNonDataSend = Time;
+                        connectionData.LastSendTime = Time;
                         connectionData.ConnectionAttempts++;
 
                         TokensHashMap.Add(connectionData.Token, connectionId);
@@ -733,8 +724,8 @@ namespace Unity.Networking.Transport
                 }
 
                 // Check for connect timeout and connection attempts.
-                // Note that while connecting, LastNonDataSend can only track connection requests.
-                if (Time - connectionData.LastNonDataSend > ConnectTimeout)
+                // Note that while connecting, LastSendTime can only track connection requests.
+                if (Time - connectionData.LastSendTime > ConnectTimeout)
                 {
                     if (connectionData.ConnectionAttempts >= MaxConnectionAttempts)
                     {
@@ -748,7 +739,7 @@ namespace Unity.Networking.Transport
                     else
                     {
                         connectionData.ConnectionAttempts++;
-                        connectionData.LastNonDataSend = Time;
+                        connectionData.LastSendTime = Time;
 
                         ConnectionsData[connectionId] = connectionData;
 
@@ -775,11 +766,9 @@ namespace Unity.Networking.Transport
                 }
 
                 // Check for the heartbeat timeout.
-                if (HeartbeatTimeout > 0 &&
-                    Time - connectionData.LastReceiveTime > HeartbeatTimeout &&
-                    Time - connectionData.LastNonDataSend > HeartbeatTimeout)
+                if (HeartbeatTimeout > 0 && Time - connectionData.LastSendTime > HeartbeatTimeout)
                 {
-                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Ping, ref connectionData.Token));
+                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Heartbeat, ref connectionData.Token));
                 }
             }
 
@@ -836,15 +825,7 @@ namespace Unity.Networking.Transport
                             packetProcessor.ConnectionRef = connectionId;
                             break;
                         }
-                        case MessageType.Ping:
-                        {
-                            PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
-                            packetProcessor.Drop();
-
-                            ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Pong, ref connectionToken));
-                            break;
-                        }
-                        case MessageType.Pong:
+                        case MessageType.Heartbeat:
                         {
                             PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
                             packetProcessor.Drop();
@@ -920,22 +901,21 @@ namespace Unity.Networking.Transport
                     {
                         case HandshakeType.ConnectionRequest:
                         {
-                            // Received a duplicated connection request. Which is OK as client could be retrying.
-                            if (connectionId.IsCreated)
+                            // Whole new connection request for a new connection.
+                            if (!connectionId.IsCreated)
                             {
-                                ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionAccept, ref connectionToken));
-                                return true;
+                                connectionId = Connections.StartConnecting(ref packetProcessor.EndpointRef);
+                                Connections.FinishConnectingFromRemote(ref connectionId);
+                                connectionData = new SimpleConnectionData
+                                {
+                                    State = ConnectionState.Established,
+                                    Token = connectionToken,
+                                    UnderlyingConnection = packetProcessor.ConnectionRef,
+                                };
+                                TokensHashMap.Add(connectionToken, connectionId);
                             }
 
-                            connectionId = Connections.StartConnecting(ref packetProcessor.EndpointRef);
-                            Connections.FinishConnectingFromRemote(ref connectionId);
-                            connectionData = new SimpleConnectionData
-                            {
-                                State = ConnectionState.Established,
-                                Token = connectionToken,
-                                UnderlyingConnection = packetProcessor.ConnectionRef,
-                            };
-                            TokensHashMap.Add(connectionToken, connectionId);
+                            connectionData.LastSendTime = Time;
                             ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionAccept, ref connectionToken));
                             break;
                         }

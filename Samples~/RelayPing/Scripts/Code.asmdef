@@ -21,8 +21,8 @@
     ],
     "versionDefines": [
         {
-            "name": "Unity.Services.Relay",
-            "expression": "0.0",
+            "name": "com.unity.services.relay",
+            "expression": "0",
             "define": "ENABLE_RELAY"
         }
     ],

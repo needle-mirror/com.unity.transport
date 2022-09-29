@@ -16,7 +16,9 @@ namespace Unity.Networking.Transport
         // The deferred queue has to be quite large because if we fill it up, a bug in UnityTLS
         // causes the session to fail. Once MTT-3971 is fixed, we can lower this value.
         private const int k_DeferredSendsQueueSize = 64;
-        private const int k_DTLSPadding = 29;
+
+        // TODO When not using Relay, this could be reduced to 29. See MTT-4748.
+        private const int k_DTLSPadding = 37;
 
         private struct DTLSConnectionData
         {
@@ -28,7 +30,7 @@ namespace Unity.Networking.Transport
             [NativeDisableUnsafePtrRestriction]
             public Binding.unitytls_client* ReconnectionClientPtr;
 
-            // Tracks the last time progress was made on the DTLS handshake. Used to delete 
+            // Tracks the last time progress was made on the DTLS handshake. Used to delete
             // half-open connections after a while (important for servers since an attacker could
             // just send a ton of client hellos to fill up the connection list).
             public long LastHandshakeUpdate;
@@ -63,9 +65,9 @@ namespace Unity.Networking.Transport
             m_DeferredSends.SetDefaultDataOffset(packetPadding);
 
             var netConfig = settings.GetNetworkConfigParameters();
-            // We pick the maximum handshake timeout as our half-open disconnect timeout since after
-            // that point, there is no progress possible anymore on the handshake.
-            m_HalfOpenDisconnectTimeout = netConfig.maxConnectAttempts * netConfig.connectTimeoutMS;
+            // We pick a value just past the maximum handshake timeout as our half-open disconnect
+            // timeout since after that point, there is no handshake progress possible anymore.
+            m_HalfOpenDisconnectTimeout = (netConfig.maxConnectAttempts + 1) * netConfig.connectTimeoutMS;
             m_ReconnectionTimeout = netConfig.reconnectionTimeoutMS;
 
             packetPadding += k_DTLSPadding;
@@ -145,7 +147,6 @@ namespace Unity.Networking.Transport
                     }
 
                     UpdateLastReceiveTime(connectionId);
-
                     HandlePossibleReconnection(connectionId, ref packetProcessor);
 
                     packetProcessor.ConnectionRef = connectionId;
@@ -217,7 +218,7 @@ namespace Unity.Networking.Transport
 
                 var decryptedLength = new UIntPtr();
                 var result = Binding.unitytls_client_read_data(ConnectionsData[connectionId].UnityTLSClientPtr,
-                   (byte*)tempBuffer.GetUnsafePtr(), new UIntPtr((uint)tempBuffer.Length), &decryptedLength);
+                    (byte*)tempBuffer.GetUnsafePtr(), new UIntPtr((uint)tempBuffer.Length), &decryptedLength);
 
                 if (result == Binding.UNITYTLS_SUCCESS)
                 {
@@ -227,7 +228,9 @@ namespace Unity.Networking.Transport
                 else
                 {
                     // Probably irrelevant garbage. Drop the packet silently. We don't want to log
-                    // here since this could be used to flood the logs with errors.
+                    // here since this could be used to flood the logs with errors. If this is an
+                    // actual failure in UnityTLS that would require disconnecting, then all future
+                    // receives will also fail and the connection will eventually timeout.
                     packetProcessor.Drop();
                 }
             }
@@ -317,8 +320,20 @@ namespace Unity.Networking.Transport
                 if (clientPtr == null)
                     return;
 
-                if (Binding.unitytls_client_get_state(clientPtr) == Binding.UnityTLSClientState_Fail)
+                ulong dummy;
+                var errorState = Binding.unitytls_client_get_errorsState(clientPtr, &dummy);
+                var clientState = Binding.unitytls_client_get_state(clientPtr);
+
+                if (errorState != Binding.UNITYTLS_SUCCESS || clientState == Binding.UnityTLSClientState_Fail)
                 {
+                    // The only way to get a failed client is because of a failed handshake.
+                    if (clientState == Binding.UnityTLSClientState_Fail)
+                    {
+                        // TODO Would be nice to translate the numerical step in a string.
+                        var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
+                        Debug.LogError($"DTLS handshake failed at step {handshakeStep}. Closing connection.");
+                    }
+
                     Connections.StartDisconnecting(ref connection);
                     // TODO Not the ideal disconnect reason. If we ever have a better one, use it.
                     Disconnect(connection, Error.DisconnectReason.ClosedByRemote);
@@ -375,7 +390,7 @@ namespace Unity.Networking.Transport
 
             private void AdvanceHandshake(Binding.unitytls_client* clientPtr)
             {
-                while (Binding.unitytls_client_handshake(clientPtr) == Binding.UNITYTLS_HANDSHAKE_STEP);
+                while (Binding.unitytls_client_handshake(clientPtr) == Binding.UNITYTLS_HANDSHAKE_STEP) ;
             }
 
             private void UpdateLastReceiveTime(ConnectionId connection)
@@ -451,8 +466,7 @@ namespace Unity.Networking.Transport
                     var clientPtr = ConnectionsData[connectionId].UnityTLSClientPtr;
                     var packetPtr = (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset;
 
-                    // Only way this can happen is if we're reconnecting or if a previous send
-                    // caused the UnityTLS session to fail for some reason.
+                    // Only way this can happen is if we're reconnecting.
                     var clientState = Binding.unitytls_client_get_state(clientPtr);
                     if (clientState != Binding.UnityTLSClientState_Messaging)
                     {
@@ -463,7 +477,7 @@ namespace Unity.Networking.Transport
                     var result = Binding.unitytls_client_send_data(clientPtr, packetPtr, new UIntPtr((uint)packetProcessor.Length));
                     if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        Debug.LogError($"Failed to encrypt packet (TLS error: {result}). Packet will not be sent.");
+                        Debug.LogError($"Failed to encrypt packet (error: {result}). Likely internal DTLS failure. Closing connection.");
                         packetProcessor.Drop();
                     }
                 }

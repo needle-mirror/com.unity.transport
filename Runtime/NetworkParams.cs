@@ -21,13 +21,8 @@ namespace Unity.Networking.Transport
     public struct NetworkParameterConstants
     {
         /// <summary>The default size of the event queue.</summary>
-        public const int InitialEventQueueSize = 100;
-        public const int InvalidConnectionId = -1;
+        internal const int InitialEventQueueSize = 100;
 
-        /// <summary>
-        /// The default size of the DataStreamWriter. This value can be overridden using the <see cref="NetworkConfigParameter"/>.
-        /// </summary>
-        public const int DriverDataStreamSize = 64 * 1024;
         /// <summary>The default connection timeout value. This value can be overridden using the <see cref="NetworkConfigParameter"/></summary>
         public const int ConnectTimeoutMS = 1000;
         /// <summary>The default max connection attempts value. This value can be overridden using the <see cref="NetworkConfigParameter"/></summary>

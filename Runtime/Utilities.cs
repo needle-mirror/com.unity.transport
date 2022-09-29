@@ -1,7 +1,11 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Unity.Baselib.LowLevel;
+using Unity.Burst;
 using Unity.Collections;
+
+using Random = Unity.Mathematics.Random;
 
 namespace Unity.Networking.Transport.Utilities
 {
@@ -254,44 +258,48 @@ namespace Unity.Networking.Transport.Utilities
 
     public static class RandomHelpers
     {
+        private static readonly SharedStatic<long> s_SharedSeed = SharedStatic<long>.GetOrCreate<SharedRandomKey>(16);
+        private class SharedRandomKey {}
+
+        static RandomHelpers()
+        {
+            s_SharedSeed.Data = 0;
+        }
+
+        internal static Unity.Mathematics.Random GetRandomGenerator()
+        {
+            // if the seed has not been initialized we set it to the current ticks.
+            if (s_SharedSeed.Data == 0)
+                Interlocked.CompareExchange(ref s_SharedSeed.Data, (long)TimerHelpers.GetTicks(), 0);
+
+            // otherwise we just increment it, ensuring we get a different value for every call.
+            var seed = (Interlocked.Increment(ref s_SharedSeed.Data) % uint.MaxValue) + 1;
+
+            return new Mathematics.Random((uint)seed);
+        }
+
         // returns ushort in [1..ushort.MaxValue] range
         public static ushort GetRandomUShort()
         {
-#if UNITY_WEBGL && !UNITY_EDITOR
-            return (ushort)UnityEngine.Random.Range(0, ushort.MaxValue);
-#else
-            var rnd = new Unity.Mathematics.Random((uint)TimerHelpers.GetTicks());
-            return (ushort)rnd.NextUInt(1, ushort.MaxValue - 1);
-#endif
+            return (ushort)GetRandomGenerator().NextUInt(1, ushort.MaxValue - 1);
         }
 
         // returns ulong in [1..ulong.MaxValue] range
         public static ulong GetRandomULong()
         {
-#if UNITY_WEBGL && !UNITY_EDITOR
-            var high = (ulong)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
-            var low = (ulong)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
-#else
-            var rnd = new Unity.Mathematics.Random((uint)TimerHelpers.GetTicks());
-            var high = rnd.NextUInt(0, uint.MaxValue - 1);
-            var low = rnd.NextUInt(1, uint.MaxValue - 1);
-#endif
+            var random = GetRandomGenerator();
+            var high = random.NextUInt(0, uint.MaxValue - 1);
+            var low = random.NextUInt(1, uint.MaxValue - 1);
             return ((ulong)high << 32) | (ulong)low;
         }
 
         internal unsafe static ConnectionToken GetRandomConnectionToken()
         {
             var token = new ConnectionToken();
-
-#if UNITY_WEBGL && !UNITY_EDITOR
-            for (int i = 0; i < ConnectionToken.k_Length; i++)
-                token.Value[i] = (byte)UnityEngine.Random.Range(0, 0xFF);
-#else
-            var rnd = new Unity.Mathematics.Random((uint)TimerHelpers.GetTicks());
+            var random = GetRandomGenerator();
 
             for (int i = 0; i < ConnectionToken.k_Length; i++)
-                token.Value[i] = (byte)(rnd.NextUInt() & 0xFF);
-#endif
+                token.Value[i] = (byte)(random.NextUInt() & 0xFF);
 
             return token;
         }

@@ -5,6 +5,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Mathematics;
 using Unity.Networking.Transport.TLS;
 using Unity.TLS.LowLevel;
 using UnityEngine;
@@ -40,6 +41,16 @@ namespace Unity.Networking.Transport
 
             // Used to delete old half-open connections.
             public long LastHandshakeUpdate;
+
+            // UnityTLS only returns full records when decrypting, so it's possible to receive more
+            // than an MTU's worth of data when decrypting a single packet (e.g. if the received
+            // packet contains the end of a previous record). This means we can't just replace the
+            // received packet's data with its decrypted equivalent (might not be enough room). Thus
+            // we decrypt everything in this buffer. What can be fitted inside the packet is then
+            // copied there, and any leftovers will be copied in the next packet (which might need
+            // to be a newly-enqueued one).
+            public fixed byte DecryptBuffer[NetworkParameterConstants.MTU * 2];
+            public int DecryptBufferLength;
         }
 
         internal ConnectionList m_ConnectionList;
@@ -207,44 +218,46 @@ namespace Unity.Networking.Transport
 
             private void ProcessDataMessage(ref PacketProcessor packetProcessor)
             {
-                var connectionId = packetProcessor.ConnectionRef;
                 var originalPacketOffset = packetProcessor.Offset;
+                var connectionId = packetProcessor.ConnectionRef;
+                var data = ConnectionsData[connectionId];
 
-                // UnityTLS is going to read the encrypted packet directly from the packet
-                // processor. Since it can't write the decrypted data in the same place, we need to
-                // create a temporary buffer to store that data.
-                var tempBuffer = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Temp);
-                var tempBufferLength = 0;
-
-                // The function unitytls_client_read_data exits once it has read a single record
-                // (and presumably also if it can't even do that without blocking on I/O). So if the
-                // packet contains multiple records, we need to call it multiple times, hence the
-                // looping until the packet is empty.
+                // The function unitytls_client_read_data exits after reading a single record (or
+                // failing to read an full one). Since there could be multiple records per packet,
+                // we need to call it until we've fully read the received packet.
                 while (packetProcessor.Length > 0)
                 {
-                    // Adjust the buffer pointer/length to where the data should be written next.
-                    var bufferPtr = (byte*)tempBuffer.GetUnsafePtr() + tempBufferLength;
-                    var bufferLength = NetworkParameterConstants.MTU - tempBufferLength;
+                    // Pointer and length of next available space in decryption buffer.
+                    var bufferPtr = data.DecryptBuffer + data.DecryptBufferLength;
+                    var bufferLength = (NetworkParameterConstants.MTU * 2) - data.DecryptBufferLength;
 
                     var decryptedLength = new UIntPtr();
-                    var result = Binding.unitytls_client_read_data(ConnectionsData[connectionId].UnityTLSClientPtr,
-                        bufferPtr, new UIntPtr((uint)bufferLength), &decryptedLength);
+                    var result = Binding.unitytls_client_read_data(
+                        data.UnityTLSClientPtr, bufferPtr, new UIntPtr((uint)bufferLength), &decryptedLength);
 
-                    // Decrypted length shouldn't be 0, but we're playing it safe.
-                    if (result != Binding.UNITYTLS_SUCCESS || decryptedLength.ToUInt32() == 0)
+                    var wouldBlock = result == Binding.UNITYTLS_USER_WOULD_BLOCK;
+                    if (wouldBlock || (result == Binding.UNITYTLS_SUCCESS && decryptedLength.ToUInt32() == 0))
                     {
-                        // Bad record? Unknown what could be causing this, but in any case don't log
-                        // an error since this could be used to flood the logs. Just stop processing
-                        // and return what we were able to decrypt (if anything). If the situation
-                        // is bad enough, UnityTLS client will have failed and we'll clean up later.
+                        // The "would block" error (or a successful return with nothing decrypted)
+                        // means UnityTLS saw the beginning of a record but couldn't read it in
+                        // full. There can't be anything more to read at this point.
+                        break;
+                    }
+                    else if (result != Binding.UNITYTLS_SUCCESS)
+                    {
+                        // The error will be picked up in CheckForFailedClient.
+                        Debug.LogError($"Failed to decrypt packet (error: {result}). Likely internal TLS failure. Closing connection.");
                         break;
                     }
 
-                    tempBufferLength += (int)decryptedLength.ToUInt32();
+                    data.DecryptBufferLength += (int)decryptedLength.ToUInt32();
                 }
 
+                // We've now read the entire packet, now copy the decrypted data back in it.
                 packetProcessor.SetUnsafeMetadata(0, originalPacketOffset);
-                packetProcessor.AppendToPayload(tempBuffer.GetUnsafePtr(), tempBufferLength);
+                CopyDecryptBufferToPacket(ref data, ref packetProcessor);
+
+                ConnectionsData[connectionId] = data;
             }
 
             private void ProcessUnderlyingConnectionList()
@@ -281,6 +294,9 @@ namespace Unity.Networking.Transport
 
                     switch (connectionState)
                     {
+                        case NetworkConnection.State.Connected:
+                            HandleConnectedState(connectionId);
+                            break;
                         case NetworkConnection.State.Connecting:
                             HandleConnectingState(connectionId);
                             break;
@@ -291,6 +307,24 @@ namespace Unity.Networking.Transport
 
                     CheckForFailedClient(connectionId);
                     CheckForHalfOpenConnection(connectionId);
+                }
+            }
+
+            private void HandleConnectedState(ConnectionId connection)
+            {
+                var data = ConnectionsData[connection];
+
+                // Only thing we need to check in the connected state is if we need to enqueue any
+                // leftover decrypted data. Note that we don't do anything if we can't enqueue a new
+                // packet because it's safe to leave the data in its decryption buffer (we'll just
+                // receive it on the next update).
+                if (data.DecryptBufferLength > 0 && ReceiveQueue.EnqueuePacket(out var packetProcessor))
+                {
+                    packetProcessor.ConnectionRef = connection;
+                    packetProcessor.EndpointRef = Connections.GetConnectionEndpoint(connection);
+                    CopyDecryptBufferToPacket(ref data, ref packetProcessor);
+
+                    ConnectionsData[connection] = data;
                 }
             }
 
@@ -344,12 +378,25 @@ namespace Unity.Networking.Transport
             private void CheckForFailedClient(ConnectionId connection)
             {
                 var data = ConnectionsData[connection];
+                var clientPtr = data.UnityTLSClientPtr;
 
-                if (data.UnityTLSClientPtr == null)
+                if (clientPtr == null)
                     return;
 
-                if (Binding.unitytls_client_get_state(data.UnityTLSClientPtr) == Binding.UnityTLSClientState_Fail)
+                ulong dummy;
+                var errorState = Binding.unitytls_client_get_errorsState(clientPtr, &dummy);
+                var clientState = Binding.unitytls_client_get_state(clientPtr);
+
+                if (errorState != Binding.UNITYTLS_SUCCESS || clientState == Binding.UnityTLSClientState_Fail)
                 {
+                    // The only way to get a failed client is because of a failed handshake.
+                    if (clientState == Binding.UnityTLSClientState_Fail)
+                    {
+                        // TODO Would be nice to translate the numerical step in a string.
+                        var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
+                        Debug.LogError($"TLS handshake failed at step {handshakeStep}. Closing connection.");
+                    }
+
                     UnderlyingConnections.StartDisconnecting(ref data.UnderlyingConnection);
                     Connections.StartDisconnecting(ref connection);
 
@@ -377,6 +424,22 @@ namespace Unity.Networking.Transport
 
                     data.DisconnectReason = Error.DisconnectReason.Timeout;
                     ConnectionsData[connection] = data;
+                }
+            }
+
+            private void CopyDecryptBufferToPacket(ref TLSConnectionData data, ref PacketProcessor packetProcessor)
+            {
+                fixed(byte* decryptBuffer = data.DecryptBuffer)
+                {
+                    var copyLength = math.min(packetProcessor.BytesAvailableAtEnd, data.DecryptBufferLength);
+                    packetProcessor.AppendToPayload(decryptBuffer, copyLength);
+                    data.DecryptBufferLength -= copyLength;
+
+                    // If there's still data in the decryption buffer, copy it to the beginning.
+                    if (data.DecryptBufferLength > 0)
+                    {
+                        UnsafeUtility.MemMove(decryptBuffer, decryptBuffer + copyLength, data.DecryptBufferLength);
+                    }
                 }
             }
 
@@ -439,23 +502,14 @@ namespace Unity.Networking.Transport
                     UnityTLSCallbackContext->SendQueueIndex = i;
 
                     var connectionId = packetProcessor.ConnectionRef;
-                    var clientPtr = ConnectionsData[connectionId].UnityTLSClientPtr;
-
-                    // Only way this can happen is if a previous send caused a failure.
-                    var clientState = Binding.unitytls_client_get_state(clientPtr);
-                    if (clientState != Binding.UnityTLSClientState_Messaging)
-                    {
-                        packetProcessor.Drop();
-                        continue;
-                    }
-
                     packetProcessor.ConnectionRef = ConnectionsData[connectionId].UnderlyingConnection;
 
+                    var clientPtr = ConnectionsData[connectionId].UnityTLSClientPtr;
                     var packetPtr = (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset;
                     var result = Binding.unitytls_client_send_data(clientPtr, packetPtr, new UIntPtr((uint)packetProcessor.Length));
                     if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        Debug.LogError($"Failed to encrypt packet (TLS error: {result}). Packet will not be sent.");
+                        Debug.LogError($"Failed to encrypt packet (error: {result}). Likely internal TLS failure. Closing connection.");
                         packetProcessor.Drop();
                     }
                 }

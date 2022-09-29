@@ -563,10 +563,11 @@ namespace Unity.Networking.Transport
         {
             var state = m_InternalState.Value;
 
+            CloseSocket(state.Socket);
+
             var result = CreateSocket(state.SendQueueCapacity, state.ReceiveQueueCapacity, endpoint, out var newSocket);
             if (result == 0)
             {
-                CloseSocket(state.Socket);
                 state.Socket = newSocket;
                 state.SocketStatus = SocketStatus.SocketNormal;
 
@@ -597,7 +598,7 @@ namespace Unity.Networking.Transport
             var error = default(ErrorState);
             socket = Binding.Baselib_RegisteredNetwork_Socket_UDP_Create(
                 &endpoint.rawNetworkAddress,
-                Binding.Baselib_NetworkAddress_AddressReuse.Allow,
+                Binding.Baselib_NetworkAddress_AddressReuse.DoNotAllow,
                 checked((uint)sendQueueCapacity),
                 checked((uint)receiveQueueCapacity),
                 &error);
@@ -639,14 +640,15 @@ namespace Unity.Networking.Transport
             else
             {
                 UnityEngine.Debug.LogWarning("Socket error encountered; attempting recovery by creating a new one.");
+                state.LastSocketRecreateTime = updateTime;
+                state.NumSocketRecreate++;
+
+                CloseSocket(state.Socket);
                 var result = CreateSocket(state.SendQueueCapacity, state.ReceiveQueueCapacity, state.LocalEndpoint, out var newSocket);
                 if (result == 0)
                 {
-                    CloseSocket(state.Socket);
                     state.Socket = newSocket;
                     state.SocketStatus = SocketStatus.SocketNormal;
-                    state.LastSocketRecreateTime = updateTime;
-                    state.NumSocketRecreate++;
                 }
             }
 

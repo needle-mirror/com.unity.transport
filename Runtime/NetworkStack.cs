@@ -161,23 +161,27 @@ namespace Unity.Networking.Transport
             // stack.AddLayer(new LogLayer(), ref networkSettings); // This will print packets for debugging
 
 #if !UNITY_WEBGL || UNITY_EDITOR
-#if ENABLE_MANAGED_UNITYTLS
-            // If using the TCP interface or WebSocket interface (on non-WebGL platforms), we need
-            // to add the TLS layer before the simulator layer, since it expects a reliable stream.
             if (networkInterface is TCPNetworkInterface || networkInterface is WebSocketNetworkInterface)
             {
+                // Uncomment to induce message splitting for debugging.
+                if (networkSettings.TryGet<StreamSegmentationParameter>(out _))
+                    stack.AddLayer(new StreamSegmentationLayer(), ref networkSettings); 
+
+#if ENABLE_MANAGED_UNITYTLS
+                // If using the TCP interface or WebSocket interface (on non-WebGL platforms), we need
+                // to add the TLS layer before the simulator layer, since it expects a reliable stream.
                 if (networkSettings.TryGet<TLS.SecureNetworkProtocolParameter>(out _))
                     stack.AddLayer(new TLSLayer(), ref networkSettings);
-            }
 #endif // ENABLE_MANAGED_UNITYTLS
 
-            // TCP interface requires a layer to manage the stream to datagram transition.
-            if (networkInterface is TCPNetworkInterface)
-                stack.AddLayer(new StreamToDatagramLayer(), ref networkSettings);
+                // TCP interface requires a layer to manage the stream to datagram transition.
+                if (networkInterface is TCPNetworkInterface)
+                    stack.AddLayer(new StreamToDatagramLayer(), ref networkSettings);
 
-            // On non-WebGL platforms, add the WebSocket layer if using WebSocket interface.
-            if (networkInterface is WebSocketNetworkInterface)
-                stack.AddLayer(new WebSocketLayer(), ref networkSettings);
+                // On non-WebGL platforms, add the WebSocket layer if using WebSocket interface.
+                if (networkInterface is WebSocketNetworkInterface)
+                    stack.AddLayer(new WebSocketLayer(), ref networkSettings);
+            }
 #endif // !UNITY_WEBGL || UNITY_EDITOR
 
             // Now we can add the simulator layer, which should be as low in the stack as possible.
@@ -193,7 +197,7 @@ namespace Unity.Networking.Transport
                 ? networkSettings.GetRelayParameters().ServerData.IsSecure == 1
                 : networkSettings.TryGet<TLS.SecureNetworkProtocolParameter>(out _);
 
-            if (isSecure && networkInterface is UDPNetworkInterface)
+            if (isSecure && !(networkInterface is TCPNetworkInterface || networkInterface is WebSocketNetworkInterface))
                 stack.AddLayer(new DTLSLayer(), ref networkSettings);
 #endif
 

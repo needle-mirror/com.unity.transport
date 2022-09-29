@@ -442,15 +442,6 @@ namespace Unity.Networking.Transport
                     connectionData.LastConnectAttempt = Time;
                     ConnectionsData[connectionId] = connectionData;
 
-                    var endpoint = Connections.GetConnectionEndpoint(connectionId);
-                    if (endpoint != protocolData.ServerData.Endpoint)
-                    {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        UnityEngine.Debug.LogError("A relay connection can be requested only to the Relay Server endpoint");
-#endif
-                        return;
-                    }
-
                     // Send a ConnectRequest message
                     if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
                     {

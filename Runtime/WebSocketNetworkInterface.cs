@@ -139,7 +139,7 @@ namespace Unity.Networking.Transport
         }
 
         public unsafe int Listen()
-            =>  throw new InvalidOperationException("WebGL does not support listening for connections");
+            =>  throw new InvalidOperationException("Web browsers do not support listening for new WebSocket connections.");
 
         public unsafe void Dispose()
         {

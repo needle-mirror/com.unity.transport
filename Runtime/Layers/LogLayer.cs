@@ -6,15 +6,16 @@ namespace Unity.Networking.Transport
 {
     internal struct LogLayer : INetworkLayer
     {
-        static private int s_InstancesCount;
-
-        private int m_InstanceId;
+        private FixedString32Bytes m_DriverIdentifier;
 
         public void Dispose() {}
 
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {
-            m_InstanceId = ++s_InstancesCount;
+            if (settings.TryGet<NetworkDriverIdentifierParameter>(out var identifier))
+                m_DriverIdentifier = identifier.Label;
+            else
+                m_DriverIdentifier = "unidentified";
             return 0;
         }
 
@@ -22,7 +23,7 @@ namespace Unity.Networking.Transport
         {
             return new LogJob
             {
-                Label = $"[{m_InstanceId}] Received",
+                Label = $"[{m_DriverIdentifier}] Received",
                 Queue = arguments.ReceiveQueue,
             }.Schedule(dependency);
         }
@@ -31,7 +32,7 @@ namespace Unity.Networking.Transport
         {
             return new LogJob
             {
-                Label = $"[{m_InstanceId}] Sent",
+                Label = $"[{m_DriverIdentifier}] Sent",
                 Queue = arguments.SendQueue,
             }.Schedule(dependency);
         }

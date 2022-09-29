@@ -9,7 +9,6 @@ using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
 using Unity.Services.Relay;
-using Unity.Services.Relay.Allocations;
 using Unity.Services.Relay.Models;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
@@ -77,32 +76,7 @@ namespace Unity.Networking.Transport.Samples
 
             PingClientUIBehaviour.m_JoinCode = joinCodeTask.Result;
 
-            RelayServerEndpoint defaultEndpoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
-                true, false, allocation.RelayServer.IpV4, allocation.RelayServer.Port);
-
-            foreach (var endPoint
-                     in allocation.ServerEndpoints)
-            {
-#if ENABLE_MANAGED_UNITYTLS
-                if (endPoint.Secure == true && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndpoint = endPoint;
-#else
-                if (endPoint.Secure == false && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndpoint = endPoint;
-#endif
-            }
-
-            var serverEndpoint = NetworkEndpoint.Parse(defaultEndpoint.Host, (ushort)defaultEndpoint.Port);
-
-            var allocationId = RelayUtilities.ConvertFromAllocationIdBytes(allocation.AllocationIdBytes);
-            var connectionData = RelayUtilities.ConvertConnectionData(allocation.ConnectionData);
-            var key = RelayUtilities.ConvertFromHMAC(allocation.Key);
-
-            var relayServerData = new RelayServerData(ref serverEndpoint, 0, ref allocationId, ref connectionData,
-                ref connectionData, ref key, defaultEndpoint.Secure);
-
-            relayServerData.ComputeNewNonce();
-
+            var relayServerData = new RelayServerData(allocation, "udp");
             InitDriver(ref relayServerData);
 
             if (m_ServerDriver.Bind(NetworkEndpoint.AnyIpv4) != 0)
@@ -137,7 +111,7 @@ namespace Unity.Networking.Transport.Samples
         }
 
         [BurstCompile]
-        struct DriverUpdateJob : IJob
+        struct RelayDriverUpdateJob : IJob
         {
             public NetworkDriver driver;
             public NativeList<NetworkConnection> connections;
@@ -199,7 +173,7 @@ namespace Unity.Networking.Transport.Samples
 
 #if ENABLE_IL2CPP
         [BurstCompile]
-        struct PongJob : IJob
+        struct RelayPongJob : IJob
         {
             public NetworkDriver.Concurrent driver;
             public NativeList<NetworkConnection> connections;
@@ -212,7 +186,7 @@ namespace Unity.Networking.Transport.Samples
         }
 #else
         [BurstCompile]
-        struct PongJob : IJobParallelForDefer
+        struct RelayPongJob : IJobParallelForDefer
         {
             public NetworkDriver.Concurrent driver;
             public NativeArray<NetworkConnection> connections;
@@ -231,7 +205,7 @@ namespace Unity.Networking.Transport.Samples
             {
                 m_ServerDriver.ScheduleUpdate().Complete();
 
-                var updateJob = new DriverUpdateJob {driver = m_ServerDriver, connections = m_connections};
+                var updateJob = new RelayDriverUpdateJob {driver = m_ServerDriver, connections = m_connections};
                 updateJob.Schedule().Complete();
             }
         }
@@ -251,8 +225,8 @@ namespace Unity.Networking.Transport.Samples
                 // Wait for the previous frames ping to complete before starting a new one, the Complete in LateUpdate is not
                 // enough since we can get multiple FixedUpdate per frame on slow clients
                 m_updateHandle.Complete();
-                var updateJob = new DriverUpdateJob {driver = m_ServerDriver, connections = m_connections};
-                var pongJob = new PongJob
+                var updateJob = new RelayDriverUpdateJob {driver = m_ServerDriver, connections = m_connections};
+                var pongJob = new RelayPongJob
                 {
                     // PongJob is a ParallelFor job, it must use the concurrent NetworkDriver
                     driver = m_ServerDriver.ToConcurrent(),

@@ -4,7 +4,8 @@
     "references": [
         "Unity.Burst",
         "Unity.Collections",
-        "Unity.Mathematics"
+        "Unity.Mathematics",
+        "Unity.Services.Relay"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -13,5 +14,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "noEngineReferences": false
+    "noEngineReferences": false,
+    "versionDefines": [
+        {
+            "name": "com.unity.services.relay",
+            "expression": "1.0",
+            "define": "RELAY_SDK_INSTALLED"
+        }
+    ]
 }

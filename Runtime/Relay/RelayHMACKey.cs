@@ -9,7 +9,10 @@ namespace Unity.Networking.Transport.Relay
 
         public fixed byte Value[k_Length];
 
-        // Used by Relay SDK
+        /// <summary>Convert a raw buffer to a <see cref="RelayHMACKey"/></summary>
+        /// <param name="dataPtr">Raw pointer to buffer to convert.</param>
+        /// <param name="length">Length of the buffer to convert.</param>
+        /// <returns>New <see cref="RelayHMACKey"/>.</returns>
         public static RelayHMACKey FromBytePointer(byte* data, int length)
         {
             if (length != k_Length)
@@ -25,6 +28,17 @@ namespace Unity.Networking.Transport.Relay
             var hmacKey = new RelayHMACKey();
             UnsafeUtility.MemCpy(hmacKey.Value, data, length);
             return hmacKey;
+        }
+
+        /// <summary>Convert a byte array to a <see cref="RelayHMACKey"/></summary>
+        /// <param name="data">Array to convert.</param>
+        /// <returns>New <see cref="RelayHMACKey"/>.</returns>
+        public static RelayHMACKey FromByteArray(byte[] data)
+        {
+            fixed(byte* ptr = data)
+            {
+                return RelayHMACKey.FromBytePointer(ptr, data.Length);
+            }
         }
     }
 }

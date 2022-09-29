@@ -9,6 +9,18 @@ namespace Unity.Networking.Transport.Utilities
 {
     public static class SimulatorStageParameterExtensions
     {
+        /// <summary>Set the parameters of the simulator pipeline stage.</summary>
+        /// <param name="maxPacketCount"><inheritdoc cref="SimulatorUtility.Parameters.MaxPacketCount"/></param>
+        /// <param name="maxPacketSize"><inheritdoc cref="SimulatorUtility.Parameters.MaxPacketSize"/></param>
+        /// <param name="mode"><inheritdoc cref="SimulatorUtility.Parameters.Mode"/></param>
+        /// <param name="packetDelayMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketDelayMs"/></param>
+        /// <param name="packetJitterMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketJitterMs"/></param>
+        /// <param name="packetDropInterval"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropInterval"/></param>
+        /// <param name="packetDropPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropPercentage"/></param>
+        /// <param name="packetDuplicationPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDuplicationPercentage"/></param>
+        /// <param name="fuzzFactor"><inheritdoc cref="SimulatorUtility.Parameters.FuzzFactor"/></param>
+        /// <param name="fuzzOffset"><inheritdoc cref="SimulatorUtility.Parameters.FuzzOffset"/></param>
+        /// <param name="randomSeed"><inheritdoc cref="SimulatorUtility.Parameters.RandomSeed"/></param>
         public static ref NetworkSettings WithSimulatorStageParameters(
             ref this NetworkSettings settings,
             int maxPacketCount,
@@ -124,8 +136,8 @@ namespace Unity.Networking.Transport.Utilities
             public int MaxPacketSize;
 
             /// <summary>
-            /// The random seed is used to set the initial seed of the random number generator. This is useful to get
-            /// deterministic runs in tests for example that are dependant on the random number generator.
+            /// Value to use to seed the random number generator. For non-deterministic behavior, use a
+            /// dynamic value here (e.g. the result of a call to Stopwatch.GetTimestamp).
             /// </summary>
             public uint RandomSeed;
 
@@ -206,11 +218,9 @@ namespace Unity.Networking.Transport.Utilities
             ctx->PacketDropCount = 0;
             ctx->Random = new Random();
             if (param.RandomSeed > 0)
-            {
                 ctx->Random.InitState(param.RandomSeed);
-            }
             else
-                ctx->Random.InitState((uint)TimerHelpers.GetTicks());
+                ctx->Random.InitState();
         }
 
         private static unsafe bool GetEmptyDataSlot(NetworkPipelineContext ctx, byte* processBufferPtr, ref int packetPayloadOffset,
@@ -333,9 +343,7 @@ namespace Unity.Networking.Transport.Utilities
 
             if (!foundSlot)
             {
-                UnityEngine.Debug.LogWarning($"Simulator has no space left in the delayed packets queue ({param.MaxPacketCount} packets already in queue) so must drop this packet! Increase MaxPacketCount during driver construction.");
-                simCtx->PacketDropCount++;
-                inboundBuffer = default;
+                UnityEngine.Debug.LogWarning($"Simulator has no space left in the delayed packets queue ({param.MaxPacketCount} packets already in queue). Letting packet go through. Increase MaxPacketCount during driver construction.");
                 return false;
             }
 

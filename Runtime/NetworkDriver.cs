@@ -675,8 +675,7 @@ namespace Unity.Networking.Transport
 
             m_PipelineProcessor.UpdateReceive(ref this, out var updateCount);
 
-            // TODO: Find a good way to establish a good limit (connections*pipelines/2?)
-            if (updateCount > (m_NetworkStack.Connections.Count - m_NetworkStack.Connections.FreeList.Count) * 64)
+            if (updateCount > m_NetworkStack.Connections.Count * 64)
             {
                 UnityEngine.Debug.LogWarning(
                     FixedString.Format("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {0}", updateCount));
@@ -684,7 +683,7 @@ namespace Unity.Networking.Transport
 
             m_DefaultHeaderFlags = UdpCHeader.HeaderFlags.HasPipeline;
             m_PipelineProcessor.UpdateSend(ToConcurrentSendOnly(), out updateCount);
-            if (updateCount > (m_NetworkStack.Connections.Count - m_NetworkStack.Connections.FreeList.Count) * 64)
+            if (updateCount > m_NetworkStack.Connections.Count * 64)
             {
                 UnityEngine.Debug.LogWarning(
                     FixedString.Format("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {0}", updateCount));

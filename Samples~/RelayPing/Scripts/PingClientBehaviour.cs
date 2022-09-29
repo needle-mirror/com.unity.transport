@@ -7,7 +7,6 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Relay;
-using Unity.Services.Relay.Allocations;
 using Unity.Services.Relay.Models;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
@@ -65,37 +64,12 @@ namespace Unity.Networking.Transport.Samples
 
             var allocation = joinTask.Result;
 
-            var allocationId = RelayUtilities.ConvertFromAllocationIdBytes(allocation.AllocationIdBytes);
-
-            var connectionData = RelayUtilities.ConvertConnectionData(allocation.ConnectionData);
-            var hostConnectionData = RelayUtilities.ConvertConnectionData(allocation.HostConnectionData);
-            var key = RelayUtilities.ConvertFromHMAC(allocation.Key);
-
             Debug.Log($"client: {allocation.ConnectionData[0]} {allocation.ConnectionData[1]}");
             Debug.Log($"host: {allocation.HostConnectionData[0]} {allocation.HostConnectionData[1]}");
 
             Debug.Log($"client: {allocation.AllocationId}");
 
-            RelayServerEndpoint defaultEndpoint = new RelayServerEndpoint("udp", RelayServerEndpoint.NetworkOptions.Udp,
-                true, false, allocation.RelayServer.IpV4, allocation.RelayServer.Port);
-
-            foreach (var endPoint
-                     in allocation.ServerEndpoints)
-            {
-#if ENABLE_MANAGED_UNITYTLS
-                if (endPoint.Secure == true && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndpoint = endPoint;
-#else
-                if (endPoint.Secure == false && endPoint.Network == RelayServerEndpoint.NetworkOptions.Udp)
-                    defaultEndpoint = endPoint;
-#endif
-            }
-
-            var serverEndpoint = NetworkEndpoint.Parse(defaultEndpoint.Host, (ushort)defaultEndpoint.Port);
-
-            var relayServerData = new RelayServerData(ref serverEndpoint, 0, ref allocationId, ref connectionData, ref hostConnectionData, ref key, defaultEndpoint.Secure);
-            relayServerData.ComputeNewNonce();
-
+            var relayServerData = new RelayServerData(allocation, "udp");
             InitDriver(ref relayServerData);
 
             if (m_ClientDriver.Bind(NetworkEndpoint.AnyIpv4) != 0)
@@ -109,7 +83,7 @@ namespace Unity.Networking.Transport.Samples
                     yield return null;
                 }
 
-                m_clientToServerConnection[0] = m_ClientDriver.Connect(serverEndpoint);
+                m_clientToServerConnection[0] = m_ClientDriver.Connect();
 
                 while (m_ClientDriver.GetConnectionState(m_clientToServerConnection[0]) == NetworkConnection.State.Connecting)
                 {
@@ -139,7 +113,7 @@ namespace Unity.Networking.Transport.Samples
         }
 
         [BurstCompile]
-        struct PingJob : IJob
+        struct RelayPingJob : IJob
         {
             public NetworkDriver driver;
             public NativeArray<NetworkConnection> connection;
@@ -192,7 +166,7 @@ namespace Unity.Networking.Transport.Samples
             {
                 m_ClientDriver.ScheduleUpdate().Complete();
 
-                var pingJob = new PingJob
+                var pingJob = new RelayPingJob
                 {
                     driver = m_ClientDriver,
                     connection = m_clientToServerConnection,
@@ -224,7 +198,7 @@ namespace Unity.Networking.Transport.Samples
                 // Update the ping client UI with the ping statistics computed by teh job scheduled previous frame since that
                 // is now guaranteed to have completed
                 PingClientUIBehaviour.UpdateStats(m_pingStats[0], m_pingStats[1]);
-                var pingJob = new PingJob
+                var pingJob = new RelayPingJob
                 {
                     driver = m_ClientDriver,
                     connection = m_clientToServerConnection,

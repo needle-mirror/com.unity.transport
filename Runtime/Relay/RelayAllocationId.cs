@@ -12,7 +12,10 @@ namespace Unity.Networking.Transport.Relay
         public const int k_Length = 16;
         public fixed byte Value[k_Length];
 
-        // Used by Relay SDK
+        /// <summary>Convert a raw buffer to a <see cref="RelayAllocationId"/></summary>
+        /// <param name="dataPtr">Raw pointer to buffer to convert.</param>
+        /// <param name="length">Length of the buffer to convert.</param>
+        /// <returns>New <see cref="RelayAllocationId"/>.</returns>
         public static RelayAllocationId FromBytePointer(byte* dataPtr, int length)
         {
             if (length != k_Length)
@@ -28,6 +31,17 @@ namespace Unity.Networking.Transport.Relay
             var allocationId = new RelayAllocationId();
             UnsafeUtility.MemCpy(allocationId.Value, dataPtr, k_Length);
             return allocationId;
+        }
+
+        /// <summary>Convert a byte array to a <see cref="RelayAllocationId"/></summary>
+        /// <param name="data">Array to convert.</param>
+        /// <returns>New <see cref="RelayAllocationId"/>.</returns>
+        public static RelayAllocationId FromByteArray(byte[] data)
+        {
+            fixed(byte* ptr = data)
+            {
+                return RelayAllocationId.FromBytePointer(ptr, data.Length);
+            }
         }
 
         internal NetworkEndpoint ToNetworkEndpoint()

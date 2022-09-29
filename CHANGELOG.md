@@ -1,9 +1,35 @@
 # Change log
 
+## [2.0.0-exp.7] - 2022-09-29
+
+### New features
+* It is now possible to obtain `RelayAllocationId`, `RelayConnectionData`, and `RelayHMACKey` structures from byte arrays using their static `FromByteArray` method.
+* A new constructor for `RelayServerData` is now provided with argument types that better match those available in the models returned by the Relay SDK. The "RelayPing" sample has been updated to use this constructor.
+* New constructors for `RelayServerData` are now provided with argument types that better match those available in the models returned by the Relay SDK. The "RelayPing" sample has been updated to use them constructor.
+* `NetworkSettings` now has a `IsCreated` property which can be used to check if it's been disposed of or not.
+
+### Changes
+* Reverted the fix for the `SimulatorPipelineStage` always using the same random seed, reverting its behavior to always be deterministic. If non-determinism is desired, use a dynamic random seed (e.g. `Stopwatch.GetTimestamp`).
+* The default network interface (`UDPNetworkInterface`) does not enable address reuse anymore. This means `NetworkDriver.Bind` will now always fail if something else is listening on the same port, even if that something else is bound to a wildcard address and we are trying to bind to a specific one.
+* Added: `NetworkDriverIdentifierParameter` struct and `NetworkSettings.WithDriverIdentifierParameters()` method that can be use to identify the NetworkDriver instances with a custom label. Currently this method serves no purpose, but might be used in future releases to make debugging easier.
+* The `InitialEventQueueSize`, `InvalidConnectionId`, and `DriverDataStreamSize` fields were removed from `NetworkParameterConstants`. They all served no purpose anymore.
+* If using Relay, it is now possible to call `Connect` without an endpoint (the endpoint would be ignored anyway). This extension to `NetworkDriver` is provided in the `Unity.Networking.Transport.Relay` namespace.
+* The `RelayServerData.HMAC` field is now internal. There was no use to this being available publicly.
+* The deprecated constructor for `RelayServerData` that was taking strings for the allocation ID, connection data, and key has been completely removed.
+* The deprecated `RelayServerData.ComputeNewNonce` method has also been removed. One can provide a custom nonce using the "low level" constructor of `RelayServerData`. Other constructors will select a new one automatically.
+
+### Fixes
+* Fixed an issue where a duplicated reliable packet wouldn't be processed correctly, which could possibly lead to the entire reliable pipeline stage stalling (not being able to send new packets).
+* Fixed an issue where a warning about having too many pipeline updates would be spammed after a connection was closed.
+* Fixed an issue where pipeline updates would be run too many times, which would waste CPU and could lead to the warning about having too many pipeline updates being erroneously logged.
+* Fixed issues with `ReliableSequencePipelineStage` that would, in rare circumstances, lead to failure to deliver a reliable packet.
+* Fixed an issue where sending maximally-sized packets to the Relay when using DTLS would fail with an error about failing to encrypt the packet.
+* Fixed an issue when using secure WebSockets where the stream would become corrupted, resulting in failure to decrypt packets (and eventually potentially a crash of the server).
+
 ## [2.0.0-exp.6] - 2022-09-02
 
 ### Fixes
-* Fixed changelog. 
+* Fixed changelog.
 
 ## [2.0.0-exp.5] - 2022-09-01
 
@@ -136,6 +162,151 @@
 * Update all `new NetworkDriver()` usages to `NetworkDriver.Create()`.
 * For custom implementations of `INetworkInterface` that are managed types, use the `INetworkInterface.WrapToUnmanaged()` configuring the `NetworkDriver`.
 * For custom implementations of `INetworkInterface`: Remove `CreateInterfaceEndPoint` and `GetGenericEndPoint` implementations and update `NetworkInterfaceEndPoint` usages to `NetworkEndPoint`.
+
+## [1.3.0] - 2022-09-27
+
+### New features
+* It is now possible to obtain `RelayAllocationId`, `RelayConnectionData`, and `RelayHMACKey` structures from byte arrays using their static `FromByteArray` method.
+* A new constructor for `RelayServerData` is now provided with argument types that better match those available in the models returned by the Relay SDK. The "RelayPing" sample has been updated to use this constructor.
+* New constructors for `RelayServerData` are now provided with argument types that better match those available in the models returned by the Relay SDK. The "RelayPing" sample has been updated to use them constructor.
+* `NetworkSettings` now has a `IsCreated` property which can be used to check if it's been disposed of or not.
+* New versions of `NetworkSettings.WithSecureClientParameters` and `NetworkSettins.WithSecureServerParameters` are provided that take strings as parameters instead of references to fixed strings. The older versions are still available and fully supported.
+* A new version of `NetworkSettings.WithSecureClientParameters` is provided that only takes the server name as a parameter. This can be used when the server is using certificates from a recognized CA.
+
+### Changes
+* A warning is now emitted if binding to a port where another application is listening. The binding operation still succeeds in that scenario, but this will fail in Unity Transport 2.0 (which disables address reuse on the sockets used by the default interface).
+* The constructor for `RelayServerData` that was taking strings for the allocation ID, connection data, and key is now deprecated. Use the new constructor (see above) or the existing lower-level constructor instead.
+* The `RelayServerData.ComputeNewNonce` method is now deprecated. One can provide a custom nonce using the "low level" constructor of `RelayServerData`. The new constructor will select a new one automatically.
+* If using Relay, it is now possible to call `Connect` without an endpoint (the endpoint would be ignored anyway). This extension to `NetworkDriver` is provided in the `Unity.Networking.Transport.Relay` namespace.
+
+### Fixes
+* Fixed a possible stack overflow if the receive or send queue parameters were configured with very large values (>15,000).
+* Prevented an issue where a warning about having too many pipeline updates would be spammed after a connection was closed.
+* Fixed an issue where a duplicated reliable packet wouldn't be processed correctly, which could possibly lead to the entire reliable pipeline stage stalling (not being able to send new packets).
+* Fixed an issue where pipeline updates would be run too many times, which would waste CPU and could lead to the warning about having too many pipeline updates being erroneously logged.
+* Fixed issues with `ReliableSequencePipelineStage` that would, in rare circumstances, lead to failure to deliver a reliable packet.
+
+## [1.2.0] - 2022-08-10
+
+### New features
+* If using the default network interface, the transport will attempt to transparently recreate the underlying network socket if it fails. This should increase robustness, especially on mobile where the OS might close sockets when an application is sent to the background.
+
+### Changes
+* A new `NetworkSocketError` value has been added to `Error.StatusCode`. This will be returned through `NetworkDriver.ReceiveErrorCode` when the automatic socket recreation mentioned above has failed (indicating an unrecoverable network failure).
+
+### Fixes
+* On iOS, communications will restart correctly if the application was in the background. Note that if using Relay, it's still possible for the allocation to have timed out while in the background. Recreation of a new allocation with a new `NetworkDriver` is still required in that scenario.
+* Fixed a possible stack overflow if the receive queue parameter was configured with a very large value (>10,000).
+
+## [1.1.0] - 2022-06-14
+
+### New features
+* A `DataStreamReader` can now be passed to another job without triggering the job safety system.
+* A `GetRelayConnectionStatus` method has been added to `NetworkDriver` to query the status of the connection to the Relay server.
+
+### Changes
+* `NetworkSettings.WithDataStreamParameters` is now obsolete. The functionality still works and will remain supported for version 1.X of the package, but will be removed in version 2.0. The reason for the removal is that in 2.0 the data stream size is always dynamically-sized to avoid out-of-memory errors.
+* `NetworkSettings.WithPipelineParameters` is now obsolete. The functionality still works and will remain supported for version 1.X of the package, but will be removed in version 2.0, where pipeline buffer sizing is handled internally.
+* Updated Burst dependency to 1.6.6.
+* Updated Collections dependency to 1.2.4.
+* Updated Mathematics dependency to 1.2.6.
+
+### Fixes
+* `BeginSend` would not return an error if called on a closed connection before the next `ScheduleUpdate` call.
+* Fixed a warning if using the default maximum payload size with DTLS.
+* Removed an error log when receiving messages on a closed DTLS connection (this scenario is common if there were in-flight messages at the moment of disconnection).
+* Fix broken link in package documentation.
+
+## [1.0.0] - 2022-03-28
+
+### Changes
+* Changed version to 1.0.0.
+
+## [1.0.0-pre.16] - 2022-03-24
+
+### Changes
+* Don't warn when overwriting settings in `NetworkSettings` (e.g. when calling the same `WithFooParameters` method twice).
+* Added new methods to set security parameters: `NetworkSettings.WithSecureClientParameters` and `NetworkSettings.WithSecureServerParameters`. These replace the existing `WithSecureParameters`, which is now obsolete.
+* Updated Collections dependency to 1.2.3.
+
+### Fixes
+* Fixed client certificate not being passed to UnityTLS on secure connections. This prevented client authentication from properly working.
+* Fixed: Reliable pipeline drop statistics inaccurate.
+
+## [1.0.0-pre.15] - 2022-03-11
+
+### Changes
+* An error is now logged if failing to decrypt a DTLS message when using Relay.
+* Decreased default Relay keep-alive period to 3 seconds (was 9 seconds). The value can still be configured through the `relayConnectionTimeMS` parameter of `NetworkSettings.WithRelayParameters`.
+
+### Fixes
+* Updated Relay sample to the most recent Relay SDK APIs (would fail to compile with latest packages).
+
+## [1.0.0-pre.14] - 2022-03-01
+
+### Changes
+* `IValidatableNetworkParameter.Validate()` method is now part of `INetworkParameter`.
+* Added: `NetworkDriver.Create<>()` generic methods.
+
+### Fixes
+* Fixed compilation on WebGL. Note that the platform is still unsupported, but at least including the package in a WebGL project will not create compilation errors anymore. Creating a `NetworkDriver` in WebGL projects will now produce a warning.
+
+## [1.0.0-pre.13] - 2022-02-14
+
+### New features
+* When using the Relay protocol, error messages sent by the Relay server are now properly captured and logged.
+
+### Fixes
+* Fixed: Issue where an overflow of the `ReliableSequencedPipelineStage` sequence numbers would not be handled properly.
+
+## [1.0.0-pre.12] - 2022-01-24
+
+### Fixes
+* Clean up changelog for package promotion.
+
+## [1.0.0-pre.11] - 2022-01-24
+
+### Changes
+* Updated to Burst 1.6.4.
+* Updated to Mathematics 1.2.5.
+* Documentation has been moved to the [offical multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/1.0.0/introduction).
+
+### Fixes
+* Fixed a division by zero in `SimulatorPipelineStage` when `PacketDropInterval` is set.
+* Don't warn when receiving repeated connection accept messages (case 1370591).
+* Fixed an exception when receiving a data message from an unknown connection.
+
+## [1.0.0-pre.10] - 2021-12-02
+
+### Fixes
+* On fragmented and reliable pipelines, sending a large packet when the reliable window was almost full could result in the packet being lost.
+* Fixed "pending sends" warning being emitted very often when sending to remote hosts.
+* Revert decrease of MTU to 1384 on Xbox platforms (now back at 1400). It would cause issues for cross-platform communications.
+
+## [1.0.0-pre.9] - 2021-11-26
+
+### Changes
+* Disabled Roslyn Analyzers provisionally
+
+### Fixes
+* Fixed: Compiler error due to Roslyn Analyzers causing a wrong compiler argument
+
+## [1.0.0-pre.8] - 2021-11-18
+
+### Changes
+* Creating a pipeline with `FragmentationPipelineStage` _after_ `ReliableSequencedPipelineStage` is now forbidden (will throw an exception if collections checks are enabled). That order never worked properly to begin with. The reverse order is fully supported and is the recommended way to configure a reliable pipeline with support for large packets.
+* Added `NetworkSettings` struct and API for defining network parameters. See [NetworkSettings documentation](https://docs-multiplayer.unity3d.com/transport/1.0.0/network-settings) for more information.
+* Added Roslyn Analyzers for ensuring proper extension of NetworkParameters and NetworkSettings API.
+* Update Collections package to 1.1.0
+
+### Fixes
+* Fixed: Error message when scheduling an update on an unbound `NetworkDriver` (case 1370584)
+* Fixed: `BeginSend` wouldn't return an error if the required payload size was larger than the supported payload size when close to the MTU
+* Fixed: Removed boxing in `NetworkDriver` initialization by passing `NetworkSettings` parameter instead of `INetworkParameter[]`
+* Fixed a crash on XboxOne(X/S) when using the fragmentation pipeline (case 1370473)
+
+### Upgrade guide
+* `INetworkPipelineStage` and `INetworkInterface` initialization methods now receive a `NetworkSettings` parameter instead of `INetworkParameter[]`.
 
 ## [1.0.0-pre.7] - 2021-10-21
 
