@@ -1,4 +1,5 @@
 using Unity.Collections;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
@@ -13,7 +14,7 @@ namespace Unity.Networking.Transport
             if (Label.IsEmpty)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"The NetworkDriver identifier must be not empty");
+                DebugLog.LogError($"The NetworkDriver identifier must be not empty");
             }
 
             return valid;

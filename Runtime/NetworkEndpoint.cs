@@ -5,6 +5,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Baselib;
 using Unity.Baselib.LowLevel;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
 using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 
@@ -95,7 +96,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException("Bad input length for given address family.");
 #else
-                UnityEngine.Debug.LogError("Bad input length for given address family.");
+                DebugLog.LogError("Bad input length for given address family.");
                 return;
 #endif
             }

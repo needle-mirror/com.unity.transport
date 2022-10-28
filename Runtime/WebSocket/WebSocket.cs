@@ -4,16 +4,17 @@ using System;
 using System.Diagnostics;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
     internal static class WebSocket
     {
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) =>  UnityEngine.Debug.LogWarning(msg);
+        static void Warn(string msg) => DebugLog.LogWarning(msg);
 
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void WarnIf(bool condition, string msg) { if (condition) UnityEngine.Debug.LogWarning(msg); }
+        static void WarnIf(bool condition, string msg) { if (condition) DebugLog.LogWarning(msg); }
 
         public enum Opcode
         {

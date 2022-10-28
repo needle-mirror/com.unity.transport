@@ -1,6 +1,8 @@
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
@@ -46,12 +48,49 @@ namespace Unity.Networking.Transport
             public void Execute()
             {
                 var count = Queue.Count;
+                if (count == 0) return;
+                
+                var buffer = new UnsafeText(4096, Allocator.Temp);
+
                 for (int i = 0; i < count; i++)
                 {
                     var packetProcessor = Queue[i];
 
                     if (packetProcessor.Length <= 0)
                         continue;
+                    
+#if USE_UNITY_LOGGING
+                    
+                    static FormatError GetDataAsText<T>(ref T buffer, ref PacketProcessor packetProcessor) where T : unmanaged, INativeList<byte>, IUTF8Bytes
+                    {
+                        var length = packetProcessor.Length;
+                        for (var i = 0; i < length; i++)
+                        {
+                            if (buffer.AppendHex2(packetProcessor.GetPayloadDataRef<byte>(i)) == FormatError.Overflow)
+                                return FormatError.Overflow;
+                            if (buffer.Append(' ') == FormatError.Overflow)
+                                return FormatError.Overflow;
+                        }
+                        return FormatError.None;
+                    }
+
+                    buffer.Length = 0;
+                    GetDataAsText(ref buffer, ref packetProcessor);
+                    
+                    Unity.Logging.Log.Info("{Label} {BytesCount} bytes [Endpoint: {Endpoint}]: {Data}", Label, packetProcessor.Length, packetProcessor.EndpointRef.ToFixedString(), buffer);
+#else
+                    static bool AppendPayload(ref FixedString4096Bytes str, ref PacketProcessor packetProcessor)
+                    {
+                        var length = packetProcessor.Length;
+                        for (var i = 0; i < length; i++)
+                        {
+                            if (str.AppendHex2(packetProcessor.GetPayloadDataRef<byte>(i)) == FormatError.Overflow)
+                                return false;
+                            if (str.Append(' ') == FormatError.Overflow)
+                                return false;
+                        }
+                        return true;
+                    }
 
                     var str = new FixedString4096Bytes(Label);
                     str.Append(FixedString.Format(" {0} bytes [Endpoint: {1}]: ", packetProcessor.Length, packetProcessor.EndpointRef.ToFixedString()));
@@ -64,22 +103,8 @@ namespace Unity.Networking.Transport
                         UnityEngine.Debug.Log(str);
                         UnityEngine.Debug.Log("Message truncated");
                     }
+#endif
                 }
-            }
-
-            private bool AppendPayload(ref FixedString4096Bytes str, ref PacketProcessor packetProcessor)
-            {
-                var length = packetProcessor.Length;
-                for (int i = 0; i < length; i++)
-                {
-                    var payloadStr = FixedString.Format("{0:X2} ", packetProcessor.GetPayloadDataRef<byte>(i));
-
-                    if (str.Capacity - str.Length < payloadStr.Length)
-                        return false;
-
-                    str.Append(payloadStr);
-                }
-                return true;
             }
         }
     }

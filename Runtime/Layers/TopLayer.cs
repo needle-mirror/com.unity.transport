@@ -2,6 +2,7 @@ using System;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
@@ -65,7 +66,7 @@ namespace Unity.Networking.Transport
                 }
 
                 if (Receiver.ReceiveQueue.Count == Receiver.ReceiveQueue.Capacity)
-                    UnityEngine.Debug.LogWarning($"Receive queue is full, some packets could be dropped, consider increase its size ({Receiver.ReceiveQueue.Capacity}).");
+                    DebugLog.ReceiveQueueIsFull(Receiver.ReceiveQueue.Capacity);
 
                 Receiver.ReceiveQueue.Clear();
 
@@ -77,7 +78,7 @@ namespace Unity.Networking.Transport
                 if (packetProcessor.ConnectionRef == default)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    UnityEngine.Debug.LogError("Received a data event for a null connection. Ignoring.");
+                    DebugLog.LogError("Received a data event for a null connection. Ignoring.");
 #endif
                     return;
                 }

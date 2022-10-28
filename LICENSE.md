@@ -1,4 +1,4 @@
-Unity Transport Package © 2018 Unity Technologies
+Unity Transport Package © 2018-2022 Unity Technologies
 
 Licensed under the Unity Companion License for Unity-dependent projects (see https://unity3d.com/legal/licenses/unity_companion_license).
 

@@ -8,7 +8,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-
+using Unity.Networking.Transport.Logging;
 using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 using ErrorCode = Unity.Baselib.LowLevel.Binding.Baselib_ErrorCode;
 
@@ -31,7 +31,7 @@ namespace Unity.Networking.Transport
     internal struct TCPNetworkInterface : INetworkInterface
     {
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) =>  UnityEngine.Debug.LogWarning(msg);
+        static void Warn(string msg) => DebugLog.LogWarning(msg);
 
         static readonly NetworkSocket InvalidSocket = Binding.Baselib_Socket_Handle_Invalid;
 

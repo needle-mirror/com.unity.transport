@@ -9,6 +9,8 @@ using Unity.Jobs;
 using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 using ErrorCode = Unity.Baselib.LowLevel.Binding.Baselib_ErrorCode;
 using Unity.Mathematics;
+using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -152,7 +154,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException($"The required buffer size ({metadataSize + payloadSize + endpointSize}) does not fit in the allocated send buffers ({m_SendBuffers.ElementSize})");
 #else
-                UnityEngine.Debug.LogError($"The required buffer size ({metadataSize + payloadSize + endpointSize}) does not fit in the allocated send buffers ({m_SendBuffers.ElementSize})");
+                DebugLog.ErrorCreateQueueWrongSendSize(metadataSize + payloadSize + endpointSize, m_SendBuffers.ElementSize);
 #endif
             }
 
@@ -161,7 +163,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException($"The required buffer size ({metadataSize + payloadSize + endpointSize}) does not fit in the allocated receive buffers ({m_ReceiveBuffers.ElementSize})");
 #else
-                UnityEngine.Debug.LogError($"The required buffer size ({metadataSize + payloadSize + endpointSize}) does not fit in the allocated receive buffers ({m_ReceiveBuffers.ElementSize})");
+                DebugLog.ErrorCreateQueueWrongReceiveSize(metadataSize + payloadSize + endpointSize, m_ReceiveBuffers.ElementSize);
 #endif
             }
         }
@@ -192,14 +194,6 @@ namespace Unity.Networking.Transport
             m_ReceiveBuffers.Dispose();
 
             m_InternalState.Dispose();
-        }
-
-        private static unsafe FixedString512Bytes GetBaselibErrorMessage(ErrorState error)
-        {
-            FixedString512Bytes errorMessage = new FixedString512Bytes();
-            errorMessage.Length = (int)Binding.Baselib_ErrorState_Explain(&error, errorMessage.GetUnsafePtr(), (uint)errorMessage.Capacity, Binding.Baselib_ErrorState_ExplainVerbosity.ErrorType_SourceLocation_Explanation);
-
-            return errorMessage;
         }
 
         // TODO: Remove once baselib api is fully burst compatible
@@ -264,7 +258,7 @@ namespace Unity.Networking.Transport
 
                     if (error.code != ErrorCode.Success)
                     {
-                        UnityEngine.Debug.LogError(string.Format("Error on baselib scheduling send ({0}): {1}", error.code, GetBaselibErrorMessage(error)));
+                        DebugLog.ErrorBaselib("Schedule Send", error);
                         MarkSocketAsNeedingRecreate(ref InternalState);
                         return;
                     }
@@ -282,7 +276,7 @@ namespace Unity.Networking.Transport
                         var status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(socket, &error);
                         if (error.code != ErrorCode.Success)
                         {
-                            UnityEngine.Debug.LogError(string.Format("Error on baselib processing send ({0})", error.code));
+                            DebugLog.ErrorBaselib("Processing Send", error);
                             MarkSocketAsNeedingRecreate(ref InternalState);
                             return;
                         }
@@ -322,7 +316,7 @@ namespace Unity.Networking.Transport
                 {
                     if (error.code != ErrorCode.Success)
                     {
-                        UnityEngine.Debug.LogError(string.Format("Error on baselib dequeueing send ({0})", error.code));
+                        DebugLog.ErrorBaselib("Dequeue Send", error);
                         MarkSocketAsNeedingRecreate(ref InternalState);
                         return totalDequeued;
                     }
@@ -343,7 +337,7 @@ namespace Unity.Networking.Transport
                     }
 
                     if (failedCount > 0)
-                        UnityEngine.Debug.LogWarning(string.Format("Baselib failed to send {0} packets", failedCount));
+                        DebugLog.BaselibFailedToSendPackets(failedCount);
 #endif
 
                     if (resultBatchesCount-- < 0) // Deadlock guard, this should never happen
@@ -351,7 +345,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                         throw new Exception("Trying to dequeue more packets than the actual sent count in baselib.");
 #else
-                        UnityEngine.Debug.LogError("Trying to dequeue more packets than the actual sent count in baselib.");
+                        DebugLog.LogError("Trying to dequeue more packets than the actual sent count in baselib.");
                         break;
 #endif
                     }
@@ -424,7 +418,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (status == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
                 {
-                    UnityEngine.Debug.LogWarning("There are pending receive packets after the baselib process receive");
+                    DebugLog.LogWarning("There are pending receive packets after the baselib process receive");
                 }
 #endif
 
@@ -464,7 +458,7 @@ namespace Unity.Networking.Transport
                         if (!ReceiveQueue.EnqueuePacket(bufferIndex, out var packetProcessor))
                         {
                             Result.ErrorCode = (int)Error.StatusCode.NetworkReceiveQueueFull;
-                            UnityEngine.Debug.LogError("Could not enqueue received packet.");
+                            DebugLog.LogError("Could not enqueue received packet.");
                             return;
                         }
 
@@ -491,7 +485,7 @@ namespace Unity.Networking.Transport
                 if (totalCount > 0 && totalCount == failedCount)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    UnityEngine.Debug.LogError("All socket receive requests were marked as failed, likely because socket itself has failed.");
+                    DebugLog.LogError("All socket receive requests were marked as failed, likely because socket itself has failed.");
 #endif
                     MarkSocketAsNeedingRecreate(ref InternalState);
                 }
@@ -634,12 +628,12 @@ namespace Unity.Networking.Transport
             // likely won't solve the issue. Just fail the socket in that scenario.
             if (state.LastSocketRecreateTime == state.LastUpdateTime || state.NumSocketRecreate >= k_MaxNumSocketRecreate)
             {
-                UnityEngine.Debug.LogError("Unrecoverable socket failure. An unknown condition is preventing the application from reliably creating sockets.");
+                DebugLog.LogError("Unrecoverable socket failure. An unknown condition is preventing the application from reliably creating sockets.");
                 state.SocketStatus = SocketStatus.SocketFailed;
             }
             else
             {
-                UnityEngine.Debug.LogWarning("Socket error encountered; attempting recovery by creating a new one.");
+                DebugLog.LogWarning("Socket error encountered; attempting recovery by creating a new one.");
                 state.LastSocketRecreateTime = updateTime;
                 state.NumSocketRecreate++;
 
@@ -684,7 +678,7 @@ namespace Unity.Networking.Transport
 
             if (error.code != (int)ErrorCode.Success)
             {
-                UnityEngine.Debug.LogError(string.Format("Error creating registered enpoint: {0}", GetBaselibErrorMessage(error)));
+                DebugLog.ErrorBaselib("Create Registered Endpoint", error);
                 return false;
             }
 
@@ -705,7 +699,7 @@ namespace Unity.Networking.Transport
 
             if (error.code != (int)ErrorCode.Success)
             {
-                UnityEngine.Debug.LogError(string.Format("Error creating registered enpoint: {0}", GetBaselibErrorMessage(error)));
+                DebugLog.ErrorBaselib("Create Registered Endpoint", error);
                 return false;
             }
 
@@ -761,7 +755,7 @@ namespace Unity.Networking.Transport
                 if (error.code != ErrorCode.Success)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    UnityEngine.Debug.LogError($"Baselib failed to schedule receive ({error}):\n\t{GetBaselibErrorMessage(error)}");
+                    DebugLog.ErrorBaselib("Schedule Receive", error);
 #endif
                     return (int)error.code == -1 ? (int)Error.StatusCode.NetworkSocketError : -(int)error.code;
                 }

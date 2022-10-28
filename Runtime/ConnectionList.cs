@@ -1,5 +1,6 @@
 using System;
 using Unity.Collections;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
@@ -153,7 +154,7 @@ namespace Unity.Networking.Transport
 
             if (connectionData.State != NetworkConnection.State.Connecting)
             {
-                UnityEngine.Debug.LogWarning(string.Format("Attempting to complete a connection with state '{0}'", connectionData.State));
+                DebugLog.ConnectionCompletingWrongState(connectionData.State);
                 return;
             }
 
@@ -169,7 +170,7 @@ namespace Unity.Networking.Transport
             var connectionState = GetConnectionState(connectionId);
             if (connectionState != NetworkConnection.State.Connected)
             {
-                UnityEngine.Debug.LogWarning(string.Format("Attempting to accept a connection ({0}) with state '{1}'", connectionId, connectionState));
+                DebugLog.ConnectionAcceptWrongState(connectionId, connectionState);
                 return default;
             }
 
@@ -200,7 +201,7 @@ namespace Unity.Networking.Transport
             if (connectionData.State == NetworkConnection.State.Disconnected ||
                 connectionData.State == NetworkConnection.State.Disconnecting)
             {
-                UnityEngine.Debug.LogWarning("Attempting to disconnect an already disconnected connection");
+                DebugLog.LogWarning("Attempting to disconnect an already disconnected connection");
                 return;
             }
 
@@ -226,7 +227,7 @@ namespace Unity.Networking.Transport
 
             if (connectionData.State != NetworkConnection.State.Disconnecting)
             {
-                UnityEngine.Debug.LogWarning(string.Format("Attempting to complete a disconnection with state different to Disconnecting ({0})", connectionData.State));
+                DebugLog.ConnectionFinishWrongState(connectionData.State);
                 return;
             }
 

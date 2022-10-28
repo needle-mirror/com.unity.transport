@@ -6,6 +6,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Unity.Networking.Transport.Logging;
 using BurstRuntime = Unity.Burst.BurstRuntime;
 using static Unity.Networking.Transport.NetworkPipelineStage;
 
@@ -266,7 +267,7 @@ namespace Unity.Networking.Transport
                 if (Interlocked.CompareExchange(ref *sendBufferLock, 1, 0) != 0)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    UnityEngine.Debug.LogError("The parallel network driver needs to process a single unique connection per job, processing a single connection multiple times in a parallel for is not supported.");
+                    DebugLog.LogError("The parallel network driver needs to process a single unique connection per job, processing a single connection multiple times in a parallel for is not supported.");
                     return (int)Error.StatusCode.NetworkDriverParallelForErr;
 #else
                     return (int)Error.StatusCode.NetworkDriverParallelForErr;
@@ -326,7 +327,7 @@ namespace Unity.Networking.Transport
                     {
                         if (inboundBuffer.bufferWithHeadersLength > 0)
                         {
-                            UnityEngine.Debug.LogError("Can't start from a stage with a buffer");
+                            DebugLog.LogError("Can't start from a stage with a buffer");
                             return (int)Error.StatusCode.NetworkStateMismatch;
                         }
                         for (int i = 0; i < startStage; ++i)
@@ -431,7 +432,7 @@ namespace Unity.Networking.Transport
                             sendHandle.size = sendSize;
                             if ((retval = driver.CompleteSend(connection, sendHandle, true)) < 0)
                             {
-                                UnityEngine.Debug.LogWarning(FixedString.Format("CompleteSend failed with the following error code: {0}", retval));
+                                DebugLog.PipelineCompleteSendFailed(retval);
                             }
                             sendHandle = default;
                         }
@@ -448,7 +449,7 @@ namespace Unity.Networking.Transport
 
                                 if ((retval = driver.EndSend(writer)) <= 0)
                                 {
-                                    UnityEngine.Debug.Log(FixedString.Format("An error occurred during EndSend. ErrorCode: {0}", retval));
+                                    DebugLog.PipelineEndSendFailed(retval);
                                 }
                             }
                         }
@@ -858,7 +859,7 @@ namespace Unity.Networking.Transport
                 var result = ToConcurrent().ProcessPipelineSend(driver, updateItem.stage, updateItem.pipeline, updateItem.connection, default, 0, currentUpdates);
                 if (result < 0)
                 {
-                    UnityEngine.Debug.LogWarning(FixedString.Format("ProcessPipelineSend failed with the following error code {0}.", result));
+                    DebugLog.PipelineProcessSendFailed(result);
                 }
             }
             for (int i = 0; i < currentUpdates.Length; ++i)
@@ -908,8 +909,7 @@ namespace Unity.Networking.Transport
         {
             if (pipelineId == 0 || pipelineId > m_Pipelines.Length)
             {
-                UnityEngine.Debug.LogError(
-                    $"Received a packet with an invalid pipeline ({pipelineId}, should be between 1 and {m_Pipelines.Length}). Possible mismatch between pipeline definitions on each end of the connection.");
+                DebugLog.ErrorPipelineReceiveInvalid(pipelineId, m_Pipelines.Length);
                 return;
             }
             var p = m_Pipelines[pipelineId - 1];

@@ -225,6 +225,17 @@ namespace Unity.Networking.Transport.Utilities
             }
             return err != FormatError.None ? FormatError.Overflow : FormatError.None;
         }
+        
+        public static FormatError AppendHex2<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
+        {
+            if (val <= 0xf)
+            {
+                if (str.Append('0') == FormatError.Overflow)
+                    return FormatError.Overflow;
+            }
+
+            return str.AppendHex(val);
+        }
     }
 
     public static class NativeListExt

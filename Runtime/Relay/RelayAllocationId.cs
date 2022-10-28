@@ -1,5 +1,6 @@
 using System;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport.Relay
 {
@@ -23,11 +24,11 @@ namespace Unity.Networking.Transport.Relay
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"Provided byte array length is invalid, must be {k_Length} but got {length}.");
 #else
-                UnityEngine.Debug.LogError($"Provided byte array length is invalid, must be {k_Length} but got {length}.");
+                DebugLog.ErrorRelayWrongBufferSize(k_Length, length);
                 return default;
 #endif
             }
-
+            
             var allocationId = new RelayAllocationId();
             UnsafeUtility.MemCpy(allocationId.Value, dataPtr, k_Length);
             return allocationId;
@@ -105,7 +106,7 @@ namespace Unity.Networking.Transport.Relay
         }
     }
 
-    internal static class RellayAllocationIdExtensions
+    internal static class RelayAllocationIdExtensions
     {
         public static unsafe ref RelayAllocationId AsRelayAllocationId(this ref NetworkEndpoint address)
         {

@@ -146,6 +146,16 @@ namespace Unity.Networking.Transport
             return length;
         }
 
+        public bool HasDataAvailable(NetworkEndpoint localEndpoint)
+        {
+            CompleteManagerAccess();
+
+            if (!GetChannelByEndpoint(ref localEndpoint, out var localChannel))
+                return false;
+
+            return m_IPCQueue.Peek(localChannel, out _);
+        }
+
         public unsafe int ReceiveMessageEx(NetworkEndpoint local, void* payloadData, int payloadLen, ref NetworkEndpoint remote)
         {
             if (!GetChannelByEndpoint(ref local, out var localChannel))

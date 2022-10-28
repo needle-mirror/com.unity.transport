@@ -3,17 +3,10 @@ using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport.Utilities
 {
-    public struct SequenceBufferContext
-    {
-        public int Sequence;
-        public int Acked;
-        public uint AckMask;
-        public uint LastAckMask;
-    }
-
     public static class ReliableStageParameterExtensions
     {
         private const int k_DefaultWindowSize = 32;
@@ -80,6 +73,10 @@ namespace Unity.Networking.Transport.Utilities
         public const int DefaultMinimumResendTime = 64;
         public const int MaximumResendTime = 200;
 
+        // If we receive 3 duplicates AFTER our last send, then it's more likely that one of our
+        // ACKs was lost and the remote is trying to resend us a packet we won't acknowledge.
+        internal const int MaxDuplicatesSinceLastAck = 3;
+
         public enum ErrorCodes
         {
             Stale_Packet = -1,
@@ -95,6 +92,14 @@ namespace Unity.Networking.Transport.Utilities
             Ack = 1
         }
 
+        public struct SequenceBufferContext
+        {
+            public int Sequence;
+            public int Acked;
+            public uint AckMask;
+            public uint LastAckMask;
+        }
+
         public struct SharedContext
         {
             public int WindowSize;
@@ -106,11 +111,15 @@ namespace Unity.Networking.Transport.Utilities
             /// is needed.
             /// </summary>
             public SequenceBufferContext SentPackets;
+
             /// <summary>
             /// Context of received packets, last sequence ID received, and ackmask of received packets. Acked is not used.
             /// This is sent back to the remote peer in the header when sending.
             /// </summary>
             public SequenceBufferContext ReceivedPackets;
+
+            internal int DuplicatesSinceLastAck;
+
             public Statistics stats;
             public ErrorCodes errorCode;
 
@@ -146,7 +155,7 @@ namespace Unity.Networking.Transport.Utilities
                 if (WindowSize < 0 || WindowSize > 32)
                 {
                     valid = false;
-                    UnityEngine.Debug.LogError($"{nameof(WindowSize)} value ({WindowSize}) must be greater than 0 and smaller or equal to 32");
+                    DebugLog.ErrorReliableWindowSize(WindowSize);
                 }
 
                 return valid;
@@ -590,6 +599,7 @@ namespace Unity.Networking.Transport.Utilities
 
             reliable->ReceivedPackets.Acked = reliable->ReceivedPackets.Sequence;
             reliable->ReceivedPackets.LastAckMask = header.AckMask;
+            reliable->DuplicatesSinceLastAck = 0;
 
             // Attach our processing time of the packet we're acknowledging (time between receiving it and sending this ack)
             header.ProcessingTime =
@@ -621,6 +631,7 @@ namespace Unity.Networking.Transport.Utilities
                 CalculateProcessingTime(context.internalSharedProcessBuffer, header.AckedSequenceId, context.timestamp);
             reliable->ReceivedPackets.Acked = reliable->ReceivedPackets.Sequence;
             reliable->ReceivedPackets.LastAckMask = header.AckMask;
+            reliable->DuplicatesSinceLastAck = 0;
         }
 
         internal static unsafe void StoreTimestamp(byte* sharedBuffer, ushort sequenceId, long timestamp)
@@ -806,10 +817,12 @@ namespace Unity.Networking.Transport.Utilities
 
             // If more than one full frame (timestamp - prevTimestamp = one frame) has elapsed then send ack packet
             // and if the last received sequence ID has not been acked yet, or the set of acked packet in the window
-            // changed without the sequence ID updating (can happen when receiving out of order packets)
+            // changed without the sequence ID updating (can happen when receiving out of order packets), or we've
+            // received a lot of duplicates since last sending a ACK.
             if (reliable->LastSentTime < reliable->PreviousTimestamp &&
                 (SequenceHelpers.LessThan16((ushort)shared->ReceivedPackets.Acked, (ushort)shared->ReceivedPackets.Sequence) ||
-                 shared->ReceivedPackets.AckMask != shared->ReceivedPackets.LastAckMask))
+                 shared->ReceivedPackets.AckMask != shared->ReceivedPackets.LastAckMask ||
+                 shared->DuplicatesSinceLastAck >= MaxDuplicatesSinceLastAck))
                 return true;
             return false;
         }

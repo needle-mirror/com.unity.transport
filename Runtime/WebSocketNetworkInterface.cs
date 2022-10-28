@@ -17,7 +17,6 @@ namespace Unity.Networking.Transport
         public NetworkEndpoint LocalEndpoint => tcp.LocalEndpoint;
 
         internal ConnectionList CreateConnectionList() => tcp.CreateConnectionList();
-
         public int Initialize(ref NetworkSettings settings, ref int packetPadding) => tcp.Initialize(ref settings, ref packetPadding);
         public int Bind(NetworkEndpoint endpoint) => tcp.Bind(endpoint);
         public int Listen() => tcp.Listen();
@@ -36,13 +35,14 @@ using System.Runtime.InteropServices;
 
 using Unity.Collections;
 using Unity.Jobs;
-
+using Unity.Networking.Transport.Logging;
+using Unity.Networking.Transport.Relay;
 namespace Unity.Networking.Transport
 {
     public struct WebSocketNetworkInterface : INetworkInterface
     {
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) =>  UnityEngine.Debug.LogWarning(msg);
+        static void Warn(string msg) =>  DebugLog.LogWarning(msg);
 
         private const string DLL = "__Internal";
 
@@ -72,7 +72,8 @@ namespace Unity.Networking.Transport
             public int ConnectTimeoutMS;            // maximum time to wait for a connection to complete
             public int MaxConnectAttempts;          // maximum number of connect retries
 
-            // If using TLS, connections are made to the endpoint provided in the secure parameters.
+            // If non-empty, will connect to this hostname with the wss:// protocol. Otherwise the
+            // IP address of the endpoint is used to connect with the ws:// protocol.
             public FixedString512Bytes SecureHostname;
         }
 
@@ -111,7 +112,13 @@ namespace Unity.Networking.Transport
             packetPadding += 14;
 
             var secureHostname = new FixedString512Bytes();
+            if (settings.TryGet<RelayNetworkParameter>(out var relayParams) && relayParams.ServerData.IsSecure != 0)
+                secureHostname.CopyFrom(relayParams.ServerData.HostString);
+
 #if ENABLE_MANAGED_UNITYTLS
+            // Shouldn't be required for normal use cases but is provided as an out in case the user
+            // wants to override the hostname (useful if say the user ended up resolving the Relay's
+            // hostname on their own instead of providing it directly in the Relay parameters).
             if (settings.TryGet<TLS.SecureNetworkProtocolParameter>(out var secureParams))
                 secureHostname.CopyFrom(secureParams.Hostname);
 #endif

@@ -1,5 +1,6 @@
 using System;
 using Unity.Networking.Transport;
+using Unity.Networking.Transport.Logging;
 using UnityEngine;
 
 namespace Unity.Networking.Transport.Relay
@@ -18,7 +19,7 @@ namespace Unity.Networking.Transport.Relay
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException("Can't call GetRelayConnectionStatus when not using the Relay.");
 #else
-                Debug.LogError("Can't call GetRelayConnectionStatus when not using the Relay.");
+                DebugLog.LogError("Can't call GetRelayConnectionStatus when not using the Relay.");
                 return RelayConnectionStatus.NotEstablished;
 #endif
             }
@@ -38,7 +39,7 @@ namespace Unity.Networking.Transport.Relay
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException("Can't call Connect without an endpoint when not using the Relay.");
 #else
-                Debug.LogError("Can't call Connect without an endpoint when not using the Relay.");
+                DebugLog.LogError("Can't call Connect without an endpoint when not using the Relay.");
                 return default;
 #endif
             }

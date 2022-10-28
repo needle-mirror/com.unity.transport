@@ -5,6 +5,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
@@ -12,10 +13,10 @@ namespace Unity.Networking.Transport
     internal struct WebSocketLayer : INetworkLayer
     {
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) =>  UnityEngine.Debug.LogWarning(msg);
+        static void Warn(string msg) =>  DebugLog.LogWarning(msg);
 
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void WarnIf(bool condition, string msg) { if (condition) UnityEngine.Debug.LogWarning(msg); }
+        static void WarnIf(bool condition, string msg) { if (condition) DebugLog.LogWarning(msg); }
 
         // Maps a connection id from the connection list to its connection data.
         private ConnectionDataMap<ConnectionData> m_ConnectionMap;
@@ -391,7 +392,8 @@ namespace Unity.Networking.Transport
                             var connectionData = ConnectionMap[connectionId];
                             if (connectionData.WebSocketState == WebSocket.State.Open)
                             {
-                                if (!connectionData.IsWaitingForPong && Time - connectionData.ReceiveTimeStamp > Settings.HeartbeatTimeoutMS)
+                                if (Settings.HeartbeatTimeoutMS > 0 && !connectionData.IsWaitingForPong &&
+                                    Time - connectionData.ReceiveTimeStamp > Settings.HeartbeatTimeoutMS)
                                 {
                                     // If there is not enough space in the send buffer we can try again in the
                                     // next schedule, this is not a critial error.

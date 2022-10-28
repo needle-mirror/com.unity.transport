@@ -1,5 +1,6 @@
 using System;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport.Relay
 {
@@ -23,11 +24,11 @@ namespace Unity.Networking.Transport.Relay
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"Provided byte array length is invalid, must be less or equal to {k_Length} but got {length}.");
 #else
-                UnityEngine.Debug.LogError($"Provided byte array length is invalid, must be less or equal to {k_Length} but got {length}.");
+                DebugLog.ErrorRelayWrongBufferSizeLess(k_Length, length);
                 return default;
 #endif
             }
-
+            
             var connectionData = new RelayConnectionData();
             UnsafeUtility.MemCpy(connectionData.Value, dataPtr, length);
             return connectionData;

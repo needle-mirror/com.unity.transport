@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
+using Unity.Networking.Transport.Logging;
 using Random = Unity.Mathematics.Random;
 
 namespace Unity.Networking.Transport.Utilities
@@ -11,8 +12,8 @@ namespace Unity.Networking.Transport.Utilities
     {
         /// <summary>Set the parameters of the simulator pipeline stage.</summary>
         /// <param name="maxPacketCount"><inheritdoc cref="SimulatorUtility.Parameters.MaxPacketCount"/></param>
-        /// <param name="maxPacketSize"><inheritdoc cref="SimulatorUtility.Parameters.MaxPacketSize"/></param>
-        /// <param name="mode"><inheritdoc cref="SimulatorUtility.Parameters.Mode"/></param>
+        /// <param name="maxPacketSize">See <see cref="SimulatorUtility.Parameters.MaxPacketSize"/> for details. Defaults to MTU.</param>
+        /// <param name="mode">Whether to apply simulation to received or sent packets (defaults to both).</param>
         /// <param name="packetDelayMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketDelayMs"/></param>
         /// <param name="packetJitterMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketJitterMs"/></param>
         /// <param name="packetDropInterval"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropInterval"/></param>
@@ -24,8 +25,8 @@ namespace Unity.Networking.Transport.Utilities
         public static ref NetworkSettings WithSimulatorStageParameters(
             ref this NetworkSettings settings,
             int maxPacketCount,
-            int maxPacketSize,
-            ApplyMode mode,
+            int maxPacketSize = NetworkParameterConstants.MTU,
+            ApplyMode mode = ApplyMode.AllPackets,
             int packetDelayMs = 0,
             int packetJitterMs = 0,
             int packetDropInterval = 0,
@@ -82,13 +83,13 @@ namespace Unity.Networking.Transport.Utilities
 
             if (currentParams->MaxPacketCount != newParams.MaxPacketCount)
             {
-                UnityEngine.Debug.LogError("Simulator stage maximum packet count can't be modified.");
+                DebugLog.LogError("Simulator stage maximum packet count can't be modified.");
                 return;
             }
 
             if (currentParams->MaxPacketSize != newParams.MaxPacketSize)
             {
-                UnityEngine.Debug.LogError("Simulator stage maximum packet size can't be modified.");
+                DebugLog.LogError("Simulator stage maximum packet size can't be modified.");
                 return;
             }
 
@@ -99,16 +100,15 @@ namespace Unity.Networking.Transport.Utilities
 
     /// <summary>
     /// Denotes whether or not the <see cref="SimulatorPipelineStage"> should apply to sent or received packets (or both).
-    /// Default is <see cref="ReceivedPacketsOnly"/>.
-    /// As <see cref="SimulatorPipelineStageInSend"/> is deprecated, please change this to <see cref="AllPackets"/>.
-    /// Note: Not a flag enum as the default value should never be "off".
     /// </summary>
     public enum ApplyMode : byte
     {
-        /// <summary>Default to ensure no breaking changes with <see cref="SimulatorPipelineStageInSend"/> deprecation.</summary>
+        // We put received packets first so that the default value will match old behavior.
+        /// <summary>Only apply simulation to received packets.</summary>
         ReceivedPacketsOnly,
+        /// <summary>Only apply simulation to sent packets.</summary>
         SentPacketsOnly,
-        /// <summary>Apply simulation (delay, jitter, packet loss, duplication, fuzz etc) to both sent and received packets. Recommended mode.</summary>
+        /// <summary>Apply simulation to both sent and received packets.</summary>
         AllPackets,
         /// <summary>For runtime toggling.</summary>
         Off,
@@ -343,7 +343,7 @@ namespace Unity.Networking.Transport.Utilities
 
             if (!foundSlot)
             {
-                UnityEngine.Debug.LogWarning($"Simulator has no space left in the delayed packets queue ({param.MaxPacketCount} packets already in queue). Letting packet go through. Increase MaxPacketCount during driver construction.");
+                DebugLog.SimulatorNoSpace(param.MaxPacketCount);
                 return false;
             }
 

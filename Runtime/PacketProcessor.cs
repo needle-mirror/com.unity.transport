@@ -1,6 +1,7 @@
 using System;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
@@ -78,7 +79,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The requested data size ({size}) does not fit at the end of the payload ({BytesAvailableAtEnd} Bytes available)");
 #else
-                UnityEngine.Debug.LogError($"The requested data size ({size}) does not fit at the end of the payload ({BytesAvailableAtEnd} Bytes available)");
+                DebugLog.ErrorPayloadNotFitEndSize(size, BytesAvailableAtEnd);
                 return;
 #endif
             }
@@ -109,7 +110,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The requested data size ({size}) does not fit at the end of the payload ({BytesAvailableAtEnd} Bytes available)");
 #else
-                UnityEngine.Debug.LogError($"The requested data size ({size}) does not fit at the end of the payload ({BytesAvailableAtEnd} Bytes available)");
+                DebugLog.ErrorPayloadNotFitEndSize(size, BytesAvailableAtEnd);
                 return;
 #endif
             }
@@ -131,10 +132,11 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The requested data size ({size}) does not fit at the start of the payload ({BytesAvailableAtStart} Bytes available)");
 #else
-                UnityEngine.Debug.LogError($"The requested data size ({size}) does not fit at the start of the payload ({BytesAvailableAtStart} Bytes available)");
+                DebugLog.ErrorPayloadNotFitStartSize(size, BytesAvailableAtStart);
                 return;
 #endif
             }
+
             UnsafeUtility.MemCpy((byte*)PacketBuffer.Payload + Offset - size, &value, size);
             PacketMetadataRef.DataOffset -= size;
             PacketMetadataRef.DataLength += size;
@@ -154,10 +156,11 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The size of the required type ({size}) does not fit in the payload ({Length}).");
 #else
-                UnityEngine.Debug.LogError($"The size of the required type ({size}) does not fit in the payload ({Length}).");
+                DebugLog.ErrorPayloadNotFitSize(size, Length);
                 return default(T);
 #endif
             }
+
             var value = GetPayloadDataRef<T>(0);
             PacketMetadataRef.DataOffset += size;
             PacketMetadataRef.DataLength -= size;
@@ -177,10 +180,11 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The size of the buffer ({size}) is larger than the payload ({Length}).");
 #else
-                UnityEngine.Debug.LogError($"The size of the buffer ({size}) is larger than the payload ({Length}).");
+                DebugLog.ErrorPayloadWrongSize(size, Length);
                 return;
 #endif
             }
+
             UnsafeUtility.MemCpy(ptr, ((byte*)PacketBuffer.Payload) + Offset, size);
             PacketMetadataRef.DataOffset += size;
             PacketMetadataRef.DataLength -= size;
@@ -204,9 +208,10 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The payload size ({Length}) does not fit in the provided pointer ({size})");
 #else
-                UnityEngine.Debug.LogError($"The payload size ({Length}) does not fit in the provided pointer ({size})");
+                DebugLog.ErrorCopyPayloadFailure(Length, size);
                 copiedBytes = size;
 #endif
+                
             }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS

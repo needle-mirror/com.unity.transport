@@ -5,7 +5,8 @@
         "Unity.Burst",
         "Unity.Collections",
         "Unity.Mathematics",
-        "Unity.Services.Relay"
+        "Unity.Services.Relay",
+        "Unity.Logging"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -20,6 +21,11 @@
             "name": "com.unity.services.relay",
             "expression": "1.0",
             "define": "RELAY_SDK_INSTALLED"
+        },
+        {
+            "name": "com.unity.logging",
+            "expression": "0.0",
+            "define": "USE_UNITY_LOGGING"
         }
     ]
 }

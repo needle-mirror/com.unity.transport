@@ -1,5 +1,6 @@
 using System;
 using Unity.Collections;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
@@ -59,11 +60,11 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     throw new ArgumentOutOfRangeException("The provided connection is not valid");
 #else
-                    UnityEngine.Debug.LogError("The provided connection is not valid");
+                    DebugLog.LogError("The provided connection is not valid");
                     return;
 #endif
                 }
-
+                
                 slot.Version = connection.Version;
                 slot.Value = value;
             }

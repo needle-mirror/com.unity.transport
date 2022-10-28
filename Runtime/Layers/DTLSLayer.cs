@@ -5,7 +5,9 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.TLS;
+using Unity.Networking.Transport.Relay;
 using Unity.TLS.LowLevel;
 using UnityEngine;
 
@@ -17,8 +19,8 @@ namespace Unity.Networking.Transport
         // causes the session to fail. Once MTT-3971 is fixed, we can lower this value.
         private const int k_DeferredSendsQueueSize = 64;
 
-        // TODO When not using Relay, this could be reduced to 29. See MTT-4748.
-        private const int k_DTLSPadding = 37;
+        private const int k_DTLSPaddingWithoutRelay = 29;
+        private const int k_DTLSPaddingWithRelay = 37;
 
         private struct DTLSConnectionData
         {
@@ -47,6 +49,7 @@ namespace Unity.Networking.Transport
         private PacketsQueue m_DeferredSends;
         private long m_HalfOpenDisconnectTimeout;
         private long m_ReconnectionTimeout;
+        private int m_DTLSPadding;
 
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {
@@ -70,7 +73,9 @@ namespace Unity.Networking.Transport
             m_HalfOpenDisconnectTimeout = (netConfig.maxConnectAttempts + 1) * netConfig.connectTimeoutMS;
             m_ReconnectionTimeout = netConfig.reconnectionTimeoutMS;
 
-            packetPadding += k_DTLSPadding;
+            m_DTLSPadding = settings.TryGet<RelayNetworkParameter>(out _) ? k_DTLSPaddingWithRelay : k_DTLSPaddingWithoutRelay;
+
+            packetPadding += m_DTLSPadding;
 
             return 0;
         }
@@ -331,7 +336,7 @@ namespace Unity.Networking.Transport
                     {
                         // TODO Would be nice to translate the numerical step in a string.
                         var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
-                        Debug.LogError($"DTLS handshake failed at step {handshakeStep}. Closing connection.");
+                        DebugLog.ErrorDTLSHandshakeFailed(handshakeStep);
                     }
 
                     Connections.StartDisconnecting(ref connection);
@@ -439,13 +444,14 @@ namespace Unity.Networking.Transport
             public NativeParallelHashMap<NetworkEndpoint, ConnectionId> EndpointToConnection;
             public PacketsQueue SendQueue;
             public PacketsQueue DeferredSends;
+            public int DTLSPadding;
             [NativeDisableUnsafePtrRestriction]
             public UnityTLSCallbacks.CallbackContext* UnityTLSCallbackContext;
 
             public void Execute()
             {
                 UnityTLSCallbackContext->SendQueue = SendQueue;
-                UnityTLSCallbackContext->PacketPadding = k_DTLSPadding;
+                UnityTLSCallbackContext->PacketPadding = DTLSPadding;
 
                 // Encrypt all the packets in the send queue.
                 var sendCount = SendQueue.Count;
@@ -477,7 +483,7 @@ namespace Unity.Networking.Transport
                     var result = Binding.unitytls_client_send_data(clientPtr, packetPtr, new UIntPtr((uint)packetProcessor.Length));
                     if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        Debug.LogError($"Failed to encrypt packet (error: {result}). Likely internal DTLS failure. Closing connection.");
+                        DebugLog.ErrorDTLSEncryptFailed(result);
                         packetProcessor.Drop();
                     }
                 }
@@ -496,7 +502,7 @@ namespace Unity.Networking.Transport
                         packetProcessor.ConnectionRef = deferredPacketProcessor.ConnectionRef;
 
                         // Remove the DTLS padding from the offset.
-                        packetProcessor.SetUnsafeMetadata(0, packetProcessor.Offset - k_DTLSPadding);
+                        packetProcessor.SetUnsafeMetadata(0, packetProcessor.Offset - DTLSPadding);
 
                         packetProcessor.AppendToPayload(deferredPacketProcessor);
                     }
@@ -514,6 +520,7 @@ namespace Unity.Networking.Transport
                 EndpointToConnection = m_EndpointToConnectionMap,
                 SendQueue = arguments.SendQueue,
                 DeferredSends = m_DeferredSends,
+                DTLSPadding = m_DTLSPadding,
                 UnityTLSCallbackContext = m_UnityTLSConfiguration.CallbackContextPtr,
             }.Schedule(dependency);
         }

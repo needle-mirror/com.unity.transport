@@ -1,4 +1,5 @@
 using Unity.Collections;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport.Utilities
 {
@@ -45,7 +46,7 @@ namespace Unity.Networking.Transport.Utilities
                 if (PayloadCapacity <= NetworkParameterConstants.MTU)
                 {
                     valid = false;
-                    UnityEngine.Debug.LogError($"{nameof(PayloadCapacity)} value ({PayloadCapacity}) must be greater than MTU ({NetworkParameterConstants.MTU})");
+                    DebugLog.ErrorFragmentationSmallerPayloadThanMTU(PayloadCapacity, NetworkParameterConstants.MTU);
                 }
 
                 return valid;

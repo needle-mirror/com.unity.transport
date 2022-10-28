@@ -8,6 +8,7 @@ using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Networking.Transport.Error;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
@@ -236,7 +237,7 @@ namespace Unity.Networking.Transport
             /// </summary>
             /// <param name="writer">If you require the payload to be of certain size.</param>
             /// <value>The length of the buffer sent if nothing went wrong.</value>
-            /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
+            /// <exception cref="InvalidOperationException">If EndSend is called without a matching BeginSend call.</exception>
             /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
             public unsafe int EndSend(DataStreamWriter writer)
             {
@@ -298,11 +299,11 @@ namespace Unity.Networking.Transport
             }
 
             /// <summary>
-            /// Aborts a asynchronous send.
+            /// Aborts an asynchronous send. If calling this, there is not need to call <see cref="EndSend"/>.
             /// </summary>
             /// <param name="writer">If you require the payload to be of certain size.</param>
             /// <value>The length of the buffer sent if nothing went wrong.</value>
-            /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
+            /// <exception cref="InvalidOperationException">If AbortSend is called without a matching BeginSend call.</exception>
             /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
             public unsafe void AbortSend(DataStreamWriter writer)
             {
@@ -317,7 +318,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     throw new InvalidOperationException("AbortSend without matching BeginSend");
 #else
-                    UnityEngine.Debug.LogError("AbortSend without matching BeginSend");
+                    DebugLog.LogError("AbortSend without matching BeginSend");
                     return;
 #endif
                 }
@@ -586,7 +587,7 @@ namespace Unity.Networking.Transport
                     int conCount = eventQueue.GetCountForConnection(i);
                     if (conCount != 0 && connectionList.GetConnectionState(connectionList.ConnectionAt(i)) != NetworkConnection.State.Disconnected)
                     {
-                        UnityEngine.Debug.LogError($"Resetting event queue with pending events (Count={conCount}, ConnectionID={i}) Listening: {listenState}");
+                        DebugLog.ErrorResetNotEmptyEventQueue(conCount, i, listenState);
                     }
                 }
                 bool didPrint = false;
@@ -597,8 +598,7 @@ namespace Unity.Networking.Transport
                         pendingSend[i * JobsUtility.CacheLineSize / 4] = 0;
                         if (!didPrint)
                         {
-                            UnityEngine.Debug.LogError(
-                                "Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
+                            DebugLog.LogError("Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
                             didPrint = true;
                         }
                     }
@@ -677,16 +677,14 @@ namespace Unity.Networking.Transport
 
             if (updateCount > m_NetworkStack.Connections.Count * 64)
             {
-                UnityEngine.Debug.LogWarning(
-                    FixedString.Format("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {0}", updateCount));
+                DebugLog.DriverTooManyUpdates(updateCount);
             }
 
             m_DefaultHeaderFlags = UdpCHeader.HeaderFlags.HasPipeline;
             m_PipelineProcessor.UpdateSend(ToConcurrentSendOnly(), out updateCount);
             if (updateCount > m_NetworkStack.Connections.Count * 64)
             {
-                UnityEngine.Debug.LogWarning(
-                    FixedString.Format("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {0}", updateCount));
+                DebugLog.DriverTooManyUpdates(updateCount);
             }
 
             m_DefaultHeaderFlags = 0;
@@ -921,7 +919,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException("Invalid connection");
 #else
-                UnityEngine.Debug.LogError("Trying to get pipeline buffers for invalid connection.");
+                DebugLog.LogError("Trying to get pipeline buffers for invalid connection.");
                 readProcessingBuffer = default;
                 writeProcessingBuffer = default;
                 sharedBuffer = default;
@@ -1034,8 +1032,7 @@ namespace Unity.Networking.Transport
                 //that corresponds to an underlying Connection that lives in m_NetworkStack.Connections without having obtained it from Accept() first.
                 if (id >= 0 && type == NetworkEvent.Type.Data && !m_NetworkStack.Connections.IsConnectionAccepted(ref connectionId))
                 {
-                    UnityEngine.Debug.LogWarning("A NetworkEvent.Data event was discarded for a connection that had not been accepted yet. To avoid this, consider calling Accept()" +
-                        " prior to PopEvent() in your project's network update loop, or only use PopEventForConnection() in conjunction with Accept().");
+                    DebugLog.LogWarning("A NetworkEvent.Data event was discarded for a connection that had not been accepted yet. To avoid this, consider calling Accept() prior to PopEvent() in your project's network update loop, or only use PopEventForConnection() in conjunction with Accept().");
                     continue;
                 }
 

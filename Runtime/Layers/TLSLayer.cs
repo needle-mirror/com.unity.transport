@@ -5,6 +5,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 using Unity.Mathematics;
 using Unity.Networking.Transport.TLS;
 using Unity.TLS.LowLevel;
@@ -161,10 +162,21 @@ namespace Unity.Networking.Transport
                     {
                         ProcessHandshakeMessage(ref packetProcessor);
 
-                        // TODO Can this even happen? If so, need to handle this better.
-                        if (packetProcessor.Length > 0)
-                            Debug.LogError("TLS handshake message was not entirely processed. Dropping leftovers.");
+                        // If there's still data left in the packet, then it's likely actual data
+                        // following completion of the handshake. In this case we don't want to go
+                        // to the next packet and we want to keep processing it.
+                        if (packetProcessor.Length == 0)
+                            continue;
 
+                        // Refresh the client state for the check below.
+                        clientState = Binding.unitytls_client_get_state(clientPtr);
+                    }
+
+                    // Just ignore any new packets if the client is failed. Let CheckForFailedClient
+                    // handle it later when we process the connection list.
+                    if (clientState == Binding.UnityTLSClientState_Fail)
+                    {
+                        packetProcessor.Drop();
                         continue;
                     }
 
@@ -246,7 +258,7 @@ namespace Unity.Networking.Transport
                     else if (result != Binding.UNITYTLS_SUCCESS)
                     {
                         // The error will be picked up in CheckForFailedClient.
-                        Debug.LogError($"Failed to decrypt packet (error: {result}). Likely internal TLS failure. Closing connection.");
+                        DebugLog.ErrorTLSDecryptFailed(result);
                         break;
                     }
 
@@ -354,9 +366,14 @@ namespace Unity.Networking.Transport
                 // Make progress on the handshake if underlying connection is completed.
                 if (UnderlyingConnections.GetConnectionState(underlyingId) == NetworkConnection.State.Connected)
                 {
-                    UnityTLSCallbackContext->NewPacketsEndpoint = endpoint;
-                    UnityTLSCallbackContext->NewPacketsConnection = underlyingId;
-                    AdvanceHandshake(ConnectionsData[connection].UnityTLSClientPtr);
+                    var clientPtr = ConnectionsData[connection].UnityTLSClientPtr;
+                    var clientState = Binding.unitytls_client_get_state(clientPtr);
+                    if (clientState == Binding.UnityTLSClientState_Init || clientState == Binding.UnityTLSClientState_Handshake)
+                    {
+                        UnityTLSCallbackContext->NewPacketsEndpoint = endpoint;
+                        UnityTLSCallbackContext->NewPacketsConnection = underlyingId;
+                        AdvanceHandshake(clientPtr);
+                    }
                 }
             }
 
@@ -394,7 +411,7 @@ namespace Unity.Networking.Transport
                     {
                         // TODO Would be nice to translate the numerical step in a string.
                         var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
-                        Debug.LogError($"TLS handshake failed at step {handshakeStep}. Closing connection.");
+                        DebugLog.ErrorTLSHandshakeFailed(handshakeStep);
                     }
 
                     UnderlyingConnections.StartDisconnecting(ref data.UnderlyingConnection);
@@ -509,7 +526,7 @@ namespace Unity.Networking.Transport
                     var result = Binding.unitytls_client_send_data(clientPtr, packetPtr, new UIntPtr((uint)packetProcessor.Length));
                     if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        Debug.LogError($"Failed to encrypt packet (error: {result}). Likely internal TLS failure. Closing connection.");
+                        DebugLog.ErrorTLSEncryptFailed(result);
                         packetProcessor.Drop();
                     }
                 }

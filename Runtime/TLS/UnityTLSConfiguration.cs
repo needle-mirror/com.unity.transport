@@ -29,7 +29,6 @@ namespace Unity.Networking.Transport.TLS
         // have a stable address.
         private NativeReference<SecureNetworkProtocolParameter> m_SecureParameters;
         private NativeReference<RelayNetworkParameter> m_RelayParameters;
-        private NativeReference<FixedString32Bytes> m_RelayHostname;
 
         public bool IsCreated => m_Config.IsCreated;
 
@@ -40,54 +39,56 @@ namespace Unity.Networking.Transport.TLS
             if (parameters.Hostname != default)
                 config->hostname = parameters.Hostname.GetUnsafePtr();
 
-            if (parameters.Pem != default)
+            if (parameters.CACertificate.Length > 0)
             {
                 config->caPEM = new Binding.unitytls_dataRef()
                 {
-                    dataPtr = parameters.Pem.GetUnsafePtr(),
-                    dataLen = new UIntPtr((uint)parameters.Pem.Length)
+                    dataPtr = parameters.CACertificate.GetUnsafePtr(),
+                    dataLen = new UIntPtr((uint)parameters.CACertificate.Length)
                 };
             }
 
-            if (parameters.Rsa != default && parameters.RsaKey != default)
+            if (parameters.Certificate.Length > 0 && parameters.PrivateKey.Length > 0)
             {
                 config->serverPEM = new Binding.unitytls_dataRef()
                 {
-                    dataPtr = parameters.Rsa.GetUnsafePtr(),
-                    dataLen = new UIntPtr((uint)parameters.Rsa.Length)
+                    dataPtr = parameters.Certificate.GetUnsafePtr(),
+                    dataLen = new UIntPtr((uint)parameters.Certificate.Length)
                 };
 
                 config->privateKeyPEM = new Binding.unitytls_dataRef()
                 {
-                    dataPtr = parameters.RsaKey.GetUnsafePtr(),
-                    dataLen = new UIntPtr((uint)parameters.RsaKey.Length)
+                    dataPtr = parameters.PrivateKey.GetUnsafePtr(),
+                    dataLen = new UIntPtr((uint)parameters.PrivateKey.Length)
                 };
             }
         }
 
         private static void InitializeFromRelayParameters(Binding.unitytls_client_config* config, ref RelayNetworkParameter parameters)
         {
-            // We don't set the protocol, client authentication policy, and different timeouts
-            // because either their values are customized through SecureNetworkProtocolParameter,
-            // or we want to use the defaults and then unitytls_client_init_config will have set
-            // them appropriately for our needs.
+            config->hostname = (byte*)parameters.ServerData.HostString.GetUnsafePtr();
 
-            fixed (byte* hmacPtr = parameters.ServerData.HMACKey.Value)
+            // We only want to set up PSK authentication if using DTLS. Using TLS would mean we're
+            // on WebSockets which require certificate authentication of the server.
+            if (config->transportProtocol == (uint)SecureTransportProtocol.DTLS)
             {
-                config->psk = new Binding.unitytls_dataRef()
+                fixed (byte* hmacPtr = parameters.ServerData.HMACKey.Value)
                 {
-                    dataPtr = hmacPtr,
-                    dataLen = new UIntPtr(RelayHMACKey.k_Length)
-                };
-            }
+                    config->psk = new Binding.unitytls_dataRef()
+                    {
+                        dataPtr = hmacPtr,
+                        dataLen = new UIntPtr(RelayHMACKey.k_Length)
+                    };
+                }
 
-            fixed (byte* allocPtr = parameters.ServerData.AllocationId.Value)
-            {
-                config->pskIdentity = new Binding.unitytls_dataRef()
+                fixed (byte* allocPtr = parameters.ServerData.AllocationId.Value)
                 {
-                    dataPtr = allocPtr,
-                    dataLen = new UIntPtr(RelayAllocationId.k_Length)
-                };
+                    config->pskIdentity = new Binding.unitytls_dataRef()
+                    {
+                        dataPtr = allocPtr,
+                        dataLen = new UIntPtr(RelayAllocationId.k_Length)
+                    };
+                }
             }
         }
 
@@ -100,36 +101,8 @@ namespace Unity.Networking.Transport.TLS
 
             m_SecureParameters = default;
             m_RelayParameters = default;
-            m_RelayHostname = default;
 
             Binding.unitytls_client_init_config(ConfigPtr);
-
-            if (settings.TryGet<SecureNetworkProtocolParameter>(out var secureParams))
-            {
-                m_SecureParameters = new NativeReference<SecureNetworkProtocolParameter>(Allocator.Persistent);
-
-                // Can't just assign to value since SecureNetworkProtocolParameter is too big (on
-                // Mono you can't pass parameters larger than 10K bytes as values to a property).
-                var paramsPtr = (SecureNetworkProtocolParameter*)m_SecureParameters.GetUnsafePtr();
-                *paramsPtr = secureParams;
-
-                InitializeFromSecureParameters(ConfigPtr, ref UnsafeUtility.AsRef<SecureNetworkProtocolParameter>(paramsPtr));
-            }
-
-            if (settings.TryGet<RelayNetworkParameter>(out var relayParams))
-            {
-                // Relay authentication doesn't require a hostname, but UnityTLS will still try to
-                // send an empty string if none is provided, which causes issues. See MTT-1753.
-                FixedString32Bytes hostname = "relay";
-
-                m_RelayParameters = new NativeReference<RelayNetworkParameter>(relayParams, Allocator.Persistent);
-                m_RelayHostname = new NativeReference<FixedString32Bytes>(hostname, Allocator.Persistent);
-
-                var paramsPtr = (RelayNetworkParameter*)m_RelayParameters.GetUnsafePtr();
-                InitializeFromRelayParameters(ConfigPtr, ref UnsafeUtility.AsRef<RelayNetworkParameter>(paramsPtr));
-
-                ConfigPtr->hostname = (byte*)m_RelayHostname.GetUnsafePtr();
-            }
 
             var netConfig = settings.GetNetworkConfigParameters();
             ConfigPtr->ssl_handshake_timeout_min = (uint)netConfig.connectTimeoutMS;
@@ -143,6 +116,26 @@ namespace Unity.Networking.Transport.TLS
             //ConfigPtr->logCallback = UnityTLSCallbacks.LogCallbackPtr;
 
             ConfigPtr->mtu = mtu;
+
+            if (settings.TryGet<RelayNetworkParameter>(out var relayParams))
+            {
+                m_RelayParameters = new NativeReference<RelayNetworkParameter>(relayParams, Allocator.Persistent);
+
+                var paramsPtr = (RelayNetworkParameter*)m_RelayParameters.GetUnsafePtr();
+                InitializeFromRelayParameters(ConfigPtr, ref UnsafeUtility.AsRef<RelayNetworkParameter>(paramsPtr));
+            }
+
+            if (settings.TryGet<SecureNetworkProtocolParameter>(out var secureParams))
+            {
+                m_SecureParameters = new NativeReference<SecureNetworkProtocolParameter>(Allocator.Persistent);
+
+                // Can't just assign to value since SecureNetworkProtocolParameter is too big (on
+                // Mono you can't pass parameters larger than 10K bytes as values to a property).
+                var paramsPtr = (SecureNetworkProtocolParameter*)m_SecureParameters.GetUnsafePtr();
+                *paramsPtr = secureParams;
+
+                InitializeFromSecureParameters(ConfigPtr, ref UnsafeUtility.AsRef<SecureNetworkProtocolParameter>(paramsPtr));
+            }
         }
 
         public void Dispose()
@@ -158,9 +151,6 @@ namespace Unity.Networking.Transport.TLS
 
             if (m_RelayParameters.IsCreated)
                 m_RelayParameters.Dispose();
-
-            if (m_RelayHostname.IsCreated)
-                m_RelayHostname.Dispose();
         }
     }
 }

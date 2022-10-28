@@ -2,6 +2,7 @@ using System;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
 #if ENABLE_MANAGED_UNITYTLS
 using Unity.Networking.Transport.TLS;
@@ -160,6 +161,14 @@ namespace Unity.Networking.Transport
 
             // stack.AddLayer(new LogLayer(), ref networkSettings); // This will print packets for debugging
 
+            var isRelay = networkSettings.TryGet<RelayNetworkParameter>(out _);
+
+#if ENABLE_MANAGED_UNITYTLS
+            var isSecure = isRelay
+                ? networkSettings.GetRelayParameters().ServerData.IsSecure == 1
+                : networkSettings.TryGet<TLS.SecureNetworkProtocolParameter>(out _);
+#endif
+
 #if !UNITY_WEBGL || UNITY_EDITOR
             if (networkInterface is TCPNetworkInterface || networkInterface is WebSocketNetworkInterface)
             {
@@ -170,7 +179,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_MANAGED_UNITYTLS
                 // If using the TCP interface or WebSocket interface (on non-WebGL platforms), we need
                 // to add the TLS layer before the simulator layer, since it expects a reliable stream.
-                if (networkSettings.TryGet<TLS.SecureNetworkProtocolParameter>(out _))
+                if (isSecure)
                     stack.AddLayer(new TLSLayer(), ref networkSettings);
 #endif // ENABLE_MANAGED_UNITYTLS
 
@@ -188,15 +197,9 @@ namespace Unity.Networking.Transport
             if (networkSettings.TryGet<NetworkSimulatorParameter>(out _))
                 stack.AddLayer(new SimulatorLayer(), ref networkSettings);
 
-            var isRelay = networkSettings.TryGet<RelayNetworkParameter>(out _);
-
             // Determine if we need to add a DTLS layer or not. These layers can only be added on
             // non-WebGL platforms that support UnityTLS. Hence the complicated #if condition.
 #if ENABLE_MANAGED_UNITYTLS && (!UNITY_WEBGL || UNITY_EDITOR)
-            var isSecure = isRelay
-                ? networkSettings.GetRelayParameters().ServerData.IsSecure == 1
-                : networkSettings.TryGet<TLS.SecureNetworkProtocolParameter>(out _);
-
             if (isSecure && !(networkInterface is TCPNetworkInterface || networkInterface is WebSocketNetworkInterface))
                 stack.AddLayer(new DTLSLayer(), ref networkSettings);
 #endif
@@ -241,8 +244,8 @@ namespace Unity.Networking.Transport
 #endif
 
             if (result != 0)
-                UnityEngine.Debug.LogError($"Failed to initialize the NetworkStack. Layer {typeof(T).ToString()} with error Code: {result}.");
-
+                DebugLog.ErrorStackInitFailure(typeof(T).ToString(), result);
+            
             m_Layers.Add(NetworkLayerWrapper.Create(ref layer));
             m_AccumulatedPacketPadding.Add(m_TotalPacketPadding);
 
@@ -299,10 +302,7 @@ namespace Unity.Networking.Transport
                     sendQueue.Capacity,
                     networkConfig.sendQueueCapacity));
 #else
-                UnityEngine.Debug.LogError(string.Format(
-                    "The provided buffers count ({0}) must be equal to the sendQueueCapacity ({1})",
-                    sendQueue.Capacity,
-                    networkConfig.sendQueueCapacity));
+                DebugLog.ErrorStackSendCreateWrongBufferCount(sendQueue.Capacity, networkConfig.sendQueueCapacity);
 #endif
             }
 
@@ -316,10 +316,7 @@ namespace Unity.Networking.Transport
                     receiveQueue.Capacity,
                     networkConfig.receiveQueueCapacity));
 #else
-                UnityEngine.Debug.LogError(string.Format(
-                    "The provided buffers count ({0}) must be equal to the receiveQueueCapacity ({1})",
-                    receiveQueue.Capacity,
-                    networkConfig.receiveQueueCapacity));
+                DebugLog.ErrorStackReceiveCreateWrongBufferCount(sendQueue.Capacity, networkConfig.sendQueueCapacity);
 #endif
             }
         }

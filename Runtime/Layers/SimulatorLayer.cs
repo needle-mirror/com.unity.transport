@@ -2,6 +2,7 @@ using Unity.Collections;
 using Unity.Burst;
 using Unity.Jobs;
 using Unity.Mathematics;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
 using UnityEngine;
 
@@ -101,13 +102,13 @@ namespace Unity.Networking.Transport
         {
             if (ReceivePacketLossPercent < 0.0f || ReceivePacketLossPercent > 100.0f)
             {
-                Debug.LogError($"{nameof(ReceivePacketLossPercent)} value ({ReceivePacketLossPercent}) must be between 0 and 100.");
+                DebugLog.LogError($"{nameof(ReceivePacketLossPercent)} value ({ReceivePacketLossPercent}) must be between 0 and 100.");
                 return false;
             }
 
             if (SendPacketLossPercent < 0.0f || SendPacketLossPercent > 100.0f)
             {
-                Debug.LogError($"{nameof(SendPacketLossPercent)} value ({SendPacketLossPercent}) must be between 0 and 100.");
+                DebugLog.LogError($"{nameof(SendPacketLossPercent)} value ({SendPacketLossPercent}) must be between 0 and 100.");
                 return false;
             }
 
@@ -149,12 +150,12 @@ namespace Unity.Networking.Transport
         {
             if (!driver.m_NetworkStack.TryGetLayer<SimulatorLayer>(out var layer))
             {
-                Debug.LogError("Network simulator not available. Driver must have been configured with " +
-                    "NetworkSettings.WithNetworkSimulatorParameters for network simulator to be available.");
+                DebugLog.LogError("Network simulator not available. Driver must have been configured with " +
+                                  "NetworkSettings.WithNetworkSimulatorParameters for network simulator to be available.");
             }
             else if (!newParams.Validate())
             {
-                Debug.LogError("Modified network simulator parameters are invalid and were not applied.");
+                DebugLog.LogError("Modified network simulator parameters are invalid and were not applied.");
             }
             else
             {

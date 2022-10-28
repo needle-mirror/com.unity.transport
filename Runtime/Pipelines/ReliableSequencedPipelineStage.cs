@@ -58,6 +58,7 @@ namespace Unity.Networking.Transport
 #endif
                 var reader = new DataStreamReader(inboundArray);
                 reader.ReadBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+
                 if (header.Type == (ushort)ReliableUtility.PacketType.Ack)
                 {
                     ReliableUtility.ReadAckPacket(ctx, header);
@@ -85,6 +86,10 @@ namespace Unity.Networking.Transport
                         ReliableUtility.SetPacket(ctx.internalProcessBuffer, result, inboundBuffer.Slice(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>()));
                         slice = ReliableUtility.ResumeReceive(ctx, reliable->Delivered + 1, ref needsResume);
                     }
+                }
+                else if (result == (int)ReliableUtility.ErrorCodes.Duplicated_Packet)
+                {
+                    shared->DuplicatesSinceLastAck++;
                 }
             }
             else

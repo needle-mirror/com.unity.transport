@@ -1,24 +1,27 @@
 # About Unity Transport
 
-The Unity Transport Package (`com.unity.transport`) is a low-level networking library geared towards multiplayer games development. It provides a connection-based abstraction layer over UDP sockets with optional functionality like reliability, ordering, and fragmentation.
+The Unity Transport package (**com.unity.transport**) is a low-level networking library geared towards multiplayer games development. 
 
-# Documentation
+It is used as the backbone of both Unity **Netcode** solutions: [Netcode for GameObjects](https://docs-multiplayer.unity3d.com/netcode/current/about) and [Netcode for Entities](https://docs.unity3d.com/Packages/com.unity.netcode@latest)
+but it can also be used with a custom Netcode solution. 
 
-The full documentation for the package can be found on the [Unity multiplayer documentation site](https://docs-multiplayer.unity3d.com/transport/current/about).
+![unity-transport-block-diagram.png](images/unity-transport-block-diagram.png)
 
-# Technical details
+All the platform supported by the Unity Engine are seamlessly supported by Unity transport
+thanks to a connection-based abstraction layer ( **Built-in Network driver**) it provides over either UDP sockets or WebSockets. Both can be setup with or without encryption, embodied by the closed and open **padlocks** in the above block diagram.
+
+Cherry on top, **pipelines** offers additional optional functionalities like reliability, packet ordering, and packet fragmentation.
+
+
+## Using Unity Transport
+
+* If you are a first user of the package, the first sections of this manual will walk you through [the installation](install.md) of the package and [the creation of your first client and server](client-server-simple.md).
+* If you are upgrading from a previous version of the package, you may want to refer to our [1.X migration guide](migration.md).
 
 ## Requirements
 
-This version of `com.unity.transport` is compatible with the following Unity versions and platforms:
+* This version of **com.unity.transport** is compatible with **Unity Editor 2022.2** and later.
+* Supports all platforms supported by Unity Engine (with WebGL only supporting WebSocket connections in client mode).
 
-* 2020.3 and later.
-* All platforms supported by Unity are supported, except WebGL.
-
-## Document revision history
-
-|Date|Reason|
-|---|---|
-|Jan 24, 2022|Documentation moved to [multiplayer docs site](https://docs-multiplayer.unity3d.com/).|
-|Oct 22, 2018|Documentation reorganised and proofread by Technical Writer.|
-|Jul 18, 2018|Document created. Matches package version 0.1.0.|
+## Note
+This package should not be confused with the **NetworkTransport** abstraction in Netcode for GameObjects. Please see the [transports section of its documentation](https://docs-multiplayer.unity3d.com/netcode/current/advanced-topics/transports) for more information.

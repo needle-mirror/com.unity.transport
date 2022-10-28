@@ -1,6 +1,7 @@
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
 
 namespace Unity.Networking.Transport
@@ -234,8 +235,7 @@ namespace Unity.Networking.Transport
                             else
                             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                                UnityEngine.Debug.LogError("Received a Relay Accepted message but there is not one connection in the list." +
-                                    "One and only one connection is expected when initiating a connection using Relay");
+                                DebugLog.LogError("Received a Relay Accepted message but there is not one connection in the list. One and only one connection is expected when initiating a connection using Relay");
 #endif
                             }
 
@@ -426,7 +426,7 @@ namespace Unity.Networking.Transport
                 if (Connections.Count > 1)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    UnityEngine.Debug.LogError("Connect can only be called once when using Relay");
+                    DebugLog.LogError("Connect can only be called once when using Relay");
 #endif
                     Connections.StartDisconnecting(ref connectionId);
                     Connections.FinishDisconnecting(ref connectionId);

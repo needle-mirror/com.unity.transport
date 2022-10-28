@@ -3,6 +3,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
@@ -480,7 +481,7 @@ namespace Unity.Networking.Transport
                             break;
                         }
                         default:
-                            UnityEngine.Debug.LogWarning(string.Format("Received message with type {0} was not processed", (byte)messageType));
+                            DebugLog.ReceivedMessageWasNotProcessed(messageType);
                             packetProcessor.Drop();
                             break;
                     }
@@ -534,9 +535,7 @@ namespace Unity.Networking.Transport
                     if (protocolVersion != k_ProtocolVersion)
                     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        UnityEngine.Debug.LogWarning(
-                            string.Format("Simple Connection Protocol version mismatch. This could happen if remote connection UTP version is different. (local: {0}, remote: {1})",
-                                k_ProtocolVersion, protocolVersion));
+                        DebugLog.ProtocolMismatch(k_ProtocolVersion, protocolVersion);
 #endif
                         return true;
                     }
@@ -832,7 +831,7 @@ namespace Unity.Networking.Transport
                             break;
                         }
                         default:
-                            UnityEngine.Debug.LogWarning(string.Format("Received message with type {0} was not processed", (byte)messageType));
+                            DebugLog.ReceivedMessageWasNotProcessed(messageType);
                             packetProcessor.Drop();
                             break;
                     }
@@ -886,9 +885,7 @@ namespace Unity.Networking.Transport
                     if (protocolVersion != k_ProtocolVersion)
                     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        UnityEngine.Debug.LogWarning(
-                            string.Format("Simple Connection Protocol version mismatch. This could happen if remote connection UTP version is different. (local: {0}, remote: {1})",
-                                k_ProtocolVersion, protocolVersion));
+                        DebugLog.ProtocolMismatch(k_ProtocolVersion, protocolVersion);
 #endif
                         return true;
                     }

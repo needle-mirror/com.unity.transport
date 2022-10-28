@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Networking.Transport.Logging;
 
 #if RELAY_SDK_INSTALLED
 using Unity.Services.Relay.Models;
@@ -24,6 +25,11 @@ namespace Unity.Networking.Transport.Relay
         // TODO Should be computed on connection binding (but not Burst compatible today).
         internal fixed byte HMAC[32];
 
+        // String representation of the host as provided to the constructor. For IP addresses this
+        // serves no purpose at all, but for hostnames it can be useful to keep it around (since we
+        // would otherwise lose it after resolving it). For example, this is used for WebSockets.
+        internal FixedString512Bytes HostString;
+
         // Common code of all byte array-based constructors.
         private RelayServerData(byte[] allocationId, byte[] connectionData, byte[] hostConnectionData, byte[] key)
         {
@@ -36,6 +42,8 @@ namespace Unity.Networking.Transport.Relay
             // Assign temporary values to those. Chained constructors will set them.
             Endpoint = default;
             IsSecure = 0;
+
+            HostString = default;
 
             fixed(byte* hmacPtr = HMAC)
             {
@@ -61,6 +69,7 @@ namespace Unity.Networking.Transport.Relay
 
             Endpoint = HostToEndpoint(serverEndpoint.Host, (ushort)serverEndpoint.Port);
             IsSecure = serverEndpoint.Secure ? (byte)1 : (byte)0;
+            HostString = serverEndpoint.Host;
         }
 
         /// <summary>Create a new Relay server data structure from a join allocation.</summary>
@@ -80,6 +89,7 @@ namespace Unity.Networking.Transport.Relay
 
             Endpoint = HostToEndpoint(serverEndpoint.Host, (ushort)serverEndpoint.Port);
             IsSecure = serverEndpoint.Secure ? (byte)1 : (byte)0;
+            HostString = serverEndpoint.Host;
         }
 
 #endif
@@ -105,6 +115,7 @@ namespace Unity.Networking.Transport.Relay
         {
             Endpoint = HostToEndpoint(host, port);
             IsSecure = isSecure ? (byte)1 : (byte)0;
+            HostString = host;
         }
 
         /// <summary>Create a new Relay server data structure (low level constructor).</summary>
@@ -131,6 +142,8 @@ namespace Unity.Networking.Transport.Relay
             {
                 ComputeBindHMAC(hmacPtr, Nonce, ref connectionData, ref key);
             }
+
+            HostString = endpoint.ToFixedString();
         }
 
         private static void ComputeBindHMAC(byte* result, ushort nonce, ref RelayConnectionData connectionData, ref RelayHMACKey key)
@@ -183,11 +196,9 @@ namespace Unity.Networking.Transport.Relay
                 var family = addresses[0].AddressFamily;
                 return NetworkEndpoint.Parse(address, port, (NetworkFamily)family);
             }
-            else
-            {
-                UnityEngine.Debug.LogError($"Couldn't map hostname {host} to an IP address.");
-                return default;
-            }
+
+            DebugLog.ErrorRelayMapHostFailure(host);
+            return default;
         }
     }
 }

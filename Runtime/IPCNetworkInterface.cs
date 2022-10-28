@@ -52,11 +52,8 @@ namespace Unity.Networking.Transport
 
             public unsafe void Execute()
             {
-                while (true)
+                while (ipcManager.HasDataAvailable(localEndPoint))
                 {
-                    // This always acquires one extra packet because we don't know if a message is incoming until
-                    // we actually read it. If after all there is no message, packet will be dropped. But we still
-                    // need to have that extra packet available in the queue.
                     if (!ReceiveQueue.EnqueuePacket(out var packetProcessor))
                     {
                         ReceiveResult.ErrorCode = (int)Error.StatusCode.NetworkReceiveQueueFull;

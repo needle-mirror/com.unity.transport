@@ -1,4 +1,5 @@
 using Unity.Collections;
+using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
@@ -89,47 +90,47 @@ namespace Unity.Networking.Transport
             if (connectTimeoutMS < 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(connectTimeoutMS)} value ({connectTimeoutMS}) must be greater or equal to 0");
+                DebugLog.ErrorValueIsNegative("connectTimeoutMS", connectTimeoutMS);
             }
             if (maxConnectAttempts < 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(maxConnectAttempts)} value ({maxConnectAttempts}) must be greater or equal to 0");
+                DebugLog.ErrorValueIsNegative("maxConnectAttempts", maxConnectAttempts);
             }
             if (disconnectTimeoutMS < 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(disconnectTimeoutMS)} value ({disconnectTimeoutMS}) must be greater or equal to 0");
+                DebugLog.ErrorValueIsNegative("disconnectTimeoutMS", disconnectTimeoutMS);
             }
             if (heartbeatTimeoutMS < 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(heartbeatTimeoutMS)} value ({heartbeatTimeoutMS}) must be greater or equal to 0");
+                DebugLog.ErrorValueIsNegative("heartbeatTimeoutMS", heartbeatTimeoutMS);
             }
             if (reconnectionTimeoutMS < 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(reconnectionTimeoutMS)} value ({reconnectionTimeoutMS}) must be greater or equal to 0");
+                DebugLog.ErrorValueIsNegative("reconnectionTimeoutMS", reconnectionTimeoutMS);
             }
             if (maxFrameTimeMS < 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(maxFrameTimeMS)} value ({maxFrameTimeMS}) must be greater or equal to 0");
+                DebugLog.ErrorValueIsNegative("maxFrameTimeMS", maxFrameTimeMS);
             }
             if (fixedFrameTimeMS < 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(fixedFrameTimeMS)} value ({fixedFrameTimeMS}) must be greater or equal to 0");
+                DebugLog.ErrorValueIsNegative("fixedFrameTimeMS", fixedFrameTimeMS);
             }
             if (receiveQueueCapacity <= 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(receiveQueueCapacity)} value ({receiveQueueCapacity}) must be greater than 0");
+                DebugLog.ErrorValueIsZeroOrNegative("receiveQueueCapacity", receiveQueueCapacity);
             }
             if (sendQueueCapacity <= 0)
             {
                 valid = false;
-                UnityEngine.Debug.LogError($"{nameof(sendQueueCapacity)} value ({sendQueueCapacity}) must be greater than 0");
+                DebugLog.ErrorValueIsZeroOrNegative("sendQueueCapacity", sendQueueCapacity);
             }
 
             return valid;
