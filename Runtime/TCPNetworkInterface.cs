@@ -292,7 +292,10 @@ namespace Unity.Networking.Transport
             var state = m_InternalData.Value;
             state.ListenSocket = TCPSocket.Listen(ref state.ListenEndpoint, out var error);
             if (error.code != ErrorCode.Success)
-                return (int)error.code == -1 ? -1 : -(int)error.code;
+            {
+                DebugLog.ErrorBaselibBind(error, state.ListenEndpoint.Port);
+                return (int)Error.StatusCode.NetworkSocketError;
+            }
 
             AllSockets.Add(state.ListenSocket);
             m_InternalData.Value = state;

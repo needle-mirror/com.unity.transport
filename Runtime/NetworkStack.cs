@@ -142,11 +142,11 @@ namespace Unity.Networking.Transport
             stack.m_AccumulatedPacketPadding = new NativeList<int>(0, Allocator.Persistent);
         }
 
-        internal static NetworkStack CreateForSettings<N>
-            (ref N networkInterface, ref NetworkSettings networkSettings,
+        internal static void InitializeForSettings<N>
+            (out NetworkStack stack, ref N networkInterface, ref NetworkSettings networkSettings,
             out PacketsQueue sendQueue, out PacketsQueue receiveQueue) where N : unmanaged, INetworkInterface
         {
-            Initialize(out var stack);
+            Initialize(out stack);
 
             stack.m_NetworkInterfaceFunctions = NetworkInterfaceFunctions.Create<N>();
 
@@ -174,7 +174,7 @@ namespace Unity.Networking.Transport
             {
                 // Uncomment to induce message splitting for debugging.
                 if (networkSettings.TryGet<StreamSegmentationParameter>(out _))
-                    stack.AddLayer(new StreamSegmentationLayer(), ref networkSettings); 
+                    stack.AddLayer(new StreamSegmentationLayer(), ref networkSettings);
 
 #if ENABLE_MANAGED_UNITYTLS
                 // If using the TCP interface or WebSocket interface (on non-WebGL platforms), we need
@@ -205,12 +205,15 @@ namespace Unity.Networking.Transport
 #endif
 
             if (isRelay)
+            {
+                if (networkInterface is IPCNetworkInterface)
+                    throw new InvalidOperationException("Relay cannot be used with the IPC interface");
+
                 stack.AddLayer(new RelayLayer(), ref networkSettings);
+            }
 
             stack.AddLayer(new SimpleConnectionLayer(), ref networkSettings);
             stack.AddLayer(new TopLayer(), ref networkSettings);
-
-            return stack;
         }
 
         public void Dispose()
@@ -245,7 +248,7 @@ namespace Unity.Networking.Transport
 
             if (result != 0)
                 DebugLog.ErrorStackInitFailure(typeof(T).ToString(), result);
-            
+
             m_Layers.Add(NetworkLayerWrapper.Create(ref layer));
             m_AccumulatedPacketPadding.Add(m_TotalPacketPadding);
 

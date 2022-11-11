@@ -370,6 +370,8 @@ namespace Unity.Networking.Transport
                         ConnectionsData[connectionId] = connectionData;
                         return;
                     }
+
+                    ConnectionsData[connectionId] = connectionData;
                 }
 
                 // Check for connect timeout and connection attempts.
@@ -720,6 +722,8 @@ namespace Unity.Networking.Transport
                         ConnectionsData[connectionId] = connectionData;
                         return;
                     }
+
+                    ConnectionsData[connectionId] = connectionData;
                 }
 
                 // Check for connect timeout and connection attempts.

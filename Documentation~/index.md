@@ -1,17 +1,16 @@
 # About Unity Transport
 
-The Unity Transport package (**com.unity.transport**) is a low-level networking library geared towards multiplayer games development. 
+The Unity Transport package (`com.unity.transport`) is a low-level networking library geared towards multiplayer games development.
 
-It is used as the backbone of both Unity **Netcode** solutions: [Netcode for GameObjects](https://docs-multiplayer.unity3d.com/netcode/current/about) and [Netcode for Entities](https://docs.unity3d.com/Packages/com.unity.netcode@latest)
-but it can also be used with a custom Netcode solution. 
+It is used as the backbone of both Unity Netcode solutions: [Netcode for GameObjects](https://docs-multiplayer.unity3d.com/netcode/current/about) and [Netcode for Entities](https://docs.unity3d.com/Packages/com.unity.netcode@latest)
+but it can also be used with a custom solution.
 
-![unity-transport-block-diagram.png](images/unity-transport-block-diagram.png)
+![Unity Transport Block Diagram](images/block-diagram.png)
 
-All the platform supported by the Unity Engine are seamlessly supported by Unity transport
-thanks to a connection-based abstraction layer ( **Built-in Network driver**) it provides over either UDP sockets or WebSockets. Both can be setup with or without encryption, embodied by the closed and open **padlocks** in the above block diagram.
+All the platforms supported by the Unity Engine are seamlessly supported by Unity Transport
+thanks to a connection-based abstraction layer (*built-in network driver*) it provides over either UDP sockets or WebSockets. Both can be setup with or without encryption, embodied by the closed and open padlocks in the above block diagram.
 
-Cherry on top, **pipelines** offers additional optional functionalities like reliability, packet ordering, and packet fragmentation.
-
+Cherry on top, *pipelines* offer additional optional functionalities like reliability, packet ordering, and packet fragmentation.
 
 ## Using Unity Transport
 
@@ -20,8 +19,8 @@ Cherry on top, **pipelines** offers additional optional functionalities like rel
 
 ## Requirements
 
-* This version of **com.unity.transport** is compatible with **Unity Editor 2022.2** and later.
-* Supports all platforms supported by Unity Engine (with WebGL only supporting WebSocket connections in client mode).
+* Unity Editor 2022.2 and later.
+* For runtime builds, this package supports all platforms supported by the Unity Engine (with WebGL only supporting WebSocket connections in client mode).
 
 ## Note
-This package should not be confused with the **NetworkTransport** abstraction in Netcode for GameObjects. Please see the [transports section of its documentation](https://docs-multiplayer.unity3d.com/netcode/current/advanced-topics/transports) for more information.
+This package should not be confused with the `NetworkTransport` abstraction in Netcode for GameObjects. Please see the [transports section of its documentation](https://docs-multiplayer.unity3d.com/netcode/current/advanced-topics/transports) for more information.

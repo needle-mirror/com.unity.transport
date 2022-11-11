@@ -489,8 +489,7 @@ namespace Unity.Networking.Transport
             }
             #pragma warning restore 618
 #endif
-
-            driver.m_NetworkStack = NetworkStack.CreateForSettings(ref networkInterface, ref settings, out var sendQueue, out var receiveQueue);
+            NetworkStack.InitializeForSettings(out driver.m_NetworkStack, ref networkInterface, ref settings, out var sendQueue, out var receiveQueue);
 
             driver.m_PipelineProcessor = new NetworkPipelineProcessor(settings, driver.m_NetworkStack.PacketPadding);
 

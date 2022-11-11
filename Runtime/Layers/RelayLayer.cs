@@ -16,7 +16,9 @@ namespace Unity.Networking.Transport
             public RelayServerData ServerData;
             public ConnectionId UnderlyingConnection;
             public long LastSentTime;
-            public int ConnectTimeout;
+            public long ConnectStartTime;
+            public int ConnectAttemptTimeout;
+            public int MaxConnectTime;
             public int HeartbeatTime;
         }
 
@@ -47,10 +49,13 @@ namespace Unity.Networking.Transport
 
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {
+            var netConfig = settings.GetNetworkConfigParameters();
+
             var protocolData = new ProtocolData
             {
                 ConnectionStatus = RelayConnectionStatus.NotEstablished,
-                ConnectTimeout = settings.GetNetworkConfigParameters().connectTimeoutMS,
+                ConnectAttemptTimeout = netConfig.connectTimeoutMS,
+                MaxConnectTime = netConfig.maxConnectAttempts * netConfig.connectTimeoutMS,
                 HeartbeatTime = settings.GetRelayParameters().RelayConnectionTimeMS,
                 ServerData = settings.GetRelayParameters().ServerData,
             };
@@ -333,42 +338,74 @@ namespace Unity.Networking.Transport
             {
                 var protocolData = RelayProtocolData.Value;
 
-                switch (protocolData.ConnectionStatus)
+                if (protocolData.ConnectionStatus == RelayConnectionStatus.NotEstablished)
                 {
-                    case RelayConnectionStatus.NotEstablished:
-                    {
-                        if (UnderlyingConnections.TryConnect(ref protocolData.ServerData.Endpoint, ref protocolData.UnderlyingConnection))
-                        {
-                            // When not connection is established LastSentTime is the last time we tried to bind.
-                            if (Time - protocolData.LastSentTime > protocolData.ConnectTimeout ||
-                                protocolData.LastSentTime == 0)
-                            {
-                                protocolData.LastSentTime = Time;
+                    // Initialize the connection start time on first connection attempt.
+                    if (protocolData.ConnectStartTime == 0)
+                        protocolData.ConnectStartTime = Time;
 
-                                // Send a Bind message
-                                if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
-                                {
-                                    RelayMessageBind.Write(ref packetProcessor, ref protocolData.ServerData);
-                                    packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
-                                    packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
-                                }
-                            }
-                        }
-                        break;
-                    }
-                    case RelayConnectionStatus.Established:
+                    var isNewConnection = protocolData.UnderlyingConnection == default;
+
+                    // Until we're bound, LastSentTime is the last time we tried to connect/bind.
+                    var isFirstConnectAttempt = protocolData.LastSentTime == 0;
+                    var isAttemptTimeoutExpired = Time - protocolData.LastSentTime > protocolData.ConnectAttemptTimeout;
+
+                    // If we're going to try establishing a new connection, mark the time.
+                    if (isNewConnection && (isFirstConnectAttempt || isAttemptTimeoutExpired))
                     {
-                        if (Time - protocolData.LastSentTime >= protocolData.HeartbeatTime)
+                        protocolData.LastSentTime = Time;
+                    }
+
+                    if ((!isNewConnection || isFirstConnectAttempt || isAttemptTimeoutExpired) &&
+                        UnderlyingConnections.TryConnect(ref protocolData.ServerData.Endpoint, ref protocolData.UnderlyingConnection))
+                    {
+                        if (Time - protocolData.ConnectStartTime > protocolData.MaxConnectTime)
                         {
-                            // Send a Ping message
+                            DebugLog.LogError("Failed to establish connection with the Relay server (server didn't answer any BIND message).");
+                            protocolData.ConnectionStatus = RelayConnectionStatus.AllocationInvalid;
+                        }
+                        else if (isFirstConnectAttempt || isAttemptTimeoutExpired)
+                        {
+                            protocolData.LastSentTime = Time;
+
+                            // Send a Bind message
                             if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
                             {
-                                RelayMessagePing.Write(ref packetProcessor, ref protocolData.ServerData.AllocationId);
+                                RelayMessageBind.Write(ref packetProcessor, ref protocolData.ServerData);
                                 packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
                                 packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
                             }
                         }
-                        break;
+                    }
+                }
+
+                if (protocolData.ConnectionStatus == RelayConnectionStatus.Established)
+                {
+                    if (Time - protocolData.LastSentTime >= protocolData.HeartbeatTime)
+                    {
+                        // Send a Ping message
+                        if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
+                        {
+                            RelayMessagePing.Write(ref packetProcessor, ref protocolData.ServerData.AllocationId);
+                            packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
+                            packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
+                        }
+                    }
+                }
+
+                if (UnderlyingConnectionFailed(ref protocolData.UnderlyingConnection))
+                {
+                    // If there's still time before the connection timeout, reset the underlying
+                    // connection ID so that we'll re-attempt an entire new connection on the next
+                    // update. Otherwise, we must fail the Relay server connection.
+                    if (Time - protocolData.ConnectStartTime < protocolData.MaxConnectTime)
+                    {
+                        protocolData.UnderlyingConnection = default;
+                    }
+                    else
+                    {
+                        DebugLog.LogError("Failed to establish connection with the Relay server.");
+                        protocolData.ConnectionStatus = RelayConnectionStatus.AllocationInvalid;
                     }
                 }
 
@@ -435,7 +472,7 @@ namespace Unity.Networking.Transport
 
                 var connectionData = ConnectionsData[connectionId];
 
-                if (Time - connectionData.LastConnectAttempt >= RelayProtocolData.Value.ConnectTimeout)
+                if (Time - connectionData.LastConnectAttempt >= RelayProtocolData.Value.ConnectAttemptTimeout)
                 {
                     var protocolData = RelayProtocolData.Value;
 
@@ -453,6 +490,20 @@ namespace Unity.Networking.Transport
                         packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
                     }
                 }
+            }
+
+            private bool UnderlyingConnectionFailed(ref ConnectionId underlyingConnection)
+            {
+                var disconnects = UnderlyingConnections.QueryFinishedDisconnections(Allocator.Temp);
+
+                var count = disconnects.Length;
+                for (int i = 0; i < count; i++)
+                {
+                    if (disconnects[i].Connection == underlyingConnection)
+                        return true;
+                }
+
+                return false;
             }
         }
     }

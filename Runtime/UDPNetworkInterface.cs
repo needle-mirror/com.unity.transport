@@ -576,6 +576,11 @@ namespace Unity.Networking.Transport
                 if (error.code != ErrorCode.Success)
                     state.LocalEndpoint = endpoint;
             }
+            else
+            {
+                state.Socket = default;
+                state.SocketStatus = SocketStatus.SocketFailed;
+            }
 
             m_InternalState.Value = state;
 
@@ -599,7 +604,8 @@ namespace Unity.Networking.Transport
 
             if (error.code != ErrorCode.Success)
             {
-                return (int)error.code == -1 ? (int)Error.StatusCode.NetworkSocketError : -(int)error.code;
+                DebugLog.ErrorBaselibBind(error, endpoint.Port);
+                return (int)Error.StatusCode.NetworkSocketError;
             }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -757,7 +763,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     DebugLog.ErrorBaselib("Schedule Receive", error);
 #endif
-                    return (int)error.code == -1 ? (int)Error.StatusCode.NetworkSocketError : -(int)error.code;
+                    return (int)Error.StatusCode.NetworkSocketError;
                 }
             }
             while (count == k_RequestsBatchSize);

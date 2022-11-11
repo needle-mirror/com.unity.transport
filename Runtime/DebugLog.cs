@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using Unity.Baselib.LowLevel;
 using Unity.Collections;
 using Unity.Networking.Transport.Relay;
@@ -14,7 +14,7 @@ namespace Unity.Networking.Transport.Logging
 
             return errorMessage;
         }
-        
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ErrorResetNotEmptyEventQueue(int connCount, int connId, long listenState)
         {
@@ -34,7 +34,7 @@ namespace Unity.Networking.Transport.Logging
             UnityEngine.Debug.Log(message);
 #endif
         }
-        
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void Log(FixedString512Bytes message)
         {
@@ -44,7 +44,7 @@ namespace Unity.Networking.Transport.Logging
             UnityEngine.Debug.Log(message);
 #endif
         }
-        
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void LogWarning(string message)
         {
@@ -99,7 +99,7 @@ namespace Unity.Networking.Transport.Logging
 #else
             UnityEngine.Debug.LogWarning(
                 string.Format("Simple Connection Protocol version mismatch. This could happen if remote connection UTP version is different. (local: {0}, remote: {1})",
-                              localVersion, remoteVersion));
+                    localVersion, remoteVersion));
 #endif
         }
 
@@ -182,9 +182,21 @@ namespace Unity.Networking.Transport.Logging
         public static void ErrorBaselib(FixedString128Bytes description, Binding.Baselib_ErrorState error)
         {
 #if USE_UNITY_LOGGING
-            Unity.Logging.Log.Error("Baselib failed. '{Description}' ({ErrorCode}):\n\t{ErrorMessage}", description, (int)error.code, GetBaselibErrorMessage(error));
+            Unity.Logging.Log.Error("Baselib operation failed. '{Description}' (error {ErrorCode}: {ErrorMessage})", description, (int)error.code, GetBaselibErrorMessage(error));
 #else
-            UnityEngine.Debug.LogError($"Baselib failed. '{description}' ({error}):\n\t{GetBaselibErrorMessage(error)}");
+            UnityEngine.Debug.LogError($"Baselib operation failed. '{description}' (error {error}: {GetBaselibErrorMessage(error)})");
+#endif
+        }
+
+        public static void ErrorBaselibBind(Binding.Baselib_ErrorState error, ushort port)
+        {
+            FixedString128Bytes extraExplain = error.code == Binding.Baselib_ErrorCode.AddressInUse
+                ? FixedString.Format(" This is likely due to another process listening on port {}.", port) : "";
+
+#if USE_UNITY_LOGGING
+            Unity.Logging.Log.Error("Socket creation failed (error {ErrorCode}: {ErrorMessage}).{ExtraExplain}", (int)error.code, GetBaselibErrorMessage(error), extraExplain);
+#else
+            UnityEngine.Debug.LogError($"Socket creation failed (error {error}: {GetBaselibErrorMessage(error)}).{extraExplain}");
 #endif
         }
 
@@ -223,7 +235,7 @@ namespace Unity.Networking.Transport.Logging
             UnityEngine.Debug.LogError($"The payload size ({payloadSize}) does not fit in the provided pointer ({size})");
 #endif
         }
-        
+
         public static void ErrorPayloadWrongSize(int bufferSize, int payloadSize)
         {
 #if USE_UNITY_LOGGING
@@ -232,7 +244,7 @@ namespace Unity.Networking.Transport.Logging
             UnityEngine.Debug.LogError($"The size of the buffer ({bufferSize}) is larger than the payload ({payloadSize}).");
 #endif
         }
-        
+
         public static void ErrorPayloadNotFitSize(int bufferSize, int payloadSize)
         {
 #if USE_UNITY_LOGGING
@@ -250,7 +262,7 @@ namespace Unity.Networking.Transport.Logging
             UnityEngine.Debug.LogError($"The requested data size ({bufferSize}) does not fit at the start of the payload ({payloadSize} Bytes available).");
 #endif
         }
-        
+
         public static void ErrorPayloadNotFitEndSize(int bufferSize, int payloadSize)
         {
 #if USE_UNITY_LOGGING
@@ -367,7 +379,7 @@ namespace Unity.Networking.Transport.Logging
             UnityEngine.Debug.LogError($"{name} value ({value}) must be greater or equal to 0");
 #endif
         }
-        
+
         public static void ErrorValueIsZeroOrNegative(FixedString64Bytes name, int value)
         {
 #if USE_UNITY_LOGGING
@@ -482,11 +494,10 @@ namespace Unity.Networking.Transport.Logging
             Unity.Logging.Log.Error("The provided buffers count ({ProvidedCapacity}) must be equal to the sendQueueCapacity ({SendQueueCapacity})", providedCapacity, expectedCapacity);
 #else
             UnityEngine.Debug.LogError(string.Format(
-                                           "The provided buffers count ({0}) must be equal to the sendQueueCapacity ({1})",
-                                           providedCapacity,
-                                           expectedCapacity));
+                "The provided buffers count ({0}) must be equal to the sendQueueCapacity ({1})",
+                providedCapacity,
+                expectedCapacity));
 #endif
-
         }
 
         public static void ErrorStackReceiveCreateWrongBufferCount(int providedCapacity, int expectedCapacity)
@@ -495,9 +506,9 @@ namespace Unity.Networking.Transport.Logging
             Unity.Logging.Log.Error("The provided buffers count ({ProvidedCapacity}) must be equal to the receiveQueueCapacity ({ReceiveQueueCapacity})", providedCapacity, expectedCapacity);
 #else
             UnityEngine.Debug.LogError(string.Format(
-                                           "The provided buffers count ({0}) must be equal to the receiveQueueCapacity ({1})",
-                                           providedCapacity,
-                                           expectedCapacity));
+                "The provided buffers count ({0}) must be equal to the receiveQueueCapacity ({1})",
+                providedCapacity,
+                expectedCapacity));
 #endif
         }
     }

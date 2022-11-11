@@ -26,19 +26,50 @@ namespace Unity.Networking.Transport
             Count
         }
 
+        /// <summary>
+        /// Status codes that can be returned by many functions in the transport API.
+        /// </summary>
         public enum StatusCode
         {
+            /// <summary>Operation completed successfully.</summary>
             Success                       =  0,
+
+            /// <summary>Connection is invalid.</summary>
             NetworkIdMismatch             = -1,
+
+            /// <summary>Connection is invalid.</summary>
+            /// <remarks>Usually caused by an attempt to use a closed connection.</remarks>
             NetworkVersionMismatch        = -2,
+
+            /// <summary>State of the connection is invalid for the operation requested.</summary>
+            /// <remarks>Usually caused by an attempt to send on a connecting/closed connection.</remarks>
             NetworkStateMismatch          = -3,
+
+            /// <summary>Packet is too large for the supported capacity.</summary>
             NetworkPacketOverflow         = -4,
+
+            /// <summary>Packet couldn't be sent because the send queue is full.</summary>
             NetworkSendQueueFull          = -5,
+
+            /// <summary>Obsolete. Will never be returned.</summary>
+            [Obsolete("Return code is not in use anymore and nothing will return it.")]
             NetworkHeaderInvalid          = -6,
+
+            /// <summary>Attempted to process the same connection in different jobs.</summary>
             NetworkDriverParallelForErr   = -7,
+
+            /// <summary>The <see cref="DataStreamWriter"/> is invalid.</summary>
             NetworkSendHandleInvalid      = -8,
+
+            /// <summary>Obsolete. Will never be returned.</summary>
+            [Obsolete("Return code is not in use anymore and nothing will return it.")]
             NetworkArgumentMismatch       = -9,
+
+            /// <summary>A message couldn't be received because the receive queue is full.</summary>
+            /// <remarks>Can only be returned through <see cref="NetworkDriver.ReceiveErrorCode"/>.</remarks>
             NetworkReceiveQueueFull       = -10,
+
+            /// <summary>There was an error from the underlying low-level socket.</summary>
             NetworkSocketError            = -11,
         }
     }

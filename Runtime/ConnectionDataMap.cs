@@ -18,20 +18,21 @@ namespace Unity.Networking.Transport
         }
 
         private NativeList<ConnectionSlot> m_List;
-        private T m_DefaultDataValue;
+        private NativeReference<T> m_DefaultData;
 
         public bool IsCreated => m_List.IsCreated;
         public int Length => m_List.Length;
 
         internal ConnectionDataMap(int initialCapacity, T defaultDataValue, Allocator allocator)
         {
-            m_DefaultDataValue = defaultDataValue;
             m_List = new NativeList<ConnectionSlot>(initialCapacity, allocator);
+            m_DefaultData = new NativeReference<T>(defaultDataValue, allocator);
         }
 
         public void Dispose()
         {
             m_List.Dispose();
+            m_DefaultData.Dispose();
         }
 
         internal T this[ConnectionId connection]
@@ -39,12 +40,12 @@ namespace Unity.Networking.Transport
             get
             {
                 if (connection.Id >= m_List.Length || connection.Id < 0)
-                    return m_DefaultDataValue;
+                    return m_DefaultData.Value;
 
                 var slot = m_List[connection.Id];
 
                 if (slot.Version != connection.Version)
-                    return m_DefaultDataValue;
+                    return m_DefaultData.Value;
 
                 return slot.Value;
             }
@@ -72,7 +73,7 @@ namespace Unity.Networking.Transport
 
         internal void ClearData(ref ConnectionId connection)
         {
-            this[connection] = m_DefaultDataValue;
+            this[connection] = m_DefaultData.Value;
         }
 
         internal ConnectionId ConnectionAt(int index)
@@ -90,7 +91,7 @@ namespace Unity.Networking.Transport
         internal T DataAt(int index)
         {
             if (index < 0 || index >= m_List.Length)
-                return m_DefaultDataValue;
+                return m_DefaultData.Value;
 
             return m_List[index].Value;
         }

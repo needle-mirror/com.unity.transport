@@ -1,5 +1,16 @@
 # Change log
 
+## [2.0.0-pre.2] - 2022-11-11
+
+### Changes
+* The return code of `NetworkDriver.Bind` and `NetworkDriver.Listen` is now a proper value from the `Error.StatusCode` enum, instead of a seemingly random negative value.
+* If the connection to the Relay server fails (e.g. the DTLS handshake fails), then the connection status returned by `NetworkDriver.GetRelayConnectionStatus` will now be `AllocationInvalid`. It used to remain `NotEstablished` which would leave no way for a user to determine that the connection had failed.
+* Status codes `NetworkHeaderInvalid` and `NetworkArgumentMismatch` are now marked as obsolete. Nothing in the API returns these status codes anymore.
+
+### Fixes
+* Fixed `IndexOutOfRangeException` when connecting a driver configured with IPC interface and Relay. This case is not valid and now fails with a `InvalidOperationException` when the driver is created.
+* Fixed a crash on Android when using the Mono backend.
+
 ## [2.0.0-exp.8] - 2022-10-28
 
 ### New features
@@ -13,7 +24,7 @@
 * `NetworkSettings.WithSimulatorStageParameters` now provides default values for parameters `maxPacketSize` and `applyMode`. The defaults are respectively the MTU size, and to apply the simulator in both directions (send/receive).
 
 ### Fixes
-* Fixed Websockets sending ping messages when the `HeartbeatsTimeout` parameter is disabled (set to `0`). 
+* Fixed Websockets sending ping messages when the `HeartbeatsTimeout` parameter is disabled (set to `0`).
 * Fixed an issue with secure WebSockets where a connection would fail to be established if the end of the TLS handshake and beginning of the WebSocket handshake arrived in the same message.
 * It is now possible to pass certificates larger than 4KB to `WithSecureClientParameters` and `WithSecureServerParameters` from `NetworkSettings`.
 * Fixed an issue where if one end of a reliable pipeline stopped sending any traffic and its latest ACK message was lost, then the other end would stall.
