@@ -146,16 +146,24 @@ namespace Unity.Networking.Transport.Relay
             HostString = endpoint.ToFixedString();
         }
 
+        public void IncrementNonce()
+        {
+            Nonce++;
+
+            fixed(byte* hmacPtr = HMAC)
+            {
+                ComputeBindHMAC(hmacPtr, Nonce, ref ConnectionData, ref HMACKey);
+            }
+        }
+
         private static void ComputeBindHMAC(byte* result, ushort nonce, ref RelayConnectionData connectionData, ref RelayHMACKey key)
         {
-            var keyArray = new byte[64];
+            const int keyArrayLength = 64;
+            var keyArray = stackalloc byte[keyArrayLength];
 
             fixed(byte* keyValue = &key.Value[0])
             {
-                fixed(byte* keyArrayPtr = &keyArray[0])
-                {
-                    UnsafeUtility.MemCpy(keyArrayPtr, keyValue, keyArray.Length);
-                }
+                UnsafeUtility.MemCpy(keyArray, keyValue, keyArrayLength);
 
                 const int messageLength = 263;
 
@@ -173,7 +181,7 @@ namespace Unity.Networking.Transport.Relay
                     UnsafeUtility.MemCpy(messageBytes + 8, connValue, 255);
                 }
 
-                HMACSHA256.ComputeHash(keyValue, keyArray.Length, messageBytes, messageLength, result);
+                HMACSHA256.ComputeHash(keyValue, keyArrayLength, messageBytes, messageLength, result);
             }
         }
 
@@ -188,7 +196,13 @@ namespace Unity.Networking.Transport.Relay
                 return endpoint;
 
             // If IPv4 and IPv6 parsing didn't work, we're dealing with a hostname. In this case,
-            // perform a DNS resolution to figure out what its underlying IP address is.
+            // perform a DNS resolution to figure out what its underlying IP address is. For WebGL,
+            // use a hardcoded IP address since most browsers don't support making DNS resolutions
+            // directly from JavaScript. This is safe to do since on WebGL the network interface
+            // will never make use of actual endpoints (other than to put in the connection list).
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return NetworkEndpoint.AnyIpv4.WithPort(port);
+#else
             var addresses = Dns.GetHostEntry(host).AddressList;
             if (addresses.Length > 0)
             {
@@ -199,6 +213,7 @@ namespace Unity.Networking.Transport.Relay
 
             DebugLog.ErrorRelayMapHostFailure(host);
             return default;
+#endif
         }
     }
 }

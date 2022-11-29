@@ -1,5 +1,16 @@
 # Change log
 
+## [2.0.0-pre.3] - 2022-11-29
+
+### Changes
+* It is now possible to set a window size of up to 64 for `ReliableSequencedPipelineStage` (use `NetworkSettings.WithReliableStageParameters` to modify the value). Doing so increases the packet header size by 4 bytes though, so the default value remains at 32.
+* The Soaker and Pipeline samples were removed in an effort to streamline the samples offered with the package.
+
+### Fixes
+* Fixed an issue where following an IP address change, the connection to the Relay server would not be re-established properly because of a malformed bind message.
+* Fixed an issue where connecting to a Relay server on WebGL builds would fail with a `SocketException`.
+* Fixed an issue where an `InvalidOperationException` would be thrown when hosting on WebGL even if using Relay (the exception should only be thrown when not using Relay).
+
 ## [2.0.0-pre.2] - 2022-11-11
 
 ### Changes

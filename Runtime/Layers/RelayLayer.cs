@@ -306,7 +306,7 @@ namespace Unity.Networking.Transport
                             // ClientPlayerMismatch error means our IP has change and we need to rebind.
                             if (errorMessage.ErrorCode == 3)
                             {
-                                protocolData.ServerData.Nonce++;
+                                protocolData.ServerData.IncrementNonce();
                                 // Send a (re)Bind message
                                 if (DeferredSendQueue.EnqueuePacket(out var bindPacket))
                                 {
@@ -470,24 +470,26 @@ namespace Unity.Networking.Transport
                     return;
                 }
 
-                var connectionData = ConnectionsData[connectionId];
-
-                if (Time - connectionData.LastConnectAttempt >= RelayProtocolData.Value.ConnectAttemptTimeout)
+                var protocolData = RelayProtocolData.Value;
+                if (protocolData.ConnectionStatus == RelayConnectionStatus.Established)
                 {
-                    var protocolData = RelayProtocolData.Value;
+                    var connectionData = ConnectionsData[connectionId];
 
-                    connectionData.LastConnectAttempt = Time;
-                    ConnectionsData[connectionId] = connectionData;
-
-                    // Send a ConnectRequest message
-                    if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
+                    if (Time - connectionData.LastConnectAttempt >= RelayProtocolData.Value.ConnectAttemptTimeout)
                     {
-                        RelayMessageConnectRequest.Write(ref packetProcessor,
-                            ref protocolData.ServerData.AllocationId,
-                            ref protocolData.ServerData.HostConnectionData);
+                        connectionData.LastConnectAttempt = Time;
+                        ConnectionsData[connectionId] = connectionData;
 
-                        packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
-                        packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
+                        // Send a ConnectRequest message
+                        if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
+                        {
+                            RelayMessageConnectRequest.Write(ref packetProcessor,
+                                ref protocolData.ServerData.AllocationId,
+                                ref protocolData.ServerData.HostConnectionData);
+
+                            packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
+                            packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
+                        }
                     }
                 }
             }

@@ -37,13 +37,11 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
+
 namespace Unity.Networking.Transport
 {
     public struct WebSocketNetworkInterface : INetworkInterface
     {
-        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) =>  DebugLog.LogWarning(msg);
-
         private const string DLL = "__Internal";
 
         static class WebSocket
@@ -69,8 +67,7 @@ namespace Unity.Networking.Transport
         unsafe struct InternalData
         {
             public NetworkEndpoint ListenEndpoint;
-            public int ConnectTimeoutMS;            // maximum time to wait for a connection to complete
-            public int MaxConnectAttempts;          // maximum number of connect retries
+            public int ConnectTimeoutMS; // maximum time to wait for a connection to complete
 
             // If non-empty, will connect to this hostname with the wss:// protocol. Otherwise the
             // IP address of the endpoint is used to connect with the ws:// protocol.
@@ -80,10 +77,7 @@ namespace Unity.Networking.Transport
         unsafe struct ConnectionData
         {
             public int Socket;
-
-            public long ConnectTime;                // Connect start time
-            public long LastConnectAttemptTime;     // Time of the last attempt
-            public int LastConnectAttempt;          // Number of attempts so far
+            public long ConnectStartTime;
         }
 
         private NativeReference<InternalData> m_InternalData;
@@ -126,8 +120,7 @@ namespace Unity.Networking.Transport
             var state = new InternalData
             {
                 ListenEndpoint = NetworkEndpoint.AnyIpv4,
-                ConnectTimeoutMS = Math.Max(0, networkConfiguration.connectTimeoutMS),
-                MaxConnectAttempts = Math.Max(1, networkConfiguration.maxConnectAttempts),
+                ConnectTimeoutMS = networkConfiguration.connectTimeoutMS * networkConfiguration.maxConnectAttempts,
                 SecureHostname = secureHostname,
             };
             m_InternalData = new NativeReference<InternalData>(state, Allocator.Persistent);
@@ -146,7 +139,9 @@ namespace Unity.Networking.Transport
         }
 
         public unsafe int Listen()
-            =>  throw new InvalidOperationException("Web browsers do not support listening for new WebSocket connections.");
+        {
+            return 0;
+        }
 
         public unsafe void Dispose()
         {
@@ -206,44 +201,36 @@ namespace Unity.Networking.Transport
                     if (connectionState == NetworkConnection.State.Connecting)
                     {
                         // The time here is a signed 64bit and we're never going to run at time 0 so if the connection
-                        // has ConnectTime == 0 it's the creation of this connection data.
-                        if (connectionData.ConnectTime == 0)
+                        // has ConnectStartTime == 0 it's the creation of this connection data.
+                        if (connectionData.ConnectStartTime == 0)
                         {
                             var socket = ++WebSocket.s_NextSocketId;
                             GetServerAddress(connectionId, out var address);
                             WebSocket.Create(socket, (IntPtr)address.GetUnsafePtr(), address.Length);
 
-                            connectionData.ConnectTime = Time;
-                            connectionData.LastConnectAttemptTime = Time;
+                            connectionData.ConnectStartTime = Time;
                             connectionData.Socket = socket;
                         }
 
-                        // Disconnect if maximum connection attempts reached
-                        if (connectionData.LastConnectAttempt >= InternalData.Value.MaxConnectAttempts)
+                        // Check if the WebSocket connection is established.
+                        var status = WebSocket.IsConnectionReady(connectionData.Socket);
+                        if (status > 0)
+                        {
+                            ConnectionList.FinishConnectingFromLocal(ref connectionId);
+                        }
+                        else if (status < 0)
                         {
                             ConnectionList.StartDisconnecting(ref connectionId);
                             Abort(ref connectionId, ref connectionData, Error.DisconnectReason.MaxConnectionAttempts);
                             continue;
                         }
 
-                        // Check if it's time to retry connect which just means incrementing attempts
-                        if (Time - connectionData.LastConnectAttemptTime >= InternalData.Value.ConnectTimeoutMS)
+                        // Disconnect if we've reached the maximum connection timeout.
+                        if (Time - connectionData.ConnectStartTime >= InternalData.Value.ConnectTimeoutMS)
                         {
-                            connectionData.LastConnectAttempt++;
-                            connectionData.LastConnectAttemptTime = Time;
-
-                            var status = WebSocket.IsConnectionReady(connectionData.Socket);
-                            if (status > 0)
-                            {
-                                ConnectionList.FinishConnectingFromLocal(ref connectionId);
-                            }
-                            else if (status < 0)
-                            {
-                                Warn($"WebSocket failed: status={status}");
-                                ConnectionList.StartDisconnecting(ref connectionId);
-                                Abort(ref connectionId, ref connectionData, Error.DisconnectReason.MaxConnectionAttempts);
-                                continue;
-                            }
+                            ConnectionList.StartDisconnecting(ref connectionId);
+                            Abort(ref connectionId, ref connectionData, Error.DisconnectReason.MaxConnectionAttempts);
+                            continue;
                         }
 
                         ConnectionMap[connectionId] = connectionData;
@@ -339,7 +326,8 @@ namespace Unity.Networking.Transport
             {
                 // Each packet is sent individually. The connection is aborted if a packet cannot be transmiited
                 // entirely.
-                for (int i = 0; i < SendQueue.Count; i++)
+                var count = SendQueue.Count;
+                for (int i = 0; i < count; i++)
                 {
                     var packetProcessor = SendQueue[i];
                     if (packetProcessor.Length == 0)
@@ -348,16 +336,17 @@ namespace Unity.Networking.Transport
                     var connectionId = packetProcessor.ConnectionRef;
                     var connectionState = ConnectionList.GetConnectionState(connectionId);
 
-                    if (connectionState == NetworkConnection.State.Disconnected)
+                    if (connectionState != NetworkConnection.State.Connected)
+                    {
+                        packetProcessor.Drop();
                         continue;
+                    }
 
                     var connectionData = ConnectionMap[connectionId];
 
                     var nbytes = WebSocket.Send(connectionData.Socket, (IntPtr)(byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset, packetProcessor.Length);
                     if (nbytes != packetProcessor.Length)
                     {
-                        Warn($"Send buffer overflow trying to send data to {ConnectionList.GetConnectionEndpoint(connectionId)}");
-
                         // Disconnect
                         ConnectionList.StartDisconnecting(ref connectionId);
                         Abort(ref connectionId, ref connectionData, Error.DisconnectReason.ClosedByRemote);

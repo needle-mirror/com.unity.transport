@@ -814,6 +814,7 @@ namespace Unity.Networking.Transport
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
         /// <exception cref="InvalidOperationException">If listen is called more then once on the driver</exception>
         /// <exception cref="InvalidOperationException">If bind has not been called before calling Listen.</exception>
+        /// <exception cref="InvalidOperationException">If called on WebGL when not using Relay.</exception>
         public int Listen()
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -828,6 +829,16 @@ namespace Unity.Networking.Transport
                 throw new InvalidOperationException(
                     "Listen can only be called after a successful call to Bind");
 #endif
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+            var usingWebSocket = m_NetworkStack.TryGetLayer<NetworkInterfaceLayer<WebSocketNetworkInterface>>(out _);
+            var usingRelay = m_NetworkStack.TryGetLayer<RelayLayer>(out _);
+            if (usingWebSocket && !usingRelay)
+            {
+                throw new InvalidOperationException("Web browsers do not support listening for new WebSocket connections.");
+            }
+#endif
+
             if (!Bound)
                 return -1;
             var ret = m_NetworkStack.Listen();

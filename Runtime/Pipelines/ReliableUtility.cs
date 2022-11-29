@@ -96,8 +96,8 @@ namespace Unity.Networking.Transport.Utilities
         {
             public int Sequence;
             public int Acked;
-            public uint AckMask;
-            public uint LastAckMask;
+            public ulong AckMask;
+            public ulong LastAckMask;
         }
 
         public struct SharedContext
@@ -152,7 +152,7 @@ namespace Unity.Networking.Transport.Utilities
             {
                 var valid = true;
 
-                if (WindowSize < 0 || WindowSize > 32)
+                if (WindowSize < 0 || WindowSize > 64)
                 {
                     valid = false;
                     DebugLog.ErrorReliableWindowSize(WindowSize);
@@ -169,7 +169,8 @@ namespace Unity.Networking.Transport.Utilities
             public ushort ProcessingTime;
             public ushort SequenceId;
             public ushort AckedSequenceId;
-            public uint AckMask;
+            // This must be the last member in the packet header, since we truncate it for smaller window sizes.
+            public ulong AckMask;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -205,6 +206,19 @@ namespace Unity.Networking.Transport.Utilities
             return (UnsafeUtility.SizeOf<T>() + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
         }
 
+        internal static int PacketHeaderWireSize(int windowSize)
+        {
+            var fullHeaderSize = UnsafeUtility.SizeOf<PacketHeader>();
+            return windowSize > 32 ? fullHeaderSize : fullHeaderSize - sizeof(uint);
+        }
+
+        internal static unsafe int PacketHeaderWireSize(NetworkPipelineContext ctx)
+        {
+            var reliable = (SharedContext*)ctx.internalSharedProcessBuffer;
+            var windowSize = reliable->WindowSize;
+            return PacketHeaderWireSize(windowSize);
+        }
+
         internal static int SharedCapacityNeeded(Parameters param)
         {
             // Timers are stored for both remote packets (processing time) and local packets (round trip time)
@@ -237,10 +251,10 @@ namespace Unity.Networking.Transport.Utilities
             *notifier = new SharedContext
             {
                 WindowSize = param.WindowSize,
-                SentPackets = new SequenceBufferContext { Acked = NullEntry, AckMask = ~0u, LastAckMask = ~0u },
+                SentPackets = new SequenceBufferContext { Acked = NullEntry, AckMask = ~0ul, LastAckMask = ~0ul },
                 MinimumResendTime = DefaultMinimumResendTime,
-                ReceivedPackets = new SequenceBufferContext { Sequence = NullEntry, AckMask = ~0u, LastAckMask = ~0u},
-                RttInfo = new RTTInfo { SmoothedVariance = 5, SmoothedRtt = 50, ResendTimeout = 50, LastRtt = 50},
+                ReceivedPackets = new SequenceBufferContext { Sequence = NullEntry, AckMask = ~0ul, LastAckMask = ~0ul },
+                RttInfo = new RTTInfo { SmoothedVariance = 5, SmoothedRtt = 50, ResendTimeout = 50, LastRtt = 50 },
                 TimerDataOffset = AlignedSizeOf<SharedContext>(),
                 TimerDataStride = AlignedSizeOf<PacketTimers>(),
                 RemoteTimerDataOffset = AlignedSizeOf<SharedContext>() + AlignedSizeOf<PacketTimers>() * param.WindowSize,
@@ -446,7 +460,7 @@ namespace Unity.Networking.Transport.Utilities
                     // Check the bit for this sequence ID against the ackmask. Bit 0 in the ackmask
                     // is the latest acked sequence ID, bit 1 latest minus 1 (one older) and so on.
                     // If bit X is 1 then last acked sequence ID minus X is acknowledged.
-                    var ackBits = 1 << (lastOwnSequenceIdAckedByRemote - info->SequenceId);
+                    var ackBits = 1ul << (lastOwnSequenceIdAckedByRemote - info->SequenceId);
 
                     // Release if this ID has been flipped on in the ackmask (it's acknowledged).
                     // Ignore if sequence ID is out of window range of the last acknowledged ID.
@@ -744,7 +758,7 @@ namespace Unity.Networking.Transport.Utilities
 
                     for (var i = 0; i < Math.Min(distance, window); ++i)
                     {
-                        if ((reliable->ReceivedPackets.AckMask & 1 << i) == 0)
+                        if ((reliable->ReceivedPackets.AckMask & 1ul << i) == 0)
                         {
                             reliable->stats.PacketsDropped++;
                         }
@@ -760,7 +774,7 @@ namespace Unity.Networking.Transport.Utilities
                 if (distance >= ushort.MaxValue - reliable->WindowSize)
                     distance = reliable->ReceivedPackets.Sequence - header.SequenceId;
 
-                var ackBit = 1 << distance;
+                var ackBit = 1ul << distance;
                 if ((ackBit & reliable->ReceivedPackets.AckMask) != 0)
                 {
                     // Still valuable to check ACKs in a duplicated packet, since there might be
@@ -772,7 +786,7 @@ namespace Unity.Networking.Transport.Utilities
                 }
 
                 reliable->stats.PacketsOutOfOrder++;
-                reliable->ReceivedPackets.AckMask |= (uint)ackBit;
+                reliable->ReceivedPackets.AckMask |= (ulong)ackBit;
             }
 
             // Store receive timestamp for remote sequence ID we just received

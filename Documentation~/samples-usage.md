@@ -15,8 +15,3 @@ This sample shows how to define pipeline stages as described in [Pipelines](pipe
 ## RelayPing
 
 This is re-write of the [Ping](#ping) sample mentioned above that uses the [Unity Relay Service](https://unity.com/products/relay) to connect players. The code demonstrates how to manipulate and pass custom [Network Settings](network-settings.md) to a network driver.
-
-## Soaker
-
-This sample produces a dense reliable stream of messages and can generate a report with some statistics about the 
-connection. The code also illustrates more advanced techniques to manage concurrent jobs. 

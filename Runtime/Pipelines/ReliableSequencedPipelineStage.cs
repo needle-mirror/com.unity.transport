@@ -24,7 +24,7 @@ namespace Unity.Networking.Transport
                 InitializeConnection: InitializeConnectionFunctionPointer,
                 ReceiveCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 SendCapacity: ReliableUtility.ProcessCapacityNeeded(param),
-                HeaderCapacity: UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(),
+                HeaderCapacity: ReliableUtility.PacketHeaderWireSize(param.WindowSize),
                 SharedStateCapacity: ReliableUtility.SharedCapacityNeeded(param)
             );
         }
@@ -57,7 +57,7 @@ namespace Unity.Networking.Transport
                 NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref inboundArray, safetyHandle);
 #endif
                 var reader = new DataStreamReader(inboundArray);
-                reader.ReadBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+                reader.ReadBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
 
                 if (header.Type == (ushort)ReliableUtility.PacketType.Ack)
                 {
@@ -74,7 +74,7 @@ namespace Unity.Networking.Transport
                     if (result == nextExpectedSequenceId)
                     {
                         reliable->Delivered = result;
-                        slice = inboundBuffer.Slice(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+                        slice = inboundBuffer.Slice(ReliableUtility.PacketHeaderWireSize(ctx));
 
                         if (needsResume = SequenceHelpers.GreaterThan16((ushort)shared->ReceivedPackets.Sequence, (ushort)result))
                         {
@@ -83,7 +83,7 @@ namespace Unity.Networking.Transport
                     }
                     else
                     {
-                        ReliableUtility.SetPacket(ctx.internalProcessBuffer, result, inboundBuffer.Slice(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>()));
+                        ReliableUtility.SetPacket(ctx.internalProcessBuffer, result, inboundBuffer.Slice(ReliableUtility.PacketHeaderWireSize(ctx)));
                         slice = ReliableUtility.ResumeReceive(ctx, reliable->Delivered + 1, ref needsResume);
                     }
                 }
@@ -127,7 +127,7 @@ namespace Unity.Networking.Transport
                 }
 
                 ctx.header.Clear();
-                ctx.header.WriteBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+                ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
                 reliable->PreviousTimestamp = ctx.timestamp;
                 return (int)Error.StatusCode.Success;
             }
@@ -145,14 +145,14 @@ namespace Unity.Networking.Transport
                     requests |= NetworkPipelineStage.Requests.Resume;
 
                 ctx.header.Clear();
-                ctx.header.WriteBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+                ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
                 reliable->PreviousTimestamp = ctx.timestamp;
                 return (int)Error.StatusCode.Success;
             }
 
             // At this point we know we're in an update call.
 
-            // Check if we need to resume (e.g. resent packets).
+            // Check if we need to resume (e.g. resend packets).
             reliable->Resume = ReliableUtility.GetNextSendResumeSequence(ctx);
             if (reliable->Resume != ReliableUtility.NullEntry)
                 requests |= NetworkPipelineStage.Requests.Resume;
@@ -163,7 +163,7 @@ namespace Unity.Networking.Transport
 
                 ReliableUtility.WriteAckPacket(ctx, ref header);
 
-                ctx.header.WriteBytesUnsafe((byte*)&header, UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>());
+                ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
                 reliable->PreviousTimestamp = ctx.timestamp;
 
                 // TODO: Sending dummy byte over since the pipeline won't send an empty payload (ignored on receive)

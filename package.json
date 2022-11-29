@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.0.0-pre.2",
+  "version": "2.0.0-pre.3",
   "unity": "2022.2",
   "unityRelease": "0a18",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
@@ -14,12 +14,13 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "upmCi": {
-    "footprint": "f29191e029a138c4827de88026b8420108c2eb0c"
+    "footprint": "f4fbffc8e2f3f8be77870d9b794402d9bd59c9bc"
   },
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.0/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "c16901c4afe1d25090be322db474bb67c73a8e3e"
+    "revision": "d4259f6d85730357a30a702129c7c83760c24b0e"
   },
   "samples": [
     {
@@ -28,19 +29,9 @@
       "path": "Samples~/Ping"
     },
     {
-      "displayName": "Pipelines Sample",
-      "description": "Shows how to use Pipeline stages",
-      "path": "Samples~/Pipeline"
-    },
-    {
       "displayName": "Unity Relay with Unity Transport",
       "description": "Basic sample on how to use Unity Relay with Unity Transport, your project must depend on com.unity.services.relay",
       "path": "Samples~/RelayPing"
-    },
-    {
-      "displayName": "Soak Sample",
-      "description": "Shows how to use pipelines and jobs to gather stats and create traffic using Unity Transport",
-      "path": "Samples~/Soaker"
     }
   ]
 }

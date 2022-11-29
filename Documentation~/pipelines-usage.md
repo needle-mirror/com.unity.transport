@@ -54,7 +54,7 @@ var driver = NetworkDriver.Create(settings);
 var fragmentedPipeline = driver.CreatePipeline(typeof(FragmentationPipelineStage));
 ```
 
-There is no maximum value for the payload capacity (well, technically it's `Int32.MaxValue`). Still, a payload capacity must be configured at initialization time to pre-allocate all the required memory. It can't be modified afterwards. We thus recommend choosing a value that will accommodate the largest payload you are likely to send. The default capacity is 4096 bytes.
+The maximum value is about ~20MB. However, the pipeline stage is optimized for payloads of a few kilobytes only (the default value is 4096 bytes). We don't recommend sending messages much larger than that, except perhaps as a one-time thing at initialization. Furthermore, if this pipeline stage is used in conjunction with the `ReliableSequencedPipelineStage` (see below), then the maximum is value is even lower at around 88KB.
 
 **Note**: When creating a pipeline with multiple stages, `FragmentationPipelineStage` should normally be the *first* in the chain. This is because many pipeline stages do not support packets larger than the MTU.
 
@@ -64,7 +64,11 @@ Pipelines configured with a `ReliableSequencedPipelineStage` will guarantee the 
 
 This is a useful feature, but in a multiplayer game context it should be used sparingly. Reliable data streams can suffer from [head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking), which can cause increased latency and delay packet processing. We recommend using this pipeline stage only for very important traffic that you can't afford to lose (like RPCs and character actions).
 
-Furthermore, the reliable stage is limited to a maximum of 32 packets in flight at any given time. This limit is per connection and per pipeline (i.e. it is *not* shared across all connections). Because of this limitation, we recommend batching reliable messages together as much as possible. For example, instead of sending two reliable messages of 20 bytes each, concatenate them and send a single message of 40 bytes.
+### Maximum number of packets in flight
+
+The reliable stage is limited in the number of packets in flight at any given time. The default limit is 32, but can be increased to 64. This limit is per connection and per pipeline (i.e. it is *not* shared across all connections).
+
+Because of this limitation, we recommend batching reliable messages together as much as possible. For example, instead of sending two reliable messages of 20 bytes each, concatenate them and send a single message of 40 bytes.
 
 If attempting to send a new reliable message while there are already 32 in flight, `EndSend` will return error code `NetworkSendQueueFull` (value -5). If this situation is encountered, we recommend storing the message in a queue until it is possible to send again:
 
@@ -76,6 +80,20 @@ if (driver.EndSend(writer) == (int)Error.StatusCode.NetworkSendQueueFull))
     // Copy your message to a queue, and try resending later.
 }
 ```
+
+### Increasing the limit
+
+The limit on the number of packets in flights can be modified when creating a `NetworkDriver`:
+
+```csharp
+var settings = new NetworkSettings();
+settings.WithReliableStageParameters(windowSize: 64);
+
+var driver = NetworkDriver.Create(settings);
+var reliablePipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+```
+
+The default limit is 32, and the maximum is 64. Any value higher than 32 will cause headers to be slightly large (4 bytes), which leaves that much less space for actual data in the packets.
 
 ## The simulator pipeline stage
 

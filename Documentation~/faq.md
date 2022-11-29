@@ -116,9 +116,9 @@ This can only happen when sending on a pipeline with a `ReliableSequencedPipelin
 
 ## Can I increase the limit of 32 packets in flight for the reliable pipeline?
 
-Unfortunately, that is not currently possible. The recommended strategy to deal with the reliable window being full is to queue the traffic elsewhere until there is room to send it. See the section on [using pipelines](pipelines-usage.md) for details.
+It is possible to increase it to 64. See the section on [using pipelines](pipelines-usage.md) for details. Unfortunately, it is currently impossible to increase it further than that.
 
-However, if your application has different streams of data that require reliability and sequencing, but the ordering of messages between the streams doesn't matter, then it is possible to somewhat circumvent the limit by creating multiple reliable pipelines. That is because the 32 limit is both per connection *and per pipeline*.
+However, if your application has different streams of data that require reliability and sequencing, but the ordering of messages between the streams doesn't matter, then it is possible to somewhat circumvent the limit by creating multiple reliable pipelines. That is because the limit is both per connection *and per pipeline*.
 
 For example, you could create a pipeline for RPCs and another one for chat messages:
 
@@ -127,4 +127,4 @@ var rpcPipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
 var chatPipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
 ```
 
-Each pipeline will have its own limit of 32 messages in flight. Note however that ordering between the two pipelines is *not* guaranteed. So sending a message on `rpcPipeline` and then sending a message on `chatPipeline` does not mean that the RPC will be delivered first.
+Each pipeline will have its own limit of 32/64 messages in flight. Note however that ordering between the two pipelines is *not* guaranteed. So sending a message on `rpcPipeline` and then sending a message on `chatPipeline` does not mean that the RPC will be delivered first.

@@ -290,6 +290,15 @@ namespace Unity.Networking.Transport.Logging
 #endif
         }
 
+        public static void ErrorFragmentationMaxPayloadTooLarge(int payloadCapacity, int maxCapacity)
+        {
+#if USE_UNITY_LOGGING
+            Unity.Logging.Log.Error("PayloadCapacity value ({PayloadCapacity}) can't be greater than {MaxCapacity}", payloadCapacity, maxCapacity);
+#else
+            UnityEngine.Debug.LogError($"PayloadCapacity value ({payloadCapacity}) can't be greater than {maxCapacity}");
+#endif
+        }
+
         public static void ErrorReliableWindowSize(int windowSize)
         {
 #if USE_UNITY_LOGGING
