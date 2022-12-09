@@ -15,7 +15,7 @@ namespace Unity.Networking.Transport
     /// The current implementation of this pipeline stage does not handle reassembly of out-of-order
     /// fragments. Thus if it is expected that multiple fragmented messages will be in flight at the
     /// same time, and/or if sending on networks with a lot of jitter, it is recommended to pair
-    /// this pipeline stage with <see cref="ReliableSequencedPipelineStage">.
+    /// this pipeline stage with <see cref="ReliableSequencedPipelineStage"/>.
     /// </remarks>
     [BurstCompile]
     public unsafe struct FragmentationPipelineStage : INetworkPipelineStage

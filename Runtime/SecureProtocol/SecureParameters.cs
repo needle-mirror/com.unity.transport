@@ -50,16 +50,21 @@ namespace Unity.Networking.Transport.TLS
         /// <summary>Minimum secure handshake timeout (milliseconds, defaults to 1000).</summary>
         public uint                                 SSLHandshakeTimeoutMin;
 
+        /// <summary>Validate the settings.</summary>
+        /// <returns>True if the settings are valid, false otherwise.</returns>
         public bool Validate() => true;
     }
 
+    /// <summary>Extensions for <see cref="SecureNetworkProtocolParameter"/>.</summary>
     public static class SecureParameterExtensions
     {
         /// <summary>Set client security parameters (for use with official CA certificates).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="serverName">Hostname of the server to connect to.</param>
         /// <param name="readTimeout">Secure read timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMax">Maximum handshake timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMin">Minimum handshake timeout (in milliseconds).</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedString32Bytes     serverName,
@@ -86,7 +91,9 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (for use with official CA certificates).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="serverName">Hostname of the server to connect to.</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             string                      serverName)
@@ -99,11 +106,13 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (server authentication only).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
         /// <param name="readTimeout">Secure read timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMax">Maximum handshake timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMin">Minimum handshake timeout (in milliseconds).</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    caCertificate,
@@ -132,8 +141,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (server authentication only).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             string                      caCertificate,
@@ -148,6 +159,7 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (for client authentication).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="certificate">Client's certificate (PEM format).</param>
         /// <param name="privateKey">Client's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
@@ -155,6 +167,7 @@ namespace Unity.Networking.Transport.TLS
         /// <param name="readTimeout">Secure read timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMax">Maximum handshake timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMin">Minimum handshake timeout (in milliseconds).</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    certificate,
@@ -185,10 +198,12 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (for client authentication).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="certificate">Client's certificate (PEM format).</param>
         /// <param name="privateKey">Client's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             string                      certificate,
@@ -211,11 +226,13 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (server authentication only).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
         /// <param name="readTimeout">Secure read timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMax">Maximum handshake timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMin">Minimum handshake timeout (in milliseconds).</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    certificate,
@@ -244,8 +261,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (server authentication only).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             string                      certificate,
@@ -260,6 +279,7 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (for client authentication).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the client certificates (PEM format).</param>
@@ -268,6 +288,7 @@ namespace Unity.Networking.Transport.TLS
         /// <param name="readTimeout">Secure read timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMax">Maximum handshake timeout (in milliseconds).</param>
         /// <param name="handshakeTimeoutMin">Minimum handshake timeout (in milliseconds).</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    certificate,
@@ -299,11 +320,13 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (for client authentication).</summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the client certificates (PEM format).</param>
         /// <param name="clientName">Common name (CN) in the client certificates.</param>
         /// <param name="clientAuthenticationPolicy">Client authentication policy.</param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             string                      certificate,
@@ -390,6 +413,11 @@ namespace Unity.Networking.Transport.TLS
             return ref settings;
         }
 
+        /// <summary>
+        /// Get the <see cref="SecureNetworkProtocolParameter"/> from the settings.
+        /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
+        /// <returns>The <see cref="SecureNetworkProtocolParameter"/> stored in the settings.</returns>
         public static SecureNetworkProtocolParameter GetSecureParameters(ref this NetworkSettings settings)
         {
             if (!settings.TryGet<SecureNetworkProtocolParameter>(out var parameters))

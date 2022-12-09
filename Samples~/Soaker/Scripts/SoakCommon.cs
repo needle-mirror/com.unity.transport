@@ -121,10 +121,8 @@ namespace Unity.Networking.Transport.Samples
                     "PacketsSent: " + relCtx->stats.PacketsSent + "\n" +
                     "PacketsStale: " + relCtx->stats.PacketsStale + "\n" +
                     "Last received remote seqId: " + relCtx->ReceivedPackets.Sequence + "\n" +
-                    "Last received remote ackMask: " + SequenceHelpers.BitMaskToString(relCtx->ReceivedPackets.AckMask) + "\n" +
                     "Last sent seqId: " + (relCtx->SentPackets.Sequence - 1)+ "\n" +
-                    "Last acked seqId: " + relCtx->SentPackets.Acked + "\n" +
-                    "Last ackmask: " + SequenceHelpers.BitMaskToString(relCtx->SentPackets.AckMask));*/
+                    "Last acked seqId: " + relCtx->SentPackets.Acked);*/
         }
 
         public static unsafe void GatherReliabilityStats(ref SoakStatisticsPoint stats, ref SoakStatisticsPoint lastStats, NetworkDriver driver,

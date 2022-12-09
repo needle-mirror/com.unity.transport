@@ -19,6 +19,7 @@ namespace Unity.Networking.Transport
     using NetworkEndpoint = Binding.Baselib_RegisteredNetwork_Endpoint;
     using NetworkSocket = Binding.Baselib_RegisteredNetwork_Socket_UDP;
 
+    /// <summary>Extensions for <see cref="BaselibNetworkParameter"/>.</summary>
     public static class BaselibNetworkParameterExtensions
     {
         internal const int k_defaultRxQueueSize = 64;
@@ -28,9 +29,11 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Sets the <see cref="BaselibNetworkParameter"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="receiveQueueCapacity"><seealso cref="BaselibNetworkParameter.receiveQueueCapacity"/></param>
         /// <param name="sendQueueCapacity"><seealso cref="BaselibNetworkParameter.sendQueueCapacity"/></param>
         /// <param name="maximumPayloadSize"><seealso cref="BaselibNetworkParameter.maximumPayloadSize"/></param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithBaselibNetworkInterfaceParameters(
             ref this NetworkSettings settings,
             int receiveQueueCapacity    = k_defaultRxQueueSize,
@@ -53,6 +56,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Gets the <see cref="BaselibNetworkParameter"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
         /// <returns>Returns the <see cref="BaselibNetworkParameter"/> values for the <see cref="NetworkSettings"/></returns>
         public static BaselibNetworkParameter GetBaselibNetworkInterfaceParameters(ref this NetworkSettings settings)
         {
@@ -85,6 +89,8 @@ namespace Unity.Networking.Transport
         /// </summary>
         public uint maximumPayloadSize;
 
+        /// <summary>Validate the settings.</summary>
+        /// <returns>True if the settings are valid, false otherwise.</returns>
         public bool Validate()
         {
             var valid = true;
@@ -253,6 +259,7 @@ namespace Unity.Networking.Transport
         /// Converts a generic <see cref="NetworkEndPoint"/> to its <see cref="NetworkInterfaceEndPoint"/> version for the <see cref="BaselibNetworkInterface"/>.
         /// </summary>
         /// <param name="address">The <see cref="NetworkEndPoint"/> endpoint to convert.</param>
+        /// <param name="endpoint">The new <see cref="NetworkInterfaceEndPoint"/>.</param>
         /// <returns>returns 0 on success and sets the converted endpoint value</returns>
         public unsafe int CreateInterfaceEndPoint(NetworkEndPoint address, out NetworkInterfaceEndPoint endpoint)
         {
@@ -318,8 +325,8 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Initializes a instance of the <see cref="BaselibNetworkInterface"/> struct.
         /// </summary>
-        /// <param name="param">An array of INetworkParameter. If there is no <see cref="BaselibNetworkParameter"/> present, the default values are used.</param>
-        /// <returns>Returns 0 on succees.</returns>
+        /// <param name="settings"><see cref="NetworkSettings"/> with which to configure the interface.</param>
+        /// <returns>Returns 0 on success.</returns>
         public unsafe int Initialize(NetworkSettings settings)
         {
             configuration = settings.GetBaselibNetworkInterfaceParameters();
@@ -617,7 +624,12 @@ namespace Unity.Networking.Transport
                 checked((uint)configuration.receiveQueueCapacity),
                 &error);
             if (error.code != ErrorCode.Success)
+            {
+                if (error.code == ErrorCode.AddressInUse)
+                    UnityEngine.Debug.LogError("Failed to bind the socket because address is already in use. " +
+                        "It is likely that another process is already listening on the same port.");
                 return (int)error.code == -1 ? (int)Error.StatusCode.NetworkSocketError : -(int)error.code;
+            }
 
             // Close old socket now that new one has been successfully created.
             if (m_Baselib[0].m_Socket.handle != IntPtr.Zero)

@@ -14,10 +14,16 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Structure used to store a message waiting to be sent on a <see cref="INetworkInterface"/>.
+    /// </summary>
     public unsafe struct QueuedSendMessage
     {
+        /// <summary>Content of the message.</summary>
         public fixed byte Data[NetworkParameterConstants.MTU];
+        /// <summary>Destination endpoint for the message.</summary>
         public NetworkInterfaceEndPoint Dest;
+        /// <summary>Length of the message's content.</summary>
         public int DataLength;
     }
 
@@ -34,6 +40,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Create a Concurrent Copy of the NetworkDriver.
         /// </summary>
+        /// <returns>Concurrent version of the driver.</returns>
         public Concurrent ToConcurrent()
         {
             return new Concurrent
@@ -153,7 +160,7 @@ namespace Unity.Networking.Transport
             /// <param name="id">The NetworkConnection id to write through</param>
             /// <param name="writer">A DataStreamWriter to write to</param>
             /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
-            /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
+            /// <returns>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</returns>
             /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
             public unsafe int BeginSend(NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
             {
@@ -167,7 +174,7 @@ namespace Unity.Networking.Transport
             /// <param name="id">The NetworkConnection id to write through</param>
             /// <param name="writer">A DataStreamWriter to write to</param>
             /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
-            /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
+            /// <returns>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</returns>
             /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
             public unsafe int BeginSend(NetworkPipeline pipe, NetworkConnection id,
                 out DataStreamWriter writer, int requiredPayloadSize = 0)
@@ -257,7 +264,7 @@ namespace Unity.Networking.Transport
             /// Ends a asynchronous send.
             /// </summary>
             /// <param name="writer">If you require the payload to be of certain size.</param>
-            /// <value>The length of the buffer sent if nothing went wrong.</value>
+            /// <returns>The length of the buffer sent if nothing went wrong.</returns>
             /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
             /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
             public unsafe int EndSend(DataStreamWriter writer)
@@ -323,7 +330,7 @@ namespace Unity.Networking.Transport
             /// Aborts a asynchronous send.
             /// </summary>
             /// <param name="writer">If you require the payload to be of certain size.</param>
-            /// <value>The length of the buffer sent if nothing went wrong.</value>
+            /// <returns>The length of the buffer sent if nothing went wrong.</returns>
             /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
             /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
             public unsafe void AbortSend(DataStreamWriter writer)
@@ -532,7 +539,7 @@ namespace Unity.Networking.Transport
         private const int InternalStateBound = 1;
 
         /// <summary>
-        /// Gets or sets if the driver is Listening
+        /// Whether the driver is listening for connections.
         /// </summary>
         public bool Listening
         {
@@ -540,14 +547,16 @@ namespace Unity.Networking.Transport
             private set { m_InternalState[InternalStateListening] = value ? 1 : 0; }
         }
 
+        /// <summary>
+        /// Whether the driver is bound to an endpoint.
+        /// </summary>
         public bool Bound => m_InternalState[InternalStateBound] == 1;
 
         /// <summary>
         /// Helper function for creating a NetworkDriver.
         /// </summary>
-        /// <param name="param">
-        /// The <see cref="NewtorkSettings"/> for the new NetworkDriver.
-        /// </param>
+        /// <param name="settings">The <see cref="NewtorkSettings"/> for the new driver.</param>
+        /// <returns>The new <see cref="NetworkDriver"/>.</returns>
         /// <exception cref="InvalidOperationException"></exception>
         public static NetworkDriver Create(NetworkSettings settings)
         {
@@ -561,6 +570,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Helper function for creating a NetworkDriver.
         /// </summary>
+        /// <returns>The new <see cref="NetworkDriver"/>.</returns>
         public static NetworkDriver Create() => Create(new NetworkSettings(Allocator.Temp));
 
         /// <summary>
@@ -568,6 +578,7 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <typeparam name="N"></typeparam>
         /// <param name="networkInterface">The custom interface to use.</param>
+        /// <returns>The new <see cref="NetworkDriver"/>.</returns>
         public static NetworkDriver Create<N>(N networkInterface) where N : INetworkInterface
             => Create(networkInterface, new NetworkSettings(Allocator.Temp));
 
@@ -577,6 +588,7 @@ namespace Unity.Networking.Transport
         /// <typeparam name="N"></typeparam>
         /// <param name="networkInterface">The custom interface to use.</param>
         /// <param name="settings">The <see cref="NewtorkSettings"/> for the new NetworkDriver.</param>
+        /// <returns>The new <see cref="NetworkDriver"/>.</returns>
         public static NetworkDriver Create<N>(N networkInterface, NetworkSettings settings) where N : INetworkInterface
             => new NetworkDriver(networkInterface, settings);
 
@@ -929,9 +941,8 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Create a new pipeline.
         /// </summary>
-        /// <param name="stages">
-        /// An array of stages the pipeline should contain.
-        /// </param>
+        /// <param name="stages">An array of stages the pipeline should contain.</param>
+        /// <returns>The newly-created <see cref="NetworkPipeline"/>.</returns>
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
         /// <exception cref="InvalidOperationException">A connection has already been established</exception>
         public NetworkPipeline CreatePipeline(params Type[] stages)
@@ -951,7 +962,7 @@ namespace Unity.Networking.Transport
         /// Bind the driver to a endpoint.
         /// </summary>
         /// <param name="endpoint">The endpoint to bind to.</param>
-        /// <value>Returns 0 on success. And a negative value if a error occured.</value>
+        /// <returns>Returns 0 on success. And a negative value if a error occured.</returns>
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
         /// <exception cref="InvalidOperationException">If bind is called more then once on the driver</exception>
         /// <exception cref="InvalidOperationException">If bind is called after a connection has already been established</exception>
@@ -984,7 +995,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Set the driver to Listen for incoming connections
         /// </summary>
-        /// <value>Returns 0 on success.</value>
+        /// <returns>Returns 0 on success.</returns>
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
         /// <exception cref="InvalidOperationException">If listen is called more then once on the driver</exception>
         /// <exception cref="InvalidOperationException">If bind has not been called before calling Listen.</exception>
@@ -1013,7 +1024,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Checks to see if there are any new connections to Accept.
         /// </summary>
-        /// <value>If accept fails it returns a default NetworkConnection.</value>
+        /// <returns>If accept fails it returns a default NetworkConnection.</returns>
         public NetworkConnection Accept()
         {
             if (!Listening)
@@ -1033,7 +1044,8 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Connects the driver to a endpoint
         /// </summary>
-        /// <value>If connect fails it returns a default NetworkConnection.</value>
+        /// <param name="endpoint">Endpoint to connect to.</param>
+        /// <returns>If connect fails it returns a default NetworkConnection.</returns>
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
         public NetworkConnection Connect(NetworkEndPoint endpoint)
         {
@@ -1093,7 +1105,7 @@ namespace Unity.Networking.Transport
         /// Disconnects a NetworkConnection
         /// </summary>
         /// <param name="id">The NetworkConnection we want to Disconnect.</param>
-        /// <value>Return 0 on success.</value>
+        /// <returns>Return 0 on success.</returns>
         public int Disconnect(NetworkConnection id)
         {
             Connection connection;
@@ -1194,7 +1206,7 @@ namespace Unity.Networking.Transport
         /// <param name="id">The NetworkConnection id to write through</param>
         /// <param name="writer">A DataStreamWriter to write to</param>
         /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
-        /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
+        /// <returns>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</returns>
         /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
         public int BeginSend(NetworkPipeline pipe, NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
         {
@@ -1207,7 +1219,7 @@ namespace Unity.Networking.Transport
         /// <param name="id">The NetworkConnection id to write through</param>
         /// <param name="writer">A DataStreamWriter to write to</param>
         /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
-        /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
+        /// <returns>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</returns>
         /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
         public int BeginSend(NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
         {
@@ -1218,7 +1230,7 @@ namespace Unity.Networking.Transport
         /// Ends a asynchronous send.
         /// </summary>
         /// <param name="writer">If you require the payload to be of certain size.</param>
-        /// <value>The length of the buffer sent if nothing went wrong.</value>
+        /// <returns>The length of the buffer sent if nothing went wrong.</returns>
         /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
         /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
         public int EndSend(DataStreamWriter writer)
@@ -1230,7 +1242,6 @@ namespace Unity.Networking.Transport
         /// Aborts a asynchronous send.
         /// </summary>
         /// <param name="writer">If you require the payload to be of certain size.</param>
-        /// <value>The length of the buffer sent if nothing went wrong.</value>
         /// <exception cref="InvalidOperationException">If endsend is called with a matching BeginSend call.</exception>
         /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
         public void AbortSend(DataStreamWriter writer)
@@ -1244,10 +1255,12 @@ namespace Unity.Networking.Transport
         /// <param name="con">Connection on which the event occured.</param>
         /// <param name="reader">Stream reader for the event's data.</param>
         /// <returns>The event's type</returns>
-        /// <value>Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
+        /// <returns>
+        /// Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
         /// then the DataStreamReader will contain the disconnect reason. If a listening NetworkDriver has received Data
         /// events from a client, but the NetworkDriver has not Accepted the NetworkConnection yet, the Data event will
-        /// be discarded.<value/>
+        /// be discarded.
+        /// </returns>
         public NetworkEvent.Type PopEvent(out NetworkConnection con, out DataStreamReader reader)
         {
             return PopEvent(out con, out reader, out var _);
@@ -1306,9 +1319,10 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="connectionId">Connection for which to pop the next event.</param>
         /// <param name="reader">Stream reader for the event's data.</param>
-        /// <returns>The event's type</returns>
-        /// <value>Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
-        /// then the DataStreamReader will contain the disconnect reason.<value/>
+        /// <returns>
+        /// Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
+        /// then the DataStreamReader will contain the disconnect reason.
+        /// </returns>
         public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader)
         {
             return PopEventForConnection(connectionId, out reader, out var _);
@@ -1344,7 +1358,7 @@ namespace Unity.Networking.Transport
         /// Returns the size of the EventQueue for a specific connection
         /// </summary>
         /// <param name="connectionId">Connection for which to get the event queue size.</param>
-        /// <value>If the connection is valid it returns the size of the event queue otherwise it returns 0.</value>
+        /// <returns>If the connection is valid it returns the size of the event queue otherwise it returns 0.</returns>
         public int GetEventQueueSizeForConnection(NetworkConnection connectionId)
         {
             if (connectionId.m_NetworkId < 0 || connectionId.m_NetworkId >= m_ConnectionList.Length ||
@@ -1461,6 +1475,7 @@ namespace Unity.Networking.Transport
                 {
                     Disconnect(netcon);
                     AddDisconnectEvent(connection.Id, DisconnectReason.Timeout);
+                    connection = m_ConnectionList[i];
                 }
 
                 // Check for the heartbeat timeout.

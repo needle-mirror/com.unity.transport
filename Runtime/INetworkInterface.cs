@@ -83,6 +83,8 @@ namespace Unity.Networking.Transport
         /// Check if an address is currently associated with a valid connection.
         /// This is mostly useful to keep interface internal lists of connections in sync with the correct state.
         /// </summary>
+        /// <param name="address">Address to check.</param>
+        /// <returns>Whether the address is used or not.</returns>
         public bool IsAddressUsed(NetworkInterfaceEndPoint address)
         {
             return m_Driver.IsAddressUsed(address);
@@ -216,8 +218,8 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Initializes the interfacing passing in optional <see cref="INetworkParameter"/>
         /// </summary>
-        /// <param name="param">The param</param>
-        /// <returns>The int</returns>
+        /// <param name="settings"><see cref="NetworkSettings"/> with which to configure the interface.</param>
+        /// <returns>0 if initialization was successful, negative value otherwise.</returns>
         int Initialize(NetworkSettings settings);
 
         /// <summary>

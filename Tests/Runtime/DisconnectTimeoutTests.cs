@@ -14,6 +14,14 @@ namespace Unity.Networking.Transport.Tests
         // because lag spikes on slower CI machines can lead to the event being generated late.
         private const long MaxDisconnectTimeMS = DisconnectTimeoutMS + 150;
 
+        private static readonly SecureProtocolMode[] s_SecureModeParameters =
+        {
+#if ENABLE_MANAGED_UNITYTLS
+            SecureProtocolMode.SecureProtocolServerAuthOnly,
+#endif
+            SecureProtocolMode.SecureProtocolDisabled
+        };
+
         [Test]
         public void DisconnectTimeout_ReachedOnCommLoss()
         {
@@ -110,6 +118,27 @@ namespace Unity.Networking.Transport.Tests
                     if (ev1 == NetworkEvent.Type.Disconnect || ev2 == NetworkEvent.Type.Disconnect)
                         Assert.Fail("Unexpected Disconnect event.");
                 });
+            }
+        }
+
+        [Test]
+        public void DisconnectTimeout_ReachedInSameUpdateAsHeartbeatTimeout(
+            [ValueSource("s_SecureModeParameters")] SecureProtocolMode secureMode)
+        {
+            var settings = new NetworkSettings();
+            settings.WithNetworkConfigParameters(
+                disconnectTimeoutMS: 5,
+                heartbeatTimeoutMS: 5,
+                fixedFrameTimeMS: 6);
+
+            using (var server = CreateServer(secureMode, settings))
+            using (var client = CreateClient(secureMode, settings))
+            {
+                ConnectServerAndClient(NetworkEndPoint.LoopbackIpv4, server, client, out _, out _);
+
+                client.ScheduleUpdate().Complete();
+
+                WaitForEvent(NetworkEvent.Type.Disconnect, client);
             }
         }
     }

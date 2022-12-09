@@ -394,7 +394,9 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Sets the <see cref="NetworkPipelineParams"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="initialCapacity"><seealso cref="NetworkPipelineParams.initialCapacity"/></param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         [Obsolete("Will be removed in Unity Transport 2.0.")]
         public static ref NetworkSettings WithPipelineParameters(
             ref this NetworkSettings settings,
@@ -414,6 +416,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Gets the <see cref="NetworkPipelineParams"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
         /// <returns>Returns the <see cref="NetworkPipelineParams"/> values for the <see cref="NetworkSettings"/></returns>
         public static NetworkPipelineParams GetPipelineParameters(ref this NetworkSettings settings)
         {
@@ -438,6 +441,8 @@ namespace Unity.Networking.Transport
         /// </summary>
         public int initialCapacity;
 
+        /// <summary>Validate the settings.</summary>
+        /// <returns>True if the settings are valid, false otherwise.</returns>
         public bool Validate()
         {
             var valid = true;

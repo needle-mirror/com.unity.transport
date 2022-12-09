@@ -13,10 +13,15 @@ using UnityEngine;
 
 namespace Unity.Networking.Editor
 {
+    /// <summary>Asset post-processor to fix loading of the Roslyn analyzer.</summary>
     public class RoslynAnalyzerFix : AssetPostprocessor
     {
         private static readonly XNamespace xNamespace = "http://schemas.microsoft.com/developer/msbuild/2003";
 
+        /// <summary>Fix the inclusion of the Roslyn analyzer in CS project.</summary>
+        /// <param name="path">Path to the project file (unused).</param>
+        /// <param name="content">Content of the project file.</param>
+        /// <returns>New content of the project file.</returns>
         public static string OnGeneratedCSProject(string path, string content)
         {
             // There is currently a bug in both VS Code Editor/Rider that doesn't properly resolve

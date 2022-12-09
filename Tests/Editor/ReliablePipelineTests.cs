@@ -127,7 +127,7 @@ namespace Unity.Networking.Transport.Tests
 
             ReliableUtility.Parameters parameters = new ReliableUtility.Parameters
             {
-                WindowSize = 32
+                WindowSize = 64
             };
 
             var processCapacity = ReliableUtility.ProcessCapacityNeeded(parameters);
@@ -145,10 +145,10 @@ namespace Unity.Networking.Transport.Tests
             var ep2RecvBuffer = new NativeArray<byte>(processCapacity, Allocator.Persistent);
 
             // packet
-            var packet = new NativeArray<byte>(UnsafeUtility.SizeOf<ReliableUtility.Packet>(), Allocator.Persistent);
+            var packet = new NativeArray<byte>(UnsafeUtility.SizeOf<ReliableUtility.ReliablePacket>(), Allocator.Persistent);
             packet[0] = 100;
 
-            var header = new DataStreamWriter(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(), Allocator.Temp);
+            var header = new DataStreamWriter(ReliableUtility.PacketHeaderWireSize(parameters.WindowSize), Allocator.Temp);
 
             ReliableSequencedPipelineStage ep1Owner = new ReliableSequencedPipelineStage();
             ReliableSequencedPipelineStage ep2Owner = new ReliableSequencedPipelineStage();
@@ -260,7 +260,7 @@ namespace Unity.Networking.Transport.Tests
 
                 var info = ReliableUtility.GetPacketInformation((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
                 var offset = ep1sendContext->DataPtrOffset + ((seq % ep1sendContext->Capacity) * ep1sendContext->DataStride);
-                var inspectPacket = ReliableUtility.GetPacket((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
+                var inspectPacket = ReliableUtility.GetReliablePacket((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
 
                 InboundRecvBuffer data;
                 data.buffer = (byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr() + offset;
@@ -299,7 +299,7 @@ namespace Unity.Networking.Transport.Tests
                     var info = ReliableUtility.GetPacketInformation((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
                     var offset = ep1sendContext->DataPtrOffset +
                         ((seq % ep1sendContext->Capacity) * ep1sendContext->DataStride);
-                    var inspectPacket = ReliableUtility.GetPacket((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
+                    var inspectPacket = ReliableUtility.GetReliablePacket((byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr(), seq);
 
                     data.buffer = (byte*)ep1SendBuffer.GetUnsafeReadOnlyPtr() + offset;
                     data.bufferLength = info->Size;
@@ -374,13 +374,13 @@ namespace Unity.Networking.Transport.Tests
             ReliableUtility.SetPacket(processBufferPtr, 0, (byte*)buffer.GetUnsafeReadOnlyPtr(), buffer.Length);
 
 
-            var slice = ReliableUtility.GetPacket(processBufferPtr, 0);
+            var slice = ReliableUtility.GetReliablePacket(processBufferPtr, 0);
             Assert.IsTrue(slice->Buffer[0] == buffer[0]);
 
             for (int i = 0; i < capacity * 5; i++)
             {
                 ReliableUtility.SetPacket(processBufferPtr, i, (byte*)buffer.GetUnsafeReadOnlyPtr(), buffer.Length);
-                slice = ReliableUtility.GetPacket(processBufferPtr, i);
+                slice = ReliableUtility.GetReliablePacket(processBufferPtr, i);
                 Assert.IsTrue(slice->Buffer[0] == buffer[0]);
             }
             ReliableUtility.Release(processBufferPtr, 0, 5);
@@ -418,9 +418,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 0;    // Last sent is initialized to what you are sending next
             sharedContext->SentPackets.Acked = -1;
-            sharedContext->SentPackets.AckMask = 0x1;
+            sharedContext->SentPackets.AckedMask = 0x1;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -479,9 +479,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3;
             sharedContext->SentPackets.Acked = 2;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -541,9 +541,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 0;
             sharedContext->SentPackets.Acked = 65535;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -596,9 +596,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 17;
             sharedContext->SentPackets.Acked = 16;
-            sharedContext->SentPackets.AckMask = 0xFFFFDBB7;
+            sharedContext->SentPackets.AckedMask = 0xFFFFFFFFDBB7;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -648,9 +648,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 1;
             sharedContext->SentPackets.Acked = 0;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -676,7 +676,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
-        public unsafe void ReliableUtility_AckPackets_AckMaskShiftsProperly1()
+        public unsafe void ReliableUtility_AckPackets_AckedMaskShiftsProperly1()
         {
             ReliableUtility.Parameters parameters = new ReliableUtility.Parameters
             {
@@ -704,9 +704,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 4;
             sharedContext->SentPackets.Acked = 3;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFD;    // bit 0 = seqId 3 (1), bit 1 = seqId 2 (0)
+            sharedContext->SentPackets.AckedMask = 0xFFFFFFFFFFFD;    // bit 0 = seqId 3 (1), bit 1 = seqId 2 (0)
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -739,7 +739,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
-        public unsafe void ReliableUtility_AckPackets_AckMaskShiftsProperly2()
+        public unsafe void ReliableUtility_AckPackets_AckedMaskShiftsProperly2()
         {
             ReliableUtility.Parameters parameters = new ReliableUtility.Parameters
             {
@@ -767,9 +767,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 5;
             sharedContext->SentPackets.Acked = 4;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFD;    // bit 0 = seqId 4 (1), bit 1 = seqId 3 (0)
+            sharedContext->SentPackets.AckedMask = 0xFFFFFFFFFFFD;    // bit 0 = seqId 4 (1), bit 1 = seqId 3 (0)
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -894,9 +894,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3; // what was last sent doesn't matter here
             sharedContext->SentPackets.Acked = 2;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFF7;    // bit 0,1,2 maps to seqId 2,1,0 all delivered, bit 3 is seqId 65535 which is not yet delivered
+            sharedContext->SentPackets.AckedMask = 0xFFFFFFFFFFF7;    // bit 0,1,2 maps to seqId 2,1,0 all delivered, bit 3 is seqId 65535 which is not yet delivered
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 65534;    // latest in sequence delivered packet, one less than what unclogs the packet jam
 
@@ -922,7 +922,7 @@ namespace Unity.Networking.Transport.Tests
 
                 // Generate the packet which will be handled in receive
                 InboundRecvBuffer packet = default;
-                GeneratePacket(9000, 2, 0xFFFFFFFF, 65535, ref sendBuffer, out packet);
+                GeneratePacket(9000, 2, ~0ul, 65535, ref sendBuffer, out packet);
 
                 // Process 65535, 0 should then be next in line on the resume field
                 var stageRequest = NetworkPipelineStage.Requests.None;
@@ -982,9 +982,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 2; // what was last sent doesn't matter here
             sharedContext->SentPackets.Acked = 1;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFF7;    // bit 0,1,2 maps to seqId 1,0,65535 all delivered, bit 3 is seqId 65534 which is not yet delivered
+            sharedContext->SentPackets.AckedMask = 0xFFFFFFFFFFF7;    // bit 0,1,2 maps to seqId 1,0,65535 all delivered, bit 3 is seqId 65534 which is not yet delivered
             sharedContext->ReceivedPackets.Sequence = 1;
-            sharedContext->ReceivedPackets.AckMask = 0xFFFFFFF7;
+            sharedContext->ReceivedPackets.AckedMask = 0xFFFFFFFFFFF7;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 65533;    // latest in sequence delivered packet, one less than what unclogs the packet jam
 
@@ -1009,7 +1009,7 @@ namespace Unity.Networking.Transport.Tests
 
                 // Generate the packet which will be handled in receive
                 InboundRecvBuffer packet = default;
-                GeneratePacket(9000, 65533, 0xFFFFFFFF, 65534, ref sendBuffer, out packet);
+                GeneratePacket(9000, 65533, ~0ul, 65534, ref sendBuffer, out packet);
 
                 // Process 65534, 65535 should then be next in line on the resume field
                 var stageRequest = NetworkPipelineStage.Requests.None;
@@ -1042,7 +1042,7 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
-        public unsafe void Receive_ResumesMultipleStoredPacketsAndSetsAckedAckMaskProperly()
+        public unsafe void Receive_ResumesMultipleStoredPacketsAndSetsAckedAckedMaskProperly()
         {
             ReliableUtility.Parameters parameters = new ReliableUtility.Parameters
             {
@@ -1069,9 +1069,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 99;           // what was last sent doesn't matter here
             sharedContext->SentPackets.Acked = 97;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = 98;
-            sharedContext->ReceivedPackets.AckMask = 0xFFFFFFF7;
+            sharedContext->ReceivedPackets.AckedMask = 0xFFFFFFFFFFFFFFF7;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 94;    // latest in sequence delivered packet, one less than what unclogs the packet jam
 
@@ -1095,7 +1095,7 @@ namespace Unity.Networking.Transport.Tests
                 ReliableUtility.SetPacket(recvBufferPtr, 98, stream.AsNativeArray().GetUnsafeReadOnlyPtr(), stream.Length);
 
                 InboundRecvBuffer packet = default;
-                GeneratePacket(9000, 98, 0xFFFFFFFF, 99, ref sendBuffer, out packet);
+                GeneratePacket(9000, 98, ~0ul, 99, ref sendBuffer, out packet);
 
                 // Receive 99, it's out of order so should be queued for later (waiting for 95)
                 var stageRequest = NetworkPipelineStage.Requests.None;
@@ -1104,7 +1104,7 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(-1, receiveContext->Resume);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
 
-                GeneratePacket(10000, 98, 0xFFFFFFFF, 95, ref sendBuffer, out packet);
+                GeneratePacket(10000, 98, ~0ul, 95, ref sendBuffer, out packet);
 
                 // First 95 is received and then receive resume runs up to 99
                 stageRequest = NetworkPipelineStage.Requests.None;
@@ -1135,7 +1135,7 @@ namespace Unity.Networking.Transport.Tests
 
                 // Verify that the ReceivePackets state is correct, 99 should be latest received and ackmask 0xFFFFF
                 Assert.AreEqual(99, sharedContext->ReceivedPackets.Sequence);
-                Assert.AreEqual(0xFFFFFFFF, sharedContext->ReceivedPackets.AckMask);
+                Assert.AreEqual(~0ul, sharedContext->ReceivedPackets.AckedMask);
             }
             recvBuffer.Dispose();
             sendBuffer.Dispose();
@@ -1170,9 +1170,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3;
             sharedContext->SentPackets.Acked = 2;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = 2;
-            sharedContext->ReceivedPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->ReceivedPackets.AckedMask = ~0ul;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 1;
 
@@ -1183,7 +1183,7 @@ namespace Unity.Networking.Transport.Tests
             var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafePtr(), staticBuffer.Length, new NetworkSettings());
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
-            pipelineContext.header = new DataStreamWriter(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(), Allocator.Temp);
+            pipelineContext.header = new DataStreamWriter(ReliableUtility.PacketHeaderWireSize(parameters.WindowSize), Allocator.Temp);
             {
                 // Fill window capacity, next send should then clear everything
                 stream.Clear();
@@ -1217,10 +1217,10 @@ namespace Unity.Networking.Transport.Tests
                 Assert.AreEqual(NetworkPipelineStage.Requests.Update, stageRequest);
 
                 // Verify ack packet is written correctly
-                ReliableUtility.PacketHeader header = default;
+                ReliableUtility.ReliableHeader header = default;
                 ReliableUtility.WriteAckPacket(pipelineContext, ref header);
                 Assert.AreEqual(header.AckedSequenceId, 2);
-                Assert.AreEqual(header.AckMask, 0xFFFFFFFF);
+                Assert.AreEqual(header.AckedMask, ~0ul);
             }
             recvBuffer.Dispose();
             sendBuffer.Dispose();
@@ -1253,9 +1253,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = 3;
             sharedContext->SentPackets.Acked = 2;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = 2;
-            sharedContext->ReceivedPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->ReceivedPackets.AckedMask = ~0ul;
             var receiveContext = (ReliableUtility.Context*)recvBuffer.GetUnsafePtr();
             receiveContext->Delivered = 1;
 
@@ -1271,7 +1271,7 @@ namespace Unity.Networking.Transport.Tests
             var reliablePipeline = reliablePipelineStage.StaticInitialize((byte*)staticBuffer.GetUnsafeReadOnlyPtr(), staticBuffer.Length, new NetworkSettings());
 
             var stream = new DataStreamWriter(4, Allocator.Temp);
-            pipelineContext.header = new DataStreamWriter(UnsafeUtility.SizeOf<ReliableUtility.PacketHeader>(), Allocator.Temp);
+            pipelineContext.header = new DataStreamWriter(UnsafeUtility.SizeOf<ReliableUtility.ReliableHeader>(), Allocator.Temp);
             {
                 // Fill window capacity, next send should then clear everything
                 stream.Clear();
@@ -1300,7 +1300,7 @@ namespace Unity.Networking.Transport.Tests
             sharedBuffer.Dispose();
         }
 
-        unsafe void GeneratePacket(int payload, ushort headerAckedId, uint headerAckMask, ushort headerSeqId, ref NativeArray<byte> sendBuffer, out InboundRecvBuffer packet)
+        unsafe void GeneratePacket(int payload, ushort headerAckedId, ulong headerAckedMask, ushort headerSeqId, ref NativeArray<byte> sendBuffer, out InboundRecvBuffer packet)
         {
             DataStreamWriter inboundStream = new DataStreamWriter(4, Allocator.Temp);
 
@@ -1309,10 +1309,10 @@ namespace Unity.Networking.Transport.Tests
             data.bufferWithHeaders = (byte*)inboundStream.AsNativeArray().GetUnsafePtr();
             data.bufferWithHeadersLength = inboundStream.Length;
             data.SetBufferFrombufferWithHeaders();
-            ReliableUtility.PacketHeader header = new ReliableUtility.PacketHeader()
+            ReliableUtility.ReliableHeader header = new ReliableUtility.ReliableHeader()
             {
                 AckedSequenceId = headerAckedId,
-                AckMask = headerAckMask,
+                AckedMask = headerAckedMask,
                 SequenceId = headerSeqId
             };
             ReliableUtility.SetHeaderAndPacket((byte*)sendBuffer.GetUnsafePtr(), headerSeqId, header, data, 1000);
@@ -1539,9 +1539,9 @@ namespace Unity.Networking.Transport.Tests
             var sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = ushort.MaxValue - 1;
             sharedContext->SentPackets.Acked = ushort.MaxValue - 2;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             var receiveContext = (ReliableUtility.Context*)receiveBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 
@@ -1558,9 +1558,9 @@ namespace Unity.Networking.Transport.Tests
             sharedContext = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedContext->SentPackets.Sequence = ushort.MaxValue - 1;
             sharedContext->SentPackets.Acked = ushort.MaxValue - 2;
-            sharedContext->SentPackets.AckMask = 0xFFFFFFFF;
+            sharedContext->SentPackets.AckedMask = ~0ul;
             sharedContext->ReceivedPackets.Sequence = sharedContext->SentPackets.Acked;
-            sharedContext->ReceivedPackets.AckMask = sharedContext->SentPackets.AckMask;
+            sharedContext->ReceivedPackets.AckedMask = sharedContext->SentPackets.AckedMask;
             receiveContext = (ReliableUtility.Context*)receiveBuffer.GetUnsafePtr();
             receiveContext->Delivered = sharedContext->SentPackets.Acked;
 

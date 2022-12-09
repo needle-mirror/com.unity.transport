@@ -10,16 +10,23 @@ namespace Unity.Networking.Transport.Utilities
     {
         public int Sequence;
         public int Acked;
+        internal ulong AckedMask;
+        internal ulong LastAckedMask;
+
+        // Unused, only here to maintain the public API intact.
         public uint AckMask;
         public uint LastAckMask;
     }
 
+    /// <summary>Extensions for <see cref="ReliableUtility.Parameters"/>.</summary>
     public static class ReliableStageParameterExtensions
     {
         /// <summary>
         /// Sets the <see cref="ReliableUtility.Parameters"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="windowSize"><seealso cref="ReliableUtility.Parameters.WindowSize"/></param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithReliableStageParameters(
             ref this NetworkSettings settings,
             int windowSize = ReliableUtility.ParameterConstants.WindowSize
@@ -38,6 +45,7 @@ namespace Unity.Networking.Transport.Utilities
         /// <summary>
         /// Gets the <see cref="ReliableUtility.Parameters"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
         /// <returns>Returns the <see cref="ReliableUtility.Parameters"/> values for the <see cref="NetworkSettings"/></returns>
         public static ReliableUtility.Parameters GetReliableStageParameters(ref this NetworkSettings settings)
         {
@@ -50,33 +58,59 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
+    /// <summary>Utility methods and types for the reliable pipeline stage.</summary>
+    /// <remarks>
+    /// Most methods are meant for internal use only. It is recommended not to rely on anything in
+    /// in structure since it is very likely to change in a future major version of the package.
+    /// </remarks>
     public struct ReliableUtility
     {
+        /// <summary>Statistics tracked internally by the reliable pipeline stage.</summary>
         public struct Statistics
         {
+            /// <summary>Number of packets received by the pipeline stage.</summary>
             public int PacketsReceived;
+            /// <summary>Number of packets sent by the pipeline stage.</summary>
             public int PacketsSent;
+            /// <summary>Number of packets that were dropped in transit.</summary>
             public int PacketsDropped;
+            /// <summary>Number of packets that arrived out of order.</summary>
             public int PacketsOutOfOrder;
+            /// <summary>Number of duplicated packets received by the pipeline stage.</summary>
             public int PacketsDuplicated;
+            /// <summary>Number of stale packets received by the pipeline stage.</summary>
             public int PacketsStale;
+            /// <summary>Number of packets resent by the pipeline stage.</summary>
             public int PacketsResent;
         }
 
+        /// <summary>RTT information tracked internally by the reliable pipeline stage.</summary>
         public struct RTTInfo
         {
+            /// <summary>RTT of the last packet acknowledged.</summary>
             public int LastRtt;
+            /// <summary>Smoothed RTT of the last packets acknowledged.</summary>
             public float SmoothedRtt;
+            /// <summary>Variance of the smoothed RTT.</summary>
             public float SmoothedVariance;
+            /// <summary>Timeout used to resend unacknowledged packets.</summary>
             public int ResendTimeout;
         }
 
+        /// <summary>Internal value. Do not use.</summary>
         public const int NullEntry = -1;
-        // The least amount of time we'll wait until a packet resend is performed
-        // This is 4x16ms (assumes a 60hz update rate)
-        public const int DefaultMinimumResendTime = 64;
+
+        /// <summary>The least amount of time we'll wait until a packet resend is performed.</summary>
+        public const int DefaultMinimumResendTime = 64; // This is 4x16ms (assumes a 60hz update rate).
+
+        /// <summary>The maximum amount of time we'll wait to resend a packet.</summary>
         public const int MaximumResendTime = 200;
 
+        // If we receive 3 duplicates AFTER our last send, then it's more likely that one of our
+        // ACKs was lost and the remote is trying to resend us a packet we won't acknowledge.
+        internal const int MaxDuplicatesSinceLastAck = 3;
+
+        /// <summary>Internal error codes of the pipeline stage. Do not use.</summary>
         public enum ErrorCodes
         {
             Stale_Packet = -1,
@@ -86,6 +120,7 @@ namespace Unity.Networking.Transport.Utilities
             InsufficientMemory = -8
         }
 
+        /// <summary>Internal packet types used by the pipeline stage. Do not use.</summary>
         public enum PacketType : ushort
         {
             Payload = 0,
@@ -103,11 +138,15 @@ namespace Unity.Networking.Transport.Utilities
             /// is needed.
             /// </summary>
             public SequenceBufferContext SentPackets;
+
             /// <summary>
             /// Context of received packets, last sequence ID received, and ackmask of received packets. Acked is not used.
             /// This is sent back to the remote peer in the header when sending.
             /// </summary>
             public SequenceBufferContext ReceivedPackets;
+
+            internal int DuplicatesSinceLastAck;
+
             public Statistics stats;
             public ErrorCodes errorCode;
 
@@ -119,6 +158,7 @@ namespace Unity.Networking.Transport.Utilities
             public int RemoteTimerDataStride;
         }
 
+        /// <summary>Internal context of the reliable pipeline stage. Do not use.</summary>
         public struct Context
         {
             public int Capacity;
@@ -132,15 +172,25 @@ namespace Unity.Networking.Transport.Utilities
             public long PreviousTimestamp;
         }
 
+        /// <summary>Parameters for the reliable pipeline stage.</summary>
         public struct Parameters : INetworkParameter
         {
+            /// <summary>Maximum number of packets that can be in flight at a time.</summary>
+            /// <remarks>
+            /// Must be between 0 and 64. Default is 32. Note that using values higher than 32 will
+            /// make reliable headers slightly larger, reducing the amount of space available for
+            /// data. Most of the time the extra bandwidth offered by the larger window size is more
+            /// than worth it, however.
+            /// </remarks>
             public int WindowSize;
 
+            /// <summary>Validate the settings.</summary>
+            /// <returns>True if the settings are valid, false otherwise.</returns>
             public bool Validate()
             {
                 var valid = true;
 
-                if (WindowSize < 0 || WindowSize > 32)
+                if (WindowSize < 0 || WindowSize > 64)
                 {
                     valid = false;
                     UnityEngine.Debug.LogError($"{nameof(WindowSize)} value ({WindowSize}) must be greater than 0 and smaller or equal to 32");
@@ -150,12 +200,15 @@ namespace Unity.Networking.Transport.Utilities
             }
         }
 
+        /// <summary>Default values for the reliable pipeline stage parameters.</summary>
         public struct ParameterConstants
         {
+            /// <summary>Default window size.</summary>
             public const int WindowSize = 32;
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public struct PacketHeader
         {
             public ushort Type;
@@ -166,6 +219,18 @@ namespace Unity.Networking.Transport.Utilities
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        internal struct ReliableHeader
+        {
+            public ushort Type;
+            public ushort ProcessingTime;
+            public ushort SequenceId;
+            public ushort AckedSequenceId;
+            // This must be the last member in the packet header, since we truncate it for smaller window sizes.
+            public ulong AckedMask;
+        }
+
+        /// <summary>Internal packet data structure. Do not use.</summary>
+        [StructLayout(LayoutKind.Sequential)]
         public struct PacketInformation
         {
             public int SequenceId;
@@ -174,8 +239,8 @@ namespace Unity.Networking.Transport.Utilities
             public long SendTime;
         }
 
-        // Header is inside the total packet length (Buffer size)
         [StructLayout(LayoutKind.Explicit)]
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public unsafe struct Packet
         {
             internal const int Length = NetworkParameterConstants.MTU;
@@ -183,6 +248,19 @@ namespace Unity.Networking.Transport.Utilities
             [FieldOffset(0)] public fixed byte Buffer[Length];
         }
 
+        // Header is inside the total packet length (Buffer size)
+        [StructLayout(LayoutKind.Explicit)]
+        internal unsafe struct ReliablePacket
+        {
+            // Have to add an extra 4 bytes in there to account for the fact that parts of the
+            // header will be unused if window size is 32 or less. We could do away with this hack
+            // by correcting the offsets everywhere else in the code, but that's tricky.
+            internal const int Length = NetworkParameterConstants.MTU + sizeof(uint);
+            [FieldOffset(0)] public ReliableHeader Header;
+            [FieldOffset(0)] public fixed byte Buffer[Length];
+        }
+
+        /// <summary>Internal packet data structure. Do not use.</summary>
         [StructLayout(LayoutKind.Sequential)]
         public struct PacketTimers
         {
@@ -198,6 +276,19 @@ namespace Unity.Networking.Transport.Utilities
             return (UnsafeUtility.SizeOf<T>() + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
         }
 
+        internal static int PacketHeaderWireSize(int windowSize)
+        {
+            var fullHeaderSize = UnsafeUtility.SizeOf<ReliableHeader>();
+            return windowSize > 32 ? fullHeaderSize : fullHeaderSize - sizeof(uint);
+        }
+
+        internal static unsafe int PacketHeaderWireSize(NetworkPipelineContext ctx)
+        {
+            var reliable = (SharedContext*)ctx.internalSharedProcessBuffer;
+            var windowSize = reliable->WindowSize;
+            return PacketHeaderWireSize(windowSize);
+        }
+
         public static int SharedCapacityNeeded(Parameters param)
         {
             // Timers are stored for both remote packets (processing time) and local packets (round trip time)
@@ -211,7 +302,7 @@ namespace Unity.Networking.Transport.Utilities
         public static int ProcessCapacityNeeded(Parameters param)
         {
             var infoSize = AlignedSizeOf<PacketInformation>();
-            var dataSize = (Packet.Length + UnsafeUtility.SizeOf<PacketHeader>() + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
+            var dataSize = (ReliablePacket.Length + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
             infoSize *= param.WindowSize;
             dataSize *= param.WindowSize;
 
@@ -230,10 +321,10 @@ namespace Unity.Networking.Transport.Utilities
             *notifier = new SharedContext
             {
                 WindowSize = param.WindowSize,
-                SentPackets = new SequenceBufferContext { Acked = NullEntry },
+                SentPackets = new SequenceBufferContext { Acked = NullEntry, AckedMask = ~0ul, LastAckedMask = ~0ul },
                 MinimumResendTime = DefaultMinimumResendTime,
-                ReceivedPackets = new SequenceBufferContext { Sequence = NullEntry },
-                RttInfo = new RTTInfo { SmoothedVariance = 5, SmoothedRtt = 50, ResendTimeout = 50, LastRtt = 50},
+                ReceivedPackets = new SequenceBufferContext { Sequence = NullEntry, AckedMask = ~0ul, LastAckedMask = ~0ul },
+                RttInfo = new RTTInfo { SmoothedVariance = 5, SmoothedRtt = 50, ResendTimeout = 50, LastRtt = 50 },
                 TimerDataOffset = AlignedSizeOf<SharedContext>(),
                 TimerDataStride = AlignedSizeOf<PacketTimers>(),
                 RemoteTimerDataOffset = AlignedSizeOf<SharedContext>() + AlignedSizeOf<PacketTimers>() * param.WindowSize,
@@ -254,7 +345,7 @@ namespace Unity.Networking.Transport.Utilities
             ctx->Capacity = param.WindowSize;
             ctx->IndexStride = AlignedSizeOf<PacketInformation>();
             ctx->IndexPtrOffset = AlignedSizeOf<Context>();
-            ctx->DataStride = (Packet.Length + UnsafeUtility.SizeOf<PacketHeader>() + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
+            ctx->DataStride = (ReliablePacket.Length + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
             ctx->DataPtrOffset = ctx->IndexPtrOffset + (ctx->IndexStride * ctx->Capacity);
             ctx->Resume = NullEntry;
             ctx->Delivered = NullEntry;
@@ -302,13 +393,28 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="sequence">The sequence ID of the packet, this is used to find a slot inside the buffer.</param>
         /// <param name="header">The packet header which we'll store with the packet payload.</param>
         /// <param name="data">The packet data which we're storing.</param>
-        /// <exception cref="OverflowException"></exception>
+        [Obsolete("Internal API that shouldn't be used. Will be removed in Unity Transport 2.0.")]
         public static unsafe void SetHeaderAndPacket(byte* self, int sequence, PacketHeader header, InboundSendBuffer data, long timestamp)
+        {
+            throw new NotImplementedException("Implementation was moved to other internal APIs.");
+        }
+
+        /// <summary>
+        /// Write packet, packet header and tracking information to the given buffer space. This buffer
+        /// should contain the reliability Context at the front, that contains the capacity of the buffer
+        /// and pointer offsets needed to find the slots we can copy the packet to.
+        /// </summary>
+        /// <param name="self">Buffer space where we can store packets.</param>
+        /// <param name="sequence">The sequence ID of the packet, this is used to find a slot inside the buffer.</param>
+        /// <param name="header">The packet header which we'll store with the packet payload.</param>
+        /// <param name="data">The packet data which we're storing.</param>
+        /// <exception cref="OverflowException"></exception>
+        internal static unsafe void SetHeaderAndPacket(byte* self, int sequence, ReliableHeader header, InboundSendBuffer data, long timestamp)
         {
             Context* ctx = (Context*)self;
             int totalSize = data.bufferLength + data.headerPadding;
 
-            if (totalSize + UnsafeUtility.SizeOf<PacketHeader>() > ctx->DataStride)
+            if (totalSize > ctx->DataStride)
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new OverflowException();
 #else
@@ -322,9 +428,9 @@ namespace Unity.Networking.Transport.Utilities
             info->HeaderPadding = (ushort)data.headerPadding;
             info->SendTime = timestamp;
 
-            Packet* packet = GetPacket(self, sequence);
+            ReliablePacket* packet = GetReliablePacket(self, sequence);
             packet->Header = header;
-            var offset = (ctx->DataPtrOffset + (index * ctx->DataStride)) + UnsafeUtility.SizeOf<PacketHeader>();
+            var offset = (ctx->DataPtrOffset + (index * ctx->DataStride)) + UnsafeUtility.SizeOf<ReliableHeader>();
             void* dataPtr = (self + offset);
 
             if (data.bufferLength > 0)
@@ -339,13 +445,19 @@ namespace Unity.Networking.Transport.Utilities
             return (PacketInformation*)((self + ctx->IndexPtrOffset) + (index * ctx->IndexStride));
         }
 
+        [Obsolete("Internal API that shouldn't be used. Will be removed in Unity Transport 2.0.")]
         public static unsafe Packet* GetPacket(byte* self, int sequence)
+        {
+            throw new NotImplementedException("Implementation was moved to other internal APIs.");
+        }
+
+        internal static unsafe ReliablePacket* GetReliablePacket(byte* self, int sequence)
         {
             Context* ctx = (Context*)self;
             var index = sequence % ctx->Capacity;
 
             var offset = ctx->DataPtrOffset + (index * ctx->DataStride);
-            return (Packet*)(self + offset);
+            return (ReliablePacket*)(self + offset);
         }
 
         public static unsafe bool TryAquire(byte* self, int sequence)
@@ -436,7 +548,7 @@ namespace Unity.Networking.Transport.Utilities
             SharedContext* reliable = (SharedContext*)context.internalSharedProcessBuffer;
 
             // Last sequence ID and ackmask we received from the remote peer.
-            var lastReceivedAckMask = reliable->SentPackets.AckMask;
+            var lastReceivedAckedMask = reliable->SentPackets.AckedMask;
             var lastOwnSequenceIdAckedByRemote = (ushort)reliable->SentPackets.Acked;
 
             var sequence = GetNonWrappingLastAckedSequenceNumber(context);
@@ -451,12 +563,12 @@ namespace Unity.Networking.Transport.Utilities
                     // Check the bit for this sequence ID against the ackmask. Bit 0 in the ackmask
                     // is the latest acked sequence ID, bit 1 latest minus 1 (one older) and so on.
                     // If bit X is 1 then last acked sequence ID minus X is acknowledged.
-                    var ackBits = 1 << (lastOwnSequenceIdAckedByRemote - info->SequenceId);
+                    var ackBits = 1ul << (lastOwnSequenceIdAckedByRemote - info->SequenceId);
 
                     // Release if this ID has been flipped on in the ackmask (it's acknowledged).
                     // Ignore if sequence ID is out of window range of the last acknowledged ID.
                     var distance = SequenceHelpers.AbsDistance(lastOwnSequenceIdAckedByRemote, (ushort)info->SequenceId);
-                    if (distance < reliable->WindowSize && (ackBits & lastReceivedAckMask) != 0)
+                    if (distance < reliable->WindowSize && (ackBits & lastReceivedAckedMask) != 0)
                     {
                         Release(context.internalProcessBuffer, info->SequenceId);
                         info->SendTime = -1;
@@ -541,8 +653,23 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="header">Packet header for the packet payload we're resending.</param>
         /// <param name="needsResume">Indicates if a pipeline resume is needed again. Unused.</param>
         /// <returns>Buffer slice to packet payload.</returns>
-        /// <exception cref="InvalidOperationException"></exception>
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public static unsafe InboundSendBuffer ResumeSend(NetworkPipelineContext context, out PacketHeader header, ref bool needsResume)
+        {
+            throw new NotImplementedException("Implementation moved to an internal method. Shouldn't be used anymore.");
+        }
+
+        /// <summary>
+        /// Resend a packet which we have not received an acknowledgement for in time. Pipeline resume
+        /// will be enabled if there are more packets which we need to resend. The send reliability context
+        /// will then also be updated to track the next packet we need to resume.
+        /// </summary>
+        /// <param name="context">Pipeline context, we'll use both the shared reliability context and send context.</param>
+        /// <param name="header">Packet header for the packet payload we're resending.</param>
+        /// <param name="needsResume">Indicates if a pipeline resume is needed again. Unused.</param>
+        /// <returns>Buffer slice to packet payload.</returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        internal static unsafe InboundSendBuffer ResumeSend(NetworkPipelineContext context, out ReliableHeader header, ref bool needsResume)
         {
             SharedContext* reliable = (SharedContext*)context.internalSharedProcessBuffer;
             Context* ctx = (Context*)context.internalProcessBuffer;
@@ -559,14 +686,14 @@ namespace Unity.Networking.Transport.Utilities
             // Reset the resend timer
             information->SendTime = context.timestamp;
 
-            Packet *packet = GetPacket(context.internalProcessBuffer, sequence);
+            ReliablePacket *packet = GetReliablePacket(context.internalProcessBuffer, sequence);
             header = packet->Header;
 
             // Update acked/ackmask to latest values
             header.AckedSequenceId = (ushort)reliable->ReceivedPackets.Sequence;
-            header.AckMask = reliable->ReceivedPackets.AckMask;
+            header.AckedMask = reliable->ReceivedPackets.AckedMask;
 
-            var offset = (ctx->DataPtrOffset + ((sequence % ctx->Capacity) * ctx->DataStride)) + UnsafeUtility.SizeOf<PacketHeader>();
+            var offset = (ctx->DataPtrOffset + ((sequence % ctx->Capacity) * ctx->DataStride)) + UnsafeUtility.SizeOf<ReliableHeader>();
 
             var inbound = default(InboundSendBuffer);
             inbound.bufferWithHeaders = context.internalProcessBuffer + offset;
@@ -586,7 +713,21 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="inboundBuffer">Buffer with packet data.</param>
         /// <param name="header">Packet header which will be populated.</param>
         /// <returns>Sequence ID assigned to this packet.</returns>
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public static unsafe int Write(NetworkPipelineContext context, InboundSendBuffer inboundBuffer, ref PacketHeader header)
+        {
+            throw new NotImplementedException("Implementation moved to an internal method. Shouldn't be used anymore.");
+        }
+
+        /// <summary>
+        /// Store the packet for possible later resends, and fill in the header we'll use to send it (populate with
+        /// sequence ID, last acknowledged ID from remote with ackmask.
+        /// </summary>
+        /// <param name="context">Pipeline context, the reliability shared state is used here.</param>
+        /// <param name="inboundBuffer">Buffer with packet data.</param>
+        /// <param name="header">Packet header which will be populated.</param>
+        /// <returns>Sequence ID assigned to this packet.</returns>
+        internal static unsafe int Write(NetworkPipelineContext context, InboundSendBuffer inboundBuffer, ref ReliableHeader header)
         {
             SharedContext* reliable = (SharedContext*)context.internalSharedProcessBuffer;
 
@@ -601,10 +742,11 @@ namespace Unity.Networking.Transport.Utilities
 
             header.SequenceId = sequence;
             header.AckedSequenceId = (ushort)reliable->ReceivedPackets.Sequence;
-            header.AckMask = reliable->ReceivedPackets.AckMask;
+            header.AckedMask = reliable->ReceivedPackets.AckedMask;
 
             reliable->ReceivedPackets.Acked = reliable->ReceivedPackets.Sequence;
-            reliable->ReceivedPackets.LastAckMask = header.AckMask;
+            reliable->ReceivedPackets.LastAckedMask = header.AckedMask;
+            reliable->DuplicatesSinceLastAck = 0;
 
             // Attach our processing time of the packet we're acknowledging (time between receiving it and sending this ack)
             header.ProcessingTime =
@@ -625,17 +767,31 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="context">Pipeline context, the reliability shared state is used here.</param>
         /// <param name="header">Packet header which will be populated.</param>
         /// <returns></returns>
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public static unsafe void WriteAckPacket(NetworkPipelineContext context, ref PacketHeader header)
+        {
+            throw new NotImplementedException("Implementation moved to an internal method. Shouldn't be used anymore.");
+        }
+
+        /// <summary>
+        /// Write an ack packet, only the packet header is used and this doesn't advance the sequence ID.
+        /// The packet is not stored away for resend routine.
+        /// </summary>
+        /// <param name="context">Pipeline context, the reliability shared state is used here.</param>
+        /// <param name="header">Packet header which will be populated.</param>
+        /// <returns></returns>
+        internal static unsafe void WriteAckPacket(NetworkPipelineContext context, ref ReliableHeader header)
         {
             SharedContext* reliable = (SharedContext*)context.internalSharedProcessBuffer;
 
             header.Type = (ushort)PacketType.Ack;
             header.AckedSequenceId = (ushort)reliable->ReceivedPackets.Sequence;
-            header.AckMask = reliable->ReceivedPackets.AckMask;
+            header.AckedMask = reliable->ReceivedPackets.AckedMask;
             header.ProcessingTime =
                 CalculateProcessingTime(context.internalSharedProcessBuffer, header.AckedSequenceId, context.timestamp);
             reliable->ReceivedPackets.Acked = reliable->ReceivedPackets.Sequence;
-            reliable->ReceivedPackets.LastAckMask = header.AckMask;
+            reliable->ReceivedPackets.LastAckedMask = header.AckedMask;
+            reliable->DuplicatesSinceLastAck = 0;
         }
 
         public static unsafe void StoreTimestamp(byte* sharedBuffer, ushort sequenceId, long timestamp)
@@ -717,7 +873,21 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="context">Pipeline context, the reliability shared state is used here.</param>
         /// <param name="header">Packet header of a new received packet.</param>
         /// <returns>Sequence ID of the received packet.</returns>
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public static unsafe int Read(NetworkPipelineContext context, PacketHeader header)
+        {
+            throw new NotImplementedException("Implementation moved to an internal method. Shouldn't be used anymore.");
+        }
+
+        /// <summary>
+        /// Read header data and update reliability tracking information in the shared context.
+        /// - If the packets sequence ID is lower than the last received ID+1, then it's stale
+        /// - If the packets sequence ID is higher, then we'll process it and update tracking info in the shared context
+        /// </summary>
+        /// <param name="context">Pipeline context, the reliability shared state is used here.</param>
+        /// <param name="header">Packet header of a new received packet.</param>
+        /// <returns>Sequence ID of the received packet.</returns>
+        internal static unsafe int Read(NetworkPipelineContext context, ReliableHeader header)
         {
             SharedContext* reliable = (SharedContext*)context.internalSharedProcessBuffer;
 
@@ -739,16 +909,16 @@ namespace Unity.Networking.Transport.Utilities
                 if (distance > window)
                 {
                     reliable->stats.PacketsDropped += distance - 1;
-                    reliable->ReceivedPackets.AckMask = 1;
+                    reliable->ReceivedPackets.AckedMask = 1;
                 }
                 else
                 {
-                    reliable->ReceivedPackets.AckMask <<= distance;
-                    reliable->ReceivedPackets.AckMask |= 1;
+                    reliable->ReceivedPackets.AckedMask <<= distance;
+                    reliable->ReceivedPackets.AckedMask |= 1;
 
                     for (var i = 0; i < Math.Min(distance, window); ++i)
                     {
-                        if ((reliable->ReceivedPackets.AckMask & 1 << i) == 0)
+                        if ((reliable->ReceivedPackets.AckedMask & 1ul << i) == 0)
                         {
                             reliable->stats.PacketsDropped++;
                         }
@@ -764,8 +934,8 @@ namespace Unity.Networking.Transport.Utilities
                 if (distance >= ushort.MaxValue - reliable->WindowSize)
                     distance = reliable->ReceivedPackets.Sequence - header.SequenceId;
 
-                var ackBit = 1 << distance;
-                if ((ackBit & reliable->ReceivedPackets.AckMask) != 0)
+                var ackBit = 1ul << distance;
+                if ((ackBit & reliable->ReceivedPackets.AckedMask) != 0)
                 {
                     // Still valuable to check ACKs in a duplicated packet, since there might be
                     // more information than on the original packet if it's a resend.
@@ -776,7 +946,7 @@ namespace Unity.Networking.Transport.Utilities
                 }
 
                 reliable->stats.PacketsOutOfOrder++;
-                reliable->ReceivedPackets.AckMask |= (uint)ackBit;
+                reliable->ReceivedPackets.AckedMask |= (ulong)ackBit;
             }
 
             // Store receive timestamp for remote sequence ID we just received
@@ -787,7 +957,13 @@ namespace Unity.Networking.Transport.Utilities
             return header.SequenceId;
         }
 
+        [Obsolete("Will be removed in Unity Transport 2.0.")]
         public static unsafe void ReadAckPacket(NetworkPipelineContext context, PacketHeader header)
+        {
+            throw new NotImplementedException("Implementation moved to an internal method. Shouldn't be used anymore.");
+        }
+
+        internal static unsafe void ReadAckPacket(NetworkPipelineContext context, ReliableHeader header)
         {
             SharedContext* reliable = (SharedContext*)context.internalSharedProcessBuffer;
 
@@ -805,12 +981,12 @@ namespace Unity.Networking.Transport.Utilities
             if (reliable->SentPackets.Acked == header.AckedSequenceId)
             {
                 // If the current packet is the same as the last one we acked we do not know which one is newer, but it is safe to keep any packet acked by either ack since we never un-ack
-                reliable->SentPackets.AckMask |= header.AckMask;
+                reliable->SentPackets.AckedMask |= header.AckedMask;
             }
             else
             {
                 reliable->SentPackets.Acked = header.AckedSequenceId;
-                reliable->SentPackets.AckMask = header.AckMask;
+                reliable->SentPackets.AckedMask = header.AckedMask;
             }
         }
 
@@ -821,10 +997,12 @@ namespace Unity.Networking.Transport.Utilities
 
             // If more than one full frame (timestamp - prevTimestamp = one frame) has elapsed then send ack packet
             // and if the last received sequence ID has not been acked yet, or the set of acked packet in the window
-            // changed without the sequence ID updating (can happen when receiving out of order packets)
+            // changed without the sequence ID updating (can happen when receiving out of order packets), or we've
+            // received a lot of duplicates since last sending a ACK.
             if (reliable->LastSentTime < reliable->PreviousTimestamp &&
                 (SequenceHelpers.LessThan16((ushort)shared->ReceivedPackets.Acked, (ushort)shared->ReceivedPackets.Sequence) ||
-                 shared->ReceivedPackets.AckMask != shared->ReceivedPackets.LastAckMask))
+                 shared->ReceivedPackets.AckedMask != shared->ReceivedPackets.LastAckedMask ||
+                 shared->DuplicatesSinceLastAck >= MaxDuplicatesSinceLastAck))
                 return true;
             return false;
         }

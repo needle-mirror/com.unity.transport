@@ -30,13 +30,16 @@ namespace Unity.Networking.Transport.Relay
         }
     }
 
+    /// <summary>Extensions for <see cref="RelayNetworkParameter"/>.</summary>
     public static class RelayParameterExtensions
     {
         /// <summary>
         /// Sets the <see cref="RelayNetworkParameter"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="serverData"><seealso cref="RelayNetworkParameter.ServerData"/></param>
         /// <param name="relayConnectionTimeMS"><seealso cref="RelayNetworkParameter.RelayConnectionTimeMS"/></param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithRelayParameters(
             ref this NetworkSettings settings,
             ref RelayServerData serverData,
@@ -57,6 +60,7 @@ namespace Unity.Networking.Transport.Relay
         /// <summary>
         /// Gets the <see cref="RelayNetworkParameter"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
         /// <returns>Returns the <see cref="RelayNetworkParameter"/> values for the <see cref="NetworkSettings"/></returns>
         public static RelayNetworkParameter GetRelayParameters(ref this NetworkSettings settings)
         {
@@ -87,6 +91,8 @@ namespace Unity.Networking.Transport.Relay
         /// </summary>
         public int RelayConnectionTimeMS;
 
+        /// <summary>Validate the settings.</summary>
+        /// <returns>True if the settings are valid, false otherwise.</returns>
         public unsafe bool Validate()
         {
             var valid = true;

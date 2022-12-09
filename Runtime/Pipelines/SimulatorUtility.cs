@@ -4,11 +4,13 @@ using Random = Unity.Mathematics.Random;
 
 namespace Unity.Networking.Transport.Utilities
 {
+    /// <summary>Extensions for <see cref="SimulatorUtility.Parameters"/>.</summary>
     public static class SimulatorStageParameterExtensions
     {
         /// <summary>
         /// Sets the <see cref="SimulatorUtility.Parameters"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="maxPacketCount"><seealso cref="SimulatorUtility.Parameters.MaxPacketCount"/></param>
         /// <param name="maxPacketSize"><seealso cref="SimulatorUtility.Parameters.MaxPacketSize"/></param>
         /// <param name="packetDelayMs"><seealso cref="SimulatorUtility.Parameters.PacketDelayMs"/></param>
@@ -18,6 +20,7 @@ namespace Unity.Networking.Transport.Utilities
         /// <param name="fuzzFactor"><seealso cref="SimulatorUtility.Parameters.FuzzFactor"/></param>
         /// <param name="fuzzOffset"><seealso cref="SimulatorUtility.Parameters.FuzzOffset"/></param>
         /// <param name="randomSeed"><seealso cref="SimulatorUtility.Parameters.RandomSeed"/></param>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithSimulatorStageParameters(
             ref this NetworkSettings settings,
             int maxPacketCount,
@@ -52,6 +55,7 @@ namespace Unity.Networking.Transport.Utilities
         /// <summary>
         /// Gets the <see cref="SimulatorUtility.Parameters"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
         /// <returns>Returns the <see cref="SimulatorUtility.Parameters"/> values for the <see cref="NetworkSettings"/></returns>
         public static SimulatorUtility.Parameters GetSimulatorStageParameters(ref this NetworkSettings settings)
         {
@@ -62,6 +66,11 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
+    /// <summary>Utility methods and types for the simulator pipeline stage.</summary>
+    /// <remarks>
+    /// Most methods are meant for internal use only. It is recommended not to rely on anything in
+    /// in structure since it is very likely to change in a future major version of the package.
+    /// </remarks>
     public struct SimulatorUtility
     {
         private int m_PacketCount;
@@ -124,9 +133,12 @@ namespace Unity.Networking.Transport.Utilities
             /// </summary>
             public uint RandomSeed;
 
+            /// <summary>Validate the settings.</summary>
+            /// <returns>True if the settings are valid, false otherwise.</returns>
             public bool Validate() => true;
         }
 
+        /// <summary>Internal context of the simulator pipeline. Do not use.</summary>
         [StructLayout(LayoutKind.Sequential)]
         public struct Context
         {

@@ -58,6 +58,8 @@ namespace Unity.Networking.Transport
         /// <summary>Size of the default <see cref="DataStreamWriter"/></summary>
         public int size;
 
+        /// <summary>Validate the settings.</summary>
+        /// <returns>True if the settings are valid, false otherwise.</returns>
         public bool Validate()
         {
             var valid = true;
@@ -98,6 +100,8 @@ namespace Unity.Networking.Transport
         /// <remarks>The main use for this parameter is tests where determinism is more important than correctness.</remarks>
         public int fixedFrameTimeMS;
 
+        /// <summary>Validate the settings.</summary>
+        /// <returns>True if the settings are valid, false otherwise.</returns>
         public bool Validate()
         {
             var valid = true;
@@ -159,6 +163,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Gets the <see cref="NetworkDataStreamParameter"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
         /// <returns>Returns the <see cref="NetworkDataStreamParameter"/> values for the <see cref="NetworkSettings"/></returns>
         public static NetworkDataStreamParameter GetDataStreamParameters(ref this NetworkSettings settings)
         {
@@ -173,13 +178,14 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Sets the <see cref="NetworkConfigParameter"/> values for the <see cref="NetworkSettings"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
         /// <param name="connectTimeoutMS"><seealso cref="NetworkConfigParameter.connectTimeoutMS"/></param>
         /// <param name="maxConnectAttempts"><seealso cref="NetworkConfigParameter.maxConnectAttempts"/></param>
         /// <param name="disconnectTimeoutMS"><seealso cref="NetworkConfigParameter.disconnectTimeoutMS"/></param>
         /// <param name="heartbeatTimeoutMS"><seealso cref="NetworkConfigParameter.heartbeatTimeoutMS"/></param>
         /// <param name="maxFrameTimeMS"><seealso cref="NetworkConfigParameter.maxFrameTimeMS"/></param>
         /// <param name="fixedFrameTimeMS"><seealso cref="NetworkConfigParameter.fixedFrameTimeMS"/></param>
-        /// <returns></returns>
+        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
         public static ref NetworkSettings WithNetworkConfigParameters(
             ref this NetworkSettings settings,
             int connectTimeoutMS        = NetworkParameterConstants.ConnectTimeoutMS,
@@ -208,6 +214,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Gets the <see cref="NetworkConfigParameter"/>
         /// </summary>
+        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
         /// <returns>Returns the <see cref="NetworkConfigParameter"/> values for the <see cref="NetworkSettings"/></returns>
         public static NetworkConfigParameter GetNetworkConfigParameters(ref this NetworkSettings settings)
         {

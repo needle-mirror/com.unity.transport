@@ -1,5 +1,14 @@
 # Change log
 
+## [1.3.1] - 2022-12-09
+
+### Changes
+* It is now possible to set a window size of up to 64 for `ReliableSequencedPipelineStage` (use `NetworkSettings.WithReliableStageParameters` to modify the value). Doing so increases the packet header size by 4 bytes though, so the default value remains at 32.
+
+### Fixes
+* Fixed an issue where if one end of a reliable pipeline stopped sending any traffic and its latest ACK message was lost, then the other end would stall.
+* Fixed a crash when using DTLS if an update was delayed for long enough that both the disconnection and heartbeat timeouts expire.
+
 ## [1.3.0] - 2022-09-27
 
 ### New features

@@ -167,7 +167,7 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Gets the endpoint's representation as a <see cref="string">.
+        /// Gets the endpoint's representation as a string.
         /// </summary>
         public string Address => AddressAsString();
 
@@ -219,7 +219,7 @@ namespace Unity.Networking.Transport
         public bool IsAny => (this == AnyIpv4.WithPort(Port)) || (this == AnyIpv6.WithPort(Port));
 
         /// <summary>
-        /// Try to parse the given address and port into a new <see cref="NetworkEndPoint">.
+        /// Try to parse the given address and port into a new <see cref="NetworkEndPoint"/>.
         /// </summary>
         /// <param name="address">String representation of the address.</param>
         /// <param name="port">Port number.</param>
@@ -254,7 +254,7 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Same as <see cref="TryParse{T}">, except an endpoint is always returned. If the given
+        /// Same as <see cref="TryParse{T}"/>, except an endpoint is always returned. If the given
         /// address, port, and family don't represent a valid endpoint, the default one is returned.
         /// </summary>
         /// <param name="address">String representation of the address.</param>
@@ -437,7 +437,7 @@ namespace Unity.Networking.Transport
     }
 
     /// <summary>
-    /// Representation of an endpoint, to be used internally by <see cref="INetworkInterface">.
+    /// Representation of an endpoint, to be used internally by <see cref="INetworkInterface"/>.
     /// </summary>
     public unsafe struct NetworkInterfaceEndPoint : IEquatable<NetworkInterfaceEndPoint>
     {
@@ -508,6 +508,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Returns the <see cref="NetworkInterfaceEndPoint"/> as a <see cref="FixedString64Bytes"/>.
         /// </summary>
+        /// <returns>Fixed string representation of the endpoint.</returns>
         public FixedString64Bytes ToFixedString()
         {
             if (IsValid == false)
@@ -542,7 +543,7 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Returns the <see cref="NetworkInterfaceEndPoint"/> as a <see cref="string">.
+        /// Returns the <see cref="NetworkInterfaceEndPoint"/> as a string.
         /// </summary>
         public override string ToString()
         {

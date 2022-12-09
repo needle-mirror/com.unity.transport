@@ -152,7 +152,6 @@ namespace Unity.Networking.Transport.Utilities
     /// <summary>
     /// Utility class used when dealing with sequenced pipeline stages.
     /// </summary>
-    /// <seealso cref="ReliableUtility">
     public static class SequenceHelpers
     {
         /// <summary>
@@ -260,7 +259,7 @@ namespace Unity.Networking.Transport.Utilities
         /// <summary>
         /// Appends the hex using the specified str
         /// </summary>
-        /// <typeparam name="T">The string type. Has constraints where it must be a struct, an INativeList<byte> and IUTF8Bytes.</typeparam>
+        /// <typeparam name="T">The string type. Has constraints where it must be unmanaged, an INativeList&lt;byte&gt; and IUTF8Bytes.</typeparam>
         /// <param name="str">The string of type T. Passed in by reference, and will be modified by this method.</param>
         /// <param name="val">The ushort representation of the hex value to convert to its string representation and append to T.</param>
         /// <returns>The <see cref="FormatError"/> from the attempt to modify <see cref="str"/>, either None or Overflow.</returns>
@@ -289,7 +288,7 @@ namespace Unity.Networking.Transport.Utilities
     }
 
     /// <summary>
-    /// Provides Extension methods for the <see cref="NativeList"> class
+    /// Provides Extension methods for the <see cref="NativeList"/> class
     /// </summary>
     public static class NativeListExt
     {
@@ -326,6 +325,7 @@ namespace Unity.Networking.Transport.Utilities
     /// </summary>
     public static class RandomHelpers
     {
+        /// <summary>Get a random ushort value.</summary>
         /// <returns>a ushort in [1..ushort.MaxValue - 1] range</returns>
         public static ushort GetRandomUShort()
         {
@@ -333,6 +333,7 @@ namespace Unity.Networking.Transport.Utilities
             return (ushort)rnd.NextUInt(1, ushort.MaxValue - 1);
         }
 
+        /// <summary>Get a random ulong value.</summary>
         /// <returns>a ushort in [1..uint.MaxValue - 1] range</returns>
         public static ulong GetRandomULong()
         {
