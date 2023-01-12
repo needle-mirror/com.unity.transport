@@ -186,7 +186,10 @@ namespace Unity.Networking.Transport.Utilities
         [StructLayout(LayoutKind.Explicit)]
         internal unsafe struct Packet
         {
-            internal const int Length = NetworkParameterConstants.MTU;
+            // Have to add an extra 4 bytes in there to account for the fact that parts of the
+            // header will be unused if window size is 32 or less. We could do away with this hack
+            // by correcting the offsets everywhere else in the code, but that's tricky.
+            internal const int Length = NetworkParameterConstants.MTU + sizeof(uint);
             [FieldOffset(0)] public PacketHeader Header;
             [FieldOffset(0)] public fixed byte Buffer[Length];
         }
@@ -232,7 +235,7 @@ namespace Unity.Networking.Transport.Utilities
         internal static int ProcessCapacityNeeded(Parameters param)
         {
             var infoSize = AlignedSizeOf<PacketInformation>();
-            var dataSize = (Packet.Length + UnsafeUtility.SizeOf<PacketHeader>() + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
+            var dataSize = (Packet.Length + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
             infoSize *= param.WindowSize;
             dataSize *= param.WindowSize;
 
@@ -275,7 +278,7 @@ namespace Unity.Networking.Transport.Utilities
             ctx->Capacity = param.WindowSize;
             ctx->IndexStride = AlignedSizeOf<PacketInformation>();
             ctx->IndexPtrOffset = AlignedSizeOf<Context>();
-            ctx->DataStride = (Packet.Length + UnsafeUtility.SizeOf<PacketHeader>() + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
+            ctx->DataStride = (Packet.Length + NetworkPipelineProcessor.AlignmentMinusOne) & (~NetworkPipelineProcessor.AlignmentMinusOne);
             ctx->DataPtrOffset = ctx->IndexPtrOffset + (ctx->IndexStride * ctx->Capacity);
             ctx->Resume = NullEntry;
             ctx->Delivered = NullEntry;
@@ -331,7 +334,7 @@ namespace Unity.Networking.Transport.Utilities
             Context* ctx = (Context*)self;
             int totalSize = data.bufferLength + data.headerPadding;
 
-            if (totalSize + UnsafeUtility.SizeOf<PacketHeader>() > ctx->DataStride)
+            if (totalSize > ctx->DataStride)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new OverflowException();

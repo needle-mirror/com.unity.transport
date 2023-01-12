@@ -4,211 +4,194 @@ Following from the [the minimal client and server example](client-server-simple.
 
 Before reading this tutorial, you should understand how the [C# Job System](https://docs.unity3d.com/Manual/JobSystem.html) works. Review that information, then continue.
 
-## Create a Jobified client
+The code for that example is available in the `JobifiedClientServer` [package sample](samples-usage.md).
+
+## Create a jobified client
 
 Create a client job to handle your inputs from the network. As you only handle one client at a time, use [IJob](https://docs.unity3d.com/ScriptReference/Unity.Jobs.IJob.html) as your job type. You need to pass the driver and the connection to the job to handle updates within the `Execute` method of the job.
 
 ```csharp
-struct ClientUpdateJob: IJob
+struct ClientUpdateJob : IJob
 {
-    public NetworkDriver driver;
-    public NativeArray<NetworkConnection> connection;
-    public NativeArray<byte> done;
+    public NetworkDriver Driver;
+    public NativeArray<NetworkConnection> Connection;
 
-    public void Execute() { ... }
+    public void Execute()
+    {
+    }
 }
 ```
 
-**Note:** The data inside the `ClientUpdateJob` is *copied*. If you want to use the data after the job is completed, you need to have your data in a shared container, such as a [NativeContainer](https://docs.unity3d.com/Manual/JobSystemNativeContainer.html).
+**Note:** The data inside the `ClientUpdateJob` is *copied*. If you want to use the data after the job is completed, you need to have your data in a shared container, such as a [native container](https://docs.unity3d.com/Manual/JobSystemNativeContainer.html).
 
-You may want to update the `NetworkConnection` and the `done` variables inside your job as you may receive a disconnect message. Verify you can share the data between the job and the caller. In this case, use a [NativeArray](https://docs.unity3d.com/ScriptReference/Unity.Collections.NativeArray_1.html).
+You may want to update the `NetworkConnection` inside your job as you may receive a disconnect message. To ensure that this is possible, we use a [NativeArray](https://docs.unity3d.com/ScriptReference/Unity.Collections.NativeArray_1.html).
 
-**Note:** You can only use [blittable types](https://docs.microsoft.com/en-us/dotnet/framework/interop/blittable-and-non-blittable-types) in a `NativeContainer`. In this case, instead of a `bool` you need to use a `byte`, since `bool` is not blittable.
+**Note:** You can only use [blittable types](https://docs.microsoft.com/en-us/dotnet/framework/interop/blittable-and-non-blittable-types) in a native container.
 
-In your `Execute` method, move over your code from the `Update` method that you have already in place from [ClientBehaviour.cs](samples/clientbehaviour.cs.md) and you are done.
+In your `Execute` method, move over your code from the `Update` method that you have already in place from `ClientBehaviour.cs` and you are done.
 
-You need to change any call to `m_Connection` to `connection[0]` to refer to the first element inside your `NativeArray`. The same goes for your `done` variable, you need to call `done[0]` when you refer to the `done` variable. See the following:
+You need to change any call to `m_Connection` to `Connection[0]` to refer to the first element inside your `NativeArray`. See the following:
 
 ```csharp
 public void Execute()
 {
-    if (!connection[0].IsCreated)
+    if (!Connection[0].IsCreated)
     {
-        // Remember that its not a bool anymore.
-        if (done[0] != 1)
-            Debug.Log("Something went wrong during connect");
         return;
     }
+
     DataStreamReader stream;
     NetworkEvent.Type cmd;
-
-    while ((cmd = connection[0].PopEvent(driver, out stream)) != NetworkEvent.Type.Empty)
+    while ((cmd = Connection[0].PopEvent(Driver, out stream)) != NetworkEvent.Type.Empty)
     {
         if (cmd == NetworkEvent.Type.Connect)
         {
-            Debug.Log("We are now connected to the server");
+            Debug.Log("We are now connected to the server.");
 
-            var value = 1;
-            driver.BeginSend(connection[0], out var writer);
+            uint value = 1;
+            Driver.BeginSend(Connection[0], out var writer);
             writer.WriteUInt(value);
-            driver.EndSend(writer);
+            Driver.EndSend(writer);
         }
         else if (cmd == NetworkEvent.Type.Data)
         {
             uint value = stream.ReadUInt();
-            Debug.Log("Got the value = " + value + " back from the server");
-            // And finally change the `done[0]` to `1`
-            done[0] = 1;
-            connection[0].Disconnect(driver);
-            connection[0] = default(NetworkConnection);
+            Debug.Log($"Got the value {value} back from the server.");
+
+            Driver.Disconnect(Connection[0]);
+            Connection[0] = default;
         }
         else if (cmd == NetworkEvent.Type.Disconnect)
         {
-            Debug.Log("Client got disconnected from server");
-            connection[0] = default(NetworkConnection);
+            Debug.Log("Client got disconnected from the server.");
+            Connection[0] = default;
         }
     }
 }
+}
 ```
 
-### Update the client MonoBehaviour
+### Update the client `MonoBehaviour`
 
-When you have a job, you need to verify that you can execute the job. 
+Make the following changes to `ClientBehaviour`:
 
-Complete changes to `ClientBehaviour`:
-
-* Change `m_Done` and `m_Connection` to type `NativeArray`
+* Change `m_Connection` to type `NativeArray`
 * Add a [JobHandle](https://docs.unity3d.com/Manual/JobSystemJobDependencies.html) to track ongoing jobs
 
 ```csharp
 public class JobifiedClientBehaviour : MonoBehaviour
 {
-    public NetworkDriver m_Driver;
-    public NativeArray<NetworkConnection> m_Connection;
-    public NativeArray<byte> m_Done;
-    public JobHandle ClientJobHandle;
+    NetworkDriver m_Driver;
+    NativeArray<NetworkConnection> m_Connection;
 
-    public void OnDestroy() { ... }
-    public void Start() { ... }
-    public void Update() { ... }
-}
+    JobHandle m_ClientJobHandle;
 ```
 
-#### Start method
+#### `Start` method
 
 ```csharp
-void Start () {
+void Start()
+{
     m_Driver = NetworkDriver.Create();
     m_Connection = new NativeArray<NetworkConnection>(1, Allocator.Persistent);
-    m_Done = new NativeArray<byte>(1, Allocator.Persistent);
 
-    var endpoint = NetworkEndPoint.LoopbackIpv4;
-    endpoint.Port = 9000;
-
+    var endpoint = NetworkEndpoint.LoopbackIpv4.WithPort(7777);
     m_Connection[0] = m_Driver.Connect(endpoint);
 }
 ```
 
-The `Start` method looks pretty similar to before, the major update here is to verify you create your `NativeArray`.
+The `Start` method looks pretty similar to before. The major update here is to verify you create your `NativeArray`.
 
-#### OnDestroy method
+#### `OnDestroy` method
 
 ```csharp
-public void OnDestroy()
+void OnDestroy()
 {
-    ClientJobHandle.Complete();
-
-    m_Connection.Dispose();
+    m_ClientJobHandle.Complete();
     m_Driver.Dispose();
-    m_Done.Dispose();
+    m_Connection.Dispose();
 }
 ```
 
-For the `OnDestroy` method, dispose all `NativeArray` objects. Add a `ClientJobHandle.Complete()` call. This ensures your jobs complete before cleaning up and destroying the data they might be using.
+For the `OnDestroy` method, we need to also dispose of the `NativeArray` object. We also need to add a `Complete` call on the job handle. This ensures your jobs complete before cleaning up and destroying the data they might be using.
 
-#### Client Update loop
+#### `Update` loop
 
 Finally update your core game loop:
 
 ```csharp
 void Update()
 {
-    ClientJobHandle.Complete();
+    m_ClientJobHandle.Complete();
     ...
-}
 ```
 
-Before you start running your new frame, check that the last frame has completed. Instead of calling `m_Driver.ScheduleUpdate().Complete()`, use the `JobHandle` and call `ClientJobHandle.Complete()`.
+Before you start running your new frame, check that the last frame's job has completed. Instead of calling `m_Driver.ScheduleUpdate().Complete()`, we use the `JobHandle` and call `m_ClientJobHandle.Complete()`.
 
-To chain your job, start by creating a job struct:
+To chain your job, start by creating a job instance:
 
 ```csharp
 var job = new ClientUpdateJob
 {
-    driver = m_Driver,
-    connection = m_Connection,
-    done = m_Done
+    Driver = m_Driver,
+    Connection = m_Connection,
 };
 ```
 
-To schedule the job, pass the `JobHandle` dependency that was returned from the `m_Driver.ScheduleUpdate` call in the `Schedule` function of your `IJob`. Start by invoking the `m_Driver.ScheduleUpdate` without a call to `Complete`, and pass the returning `JobHandle` to your saved `ClientJobHandle`.
-
-Pass the returned `ClientJobHandle` to your own job, returning a newly updated `ClientJobHandle`.
+To schedule the job, pass the `JobHandle` dependency that was returned from the `m_Driver.ScheduleUpdate` call in the `Schedule` function of your `IJob`. Start by invoking the `m_Driver.ScheduleUpdate` without a call to `Complete`, and pass the returned `JobHandle` to your saved `m_ClientJobHandle`. Then, pass the returned `JobHandle` to your own job, returning a newly updated handle.
 
 ```csharp
-ClientJobHandle = m_Driver.ScheduleUpdate();
-ClientJobHandle = job.Schedule(ClientJobHandle);
+m_ClientJobHandle = m_Driver.ScheduleUpdate();
+m_ClientJobHandle = job.Schedule(m_ClientJobHandle);
 ```
 
-You now have a *JobifiedClientBehaviour* that looks like [this](samples/jobifiedclientbehaviour.cs.md).
+## Create a jobified server
 
-## Create a Jobified server
+The process of creating the jobified server is similar to creating the jobified client. You create the jobs you need and then you update the usage code.
 
-The server side is pretty similar to start with. You create the jobs you need and then you update the usage code.
+Consider this: you know that the `NetworkDriver` has a `ScheduleUpdate` method that returns a `JobHandle`. The job as you saw above populates the internal buffers of the `NetworkDriver` and lets us call `PopEvent`/`PopEventForConnection` method. What if you create a job that will fan out and run the processing code for all connected clients in parallel? If you look at the documentation for the C# Job System, you can see that there is a [IJobParallelFor](https://docs.unity3d.com/Manual/JobSystemParallelForJobs.html) job type that can handle this scenario.
 
-Consider this: you know that the `NetworkDriver` has a `ScheduleUpdate` method that returns a `JobHandle`. The job as you saw above populates the internal buffers of the `NetworkDriver` and lets us call `PopEvent`/`PopEventForConnection` method. What if you create a job that will fan out and run the processing code for all connected clients in parallel? If you look at the documentation for the C# Job System, you can see that there is a [IJobParallelFor](https://docs.unity3d.com/Manual/JobSystemParallelForJobs.html) job type that can handle this scenario
-
-**Note:** Because you do not know how many requests you may receive or how many connections you may need to process at any one time, there is another `IJobPrarallelFor` job type that you can use namely: `IJobParallelForDefer`.
+Because you do not know how many requests you may receive or how many connections you may need to process at any one time, there is another `IJobPrarallelFor` job type that you can use namely: `IJobParallelForDefer`.
 
 ```csharp
 struct ServerUpdateJob : IJobParallelForDefer
 {
-    public void Execute(int index)
+    public void Execute(int i)
     {
-        throw new System.NotImplementedException();
     }
 }
 ```
 
 However, you cannot run all of your code in parallel.
 
-In the client example above, you begin by cleaning up closed connections and accepting new ones, which cannot be done in parallel. You need to create a connection job.
+In the original server example above, you begin by cleaning up closed connections and accepting new ones, which cannot be done in parallel. You need to create a connection job.
 
-Start by creating a `ServerUpdateConnectionJob` job. Pass both the `driver` and `connections` to the connection job. Then you want your job to "Clean up connections" and "Accept new connections":
+Start by creating a `ServerUpdateConnectionJob` job. Pass both the driver and connection list to the connection job. Then you want your job to clean up connections and accept new connections as it did before:
 
 ```csharp
 struct ServerUpdateConnectionsJob : IJob
 {
-    public NetworkDriver driver;
-    public NativeList<NetworkConnection> connections;
+    public NetworkDriver Driver;
+    public NativeList<NetworkConnection> Connections;
 
     public void Execute()
     {
-        // Clean up connections
-        for (int i = 0; i < connections.Length; i++)
+        // Clean up connections.
+        for (int i = 0; i < Connections.Length; i++)
         {
-            if (!connections[i].IsCreated)
+            if (!Connections[i].IsCreated)
             {
-                connections.RemoveAtSwapBack(i);
-                --i;
+                Connections.RemoveAtSwapBack(i);
+                i--;
             }
         }
-        // Accept new connections
+
+        // Accept new connections.
         NetworkConnection c;
-        while ((c = driver.Accept()) != default(NetworkConnection))
+        while ((c = Driver.Accept()) != default)
         {
-            connections.Add(c);
-            Debug.Log("Accepted a connection");
+            Connections.Add(c);
+            Debug.Log("Accepted a connection.");
         }
     }
 }
@@ -221,194 +204,189 @@ With the `ServerUpdateConnectionsJob` done, implement the `ServerUpdateJob` usin
 ```csharp
 struct ServerUpdateJob : IJobParallelForDefer
 {
-    public NetworkDriver.Concurrent driver;
-    public NativeArray<NetworkConnection> connections;
+    public NetworkDriver.Concurrent Driver;
+    public NativeArray<NetworkConnection> Connections;
 
-    public void Execute(int index)
+    public void Execute(int i)
     {
-        ...
     }
 }
 ```
 
-There are two major differences compared with the other `job`:
+There are two major differences compared with the other job:
 
 - You are using the `NetworkDriver.Concurrent` type, this allows you to call the `NetworkDriver` from multiple threads, precisely what you need for the `IParallelForJobDefer`. 
-- You are now passing a `NativeArray` of type `NetworkConnection` instead of a `NativeList`. The `IParallelForJobDefer` does not accept any other `Unity.Collections` type than a `NativeArray` (more on this later).
+- You are now passing a `NativeArray` of type `NetworkConnection` instead of a `NativeList`. The `IParallelForJobDefer` does not accept any other collection type than a `NativeArray` (more on this later).
 
-### Execute method
+### `Execute` method
 
-The only difference between the old code and the jobified example is that you remove the top level `for` loop that you had in your code: `for (int i = 0; i < m_Connections.Length; i++)`. This is removed because the `Execute` function on this job will be called for each connection, and the `index` to that a available connection will be passed in. 
+The only difference between the old code and the jobified example is that you remove the top level `for` loop that you had in your code. This is removed because the `Execute` function on this job will be called for each connection, and the `i` parameter is an index to an available connection in the array. 
 
 ```csharp
-public void Execute(int index)
+public void Execute(int i)
 {
     DataStreamReader stream;
-    Assert.IsTrue(connections[index].IsCreated);
-
     NetworkEvent.Type cmd;
-    while ((cmd = driver.PopEventForConnection(connections[index], out stream)) !=
-    NetworkEvent.Type.Empty)
+    while ((cmd = Driver.PopEventForConnection(Connections[i], out stream)) != NetworkEvent.Type.Empty)
     {
         if (cmd == NetworkEvent.Type.Data)
         {
             uint number = stream.ReadUInt();
 
-            Debug.Log("Got " + number + " from the Client adding + 2 to it.");
-            number +=2;
+            Debug.Log($"Got {number} from a client, adding 2 to it.");
+            number += 2;
 
-            driver.BeginSend(connections[index], out var writer);
+            Driver.BeginSend(Connections[i], out var writer);
             writer.WriteUInt(number);
-            driver.EndSend(writer);
+            Driver.EndSend(writer);
         }
         else if (cmd == NetworkEvent.Type.Disconnect)
         {
-            Debug.Log("Client disconnected from server");
-            connections[index] = default(NetworkConnection);
+            Debug.Log("Client disconnected from the server.");
+            Connections[i] = default;
         }
     }
 }
 ```
 
-You can see this `index` in use in the top level `while` loop:
+You can see this index in use in the top level `while` loop:
 
 ```csharp
-while ((cmd = driver.PopEventForConnection(connections[index], out stream)) != NetworkEvent.Type.Empty`
+while ((cmd = Driver.PopEventForConnection(Connections[i], out stream)) != NetworkEvent.Type.Empty)
 ```
 
-**Note:** You are using the `index` that was passed into your `Execute` method to iterate over all the `connections`.
+**Note:** You are using the index that was passed into your `Execute` method to iterate over all the connections in parallel.
 
 You now have two jobs:
 
-- The first job is to update your connection status:
-    - Add new connections.
-    - Remove old or stale connections.
+- The first job updates the connections (clean up old ones and accept new ones).
 - The second job is to parse `NetworkEvent` on each connected client.
 
-### Update the server MonoBehaviour
+### Update the server `MonoBehaviour`
 
 Access your [MonoBehaviour](https://docs.unity3d.com/ScriptReference/MonoBehaviour.html) and start updating the server.
 
 ```csharp
 public class JobifiedServerBehaviour : MonoBehaviour
 {
-    public NetworkDriver m_Driver;
-    public NativeList<NetworkConnection> m_Connections;
-    private JobHandle ServerJobHandle;
+    NetworkDriver m_Driver;
+    NativeList<NetworkConnection> m_Connections;
 
-    void Start () { ... }
+    JobHandle m_ServerJobHandle;
 
-    public void OnDestroy() { ... }
-
-    void Update () { ... }
-}
-```
-
-The only change made in your variable declaration is adding a `JobHandle` to keep track of your ongoing jobs.
-
-#### Start method
-
-You do not need to change your `Start` method as it should look the same:
-
-```csharp
-void Start ()
-{
-    m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
-    m_Driver = new NetworkDriver.Create();
-
-    var endpoint = NetworkEndPoint.AnyIpv4;
-    endpoint.Port = 9000;
-    if (m_Driver.Bind(endpoint) != 0)
-        Debug.Log("Failed to bind to port 9000");
-    else
-        m_Driver.Listen();
-}
-```
-
-#### OnDestroy method
-
-You need to remember to call `ServerJobHandle.Complete` in your `OnDestroy` method so you can properly clean up code:
-
-```csharp
-public void OnDestroy()
-{
-    // Make sure we run our jobs to completion before exiting.
-    if (m_Driver.IsCreated)
+    void Start()
     {
-        ServerJobHandle.Complete();
-        m_Connections.Dispose();
-        m_Driver.Dispose();
+        ...
+    }
+
+    void OnDestroy()
+    {
+        ...
+    }
+
+    void Update()
+    {
+        ...
     }
 }
 ```
 
-#### Server update loop
+The only change made is adding a `JobHandle` in the variable declarations to keep track of your ongoing jobs.
 
-In your `Update` method, call `Complete` on the `JobHandle`. This forces the jobs to complete before you start a new frame:
+#### `Start` method
+
+You do not need to change your `Start` method as it should look the same:
 
 ```csharp
-void Update ()
+void Start()
 {
-    ServerJobHandle.Complete();
+    m_Driver = NetworkDriver.Create();
+    m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
+
+    var endpoint = NetworkEndpoint.AnyIpv4.WithPort(7777);
+    if (m_Driver.Bind(endpoint) != 0)
+    {
+        Debug.LogError("Failed to bind to port 7777.");
+        return;
+    }
+    m_Driver.Listen();
+}
+```
+
+#### `OnDestroy` method
+
+You need to remember to call `m_ServerJobHandle.Complete` in your `OnDestroy` method so you can properly clean up code:
+
+```csharp
+void OnDestroy()
+{
+    if (m_Driver.IsCreated)
+    {
+        m_ServerJobHandle.Complete();
+        m_Driver.Dispose();
+        m_Connections.Dispose();
+    }
+}
+```
+
+#### Server `Update` loop
+
+In your `Update` method, call `Complete` on the `JobHandle`. This forces the jobs to complete when you start a new frame:
+
+```csharp
+void Update()
+{
+    m_ServerJobHandle.Complete();
 
     var connectionJob = new ServerUpdateConnectionsJob
     {
-        driver = m_Driver,
-        connections = m_Connections
+        Driver = m_Driver,
+        Connections = m_Connections
     };
 
     var serverUpdateJob = new ServerUpdateJob
     {
-        driver = m_Driver.ToConcurrent(),
-        connections = m_Connections.ToDeferredJobArray()
+        Driver = m_Driver.ToConcurrent(),
+        Connections = m_Connections.AsDeferredJobArray()
     };
 
-    ServerJobHandle = m_Driver.ScheduleUpdate();
-    ServerJobHandle = connectionJob.Schedule(ServerJobHandle);
-    ServerJobHandle = serverUpdateJob.Schedule(m_Connections, 1, ServerJobHandle);
+    m_ServerJobHandle = m_Driver.ScheduleUpdate();
+    m_ServerJobHandle = connectionJob.Schedule(m_ServerJobHandle);
+    m_ServerJobHandle = serverUpdateJob.Schedule(m_Connections, 1, m_ServerJobHandle);
 }
 ```
 
-To chain the jobs, you want to follow this process:
-`NetworkDriver.Update` -> `ServerUpdateConnectionsJob` -> `ServerUpdateJob`.
+To chain the jobs, you want to follow this sequence: `NetworkDriver` update, then `ServerUpdateConnectionsJob`, and finally `ServerUpdateJob`.
 
 Start by populating your `ServerUpdateConnectionsJob`:
 
 ```csharp
 var connectionJob = new ServerUpdateConnectionsJob
 {
-    driver = m_Driver,
-    connections = m_Connections
+    Driver = m_Driver,
+    Connections = m_Connections
 };
 ```
 
-Then create your `ServerUpdateJob`. Remember to use the `ToConcurrent` call on your driver, to verify you are using a concurrent driver for the `IParallelForJobDefer`:
+Then create your `ServerUpdateJob`. Remember to use the `ToConcurrent` call on your driver, to ensure you are using a concurrent driver for the `IParallelForJobDefer`:
 
 ```csharp
 var serverUpdateJob = new ServerUpdateJob
 {
-    driver = m_Driver.ToConcurrent(),
-    connections = m_Connections.ToDeferredJobArray()
+    Driver = m_Driver.ToConcurrent(),
+    Connections = m_Connections.AsDeferredJobArray()
 };
 ```
 
-The final step is to verify the `NativeArray` is populated to the correct size. This can be done using a `DeferredJobArray`. When executed, it verifies the connections array is populated with the correct number of items that you have in your list. When runnning `ServerUpdateConnectionsJob` first, this may change the *size* of the list.
+The final step is to ensure the `NativeArray` is populated to the correct size. This can be done using a `DeferredJobArray`. When executed, it verifies the connections array is populated with the correct number of items that you have in your list. When runnning `ServerUpdateConnectionsJob` first, this may change the *size* of the list.
 
 Create your job chain and call `Scheduele` as follows:
 
+```csharp
+m_ServerJobHandle = m_Driver.ScheduleUpdate();
+m_ServerJobHandle = connectionJob.Schedule(m_ServerJobHandle);
+m_ServerJobHandle = serverUpdateJob.Schedule(m_Connections, 1, m_ServerJobHandle);
 ```
-ServerJobHandle = m_Driver.ScheduleUpdate();
-ServerJobHandle = connectionJob.Schedule(ServerJobHandle);
-ServerJobHandle = serverUpdateJob.Schedule(m_Connections, 1, ServerJobHandle);
-```
-
-In the code above, you have:
-
-* Scheduled the `NetworkDriver` job.
-* `JobHandle` returned as a dependency on the `ServerUpdateConnectionJob`.
-* The final link in the chain is the `ServerUpdateJob` that needs to run after  `ServerUpdateConnectionsJob`. In this line of code, there is a trick to invoke the `IJobParallelForDeferExtensions`. `m_Connections` `NativeList` is passed to the `Schedule` method, which updates the count of connections before starting the job. It will fan out and run all `ServerUpdateConnectionJobs` in parallel.
-
-You should now have a fully functional [jobified server](samples/jobifiedserverbehaviour.cs.md).
 
 ## Using Burst for extra performance
 

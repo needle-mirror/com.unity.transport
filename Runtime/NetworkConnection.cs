@@ -191,7 +191,7 @@ namespace Unity.Networking.Transport
             return $"NetworkConnection[id{InternalId},v{Version}]";
         }
 
-        public int InternalId => m_ConnectionId.Id;
-        public int Version => m_ConnectionId.Version;
+        internal int InternalId => m_ConnectionId.Id;
+        internal int Version => m_ConnectionId.Version;
     }
 }

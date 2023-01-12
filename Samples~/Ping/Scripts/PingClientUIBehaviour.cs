@@ -4,76 +4,60 @@ using Unity.Networking.Transport;
 
 namespace Unity.Networking.Transport.Samples
 {
-    /* The PingClientUIBehaviour is responsible for displaying statistics of a
-    running ping client as well as for starting and stopping the ping of a
-    selected ip. */
+    /// <summary>
+    /// Component responsible for providing an IP/port to a <see cref="PingClientBehaviour"/>, and
+    /// display its running statistics. Note that the UI only supports entering IPv4 addresses.
+    /// </summary>
     public class PingClientUIBehaviour : MonoBehaviour
     {
-        // The Endpoint the ping client should ping, will be a non-created end point when ping should not run.
-        public static NetworkEndpoint ServerEndpoint { get; private set; }
+        /// <summary>Endpoint (IP/port) of the server to send pings to.</summary>
+        public NetworkEndpoint ServerEndpoint { get; private set; }
 
-        // Ping statistics
-        static int s_PingTime;
-        static int s_PingCounter;
+        /// <summary>Whether the ping client should be running or not.</summary>
+        public bool IsPingRunning => ServerEndpoint != default;
 
-        string m_CustomIp = "";
+        // Ping statistics.
+        private int m_PingCount;
+        private int m_PingLastRTT;
 
-        void Start()
+        // String for the endpoint text field.
+        private string m_EndpointString = "127.0.0.1:7777";
+
+        private void OnGUI()
         {
-            s_PingTime = 0;
-            s_PingCounter = 0;
-            ServerEndpoint = default(NetworkEndpoint);
-        }
+            GUILayout.Label($"Ping {m_PingCount}: {m_PingLastRTT}ms");
 
-        void OnGUI()
-        {
-            UpdatePingClientUI();
-        }
-
-        // Update the ping statistics displayed in the ui. Should be called from the ping client every time a new ping is complete
-        public static void UpdateStats(int count, int time)
-        {
-            s_PingCounter = count;
-            s_PingTime = time;
-        }
-
-        void UpdatePingClientUI()
-        {
-            GUILayout.Label("PING " + s_PingCounter + ": " + s_PingTime + "ms");
-            if (!ServerEndpoint.IsValid)
+            // While the ping is running, we only display a "Stop Ping" button. While stopped, we
+            // display a "Start Ping" button and a text field to enter the IP/port.
+            if (IsPingRunning)
             {
-                // Ping is not currently running, display ui for starting a ping
-                if (GUILayout.Button("Start ping"))
+                if (GUILayout.Button("Stop Ping"))
                 {
-                    ushort port = 9000;
-                    if (string.IsNullOrEmpty(m_CustomIp))
-                    {
-                        var endpoint = NetworkEndpoint.LoopbackIpv4;
-                        endpoint.Port = port;
-                        ServerEndpoint = endpoint;
-                    }
-                    else
-                    {
-                        string[] endpoint = m_CustomIp.Split(':');
-                        ushort newPort = 0;
-                        if (endpoint.Length > 1 && ushort.TryParse(endpoint[1], out newPort))
-                            port = newPort;
-
-                        Debug.Log($"Connecting to PingServer at {endpoint[0]}:{port}.");
-                        ServerEndpoint = NetworkEndpoint.Parse(endpoint[0], port);
-                    }
+                    ServerEndpoint = default;
                 }
-
-                m_CustomIp = GUILayout.TextField(m_CustomIp);
             }
             else
             {
-                // Ping is running, display ui for stopping it
-                if (GUILayout.Button("Stop ping"))
+                if (GUILayout.Button("Start Ping"))
                 {
-                    ServerEndpoint = default(NetworkEndpoint);
+                    string[] endpoint = m_EndpointString.Split(':');
+                    var port = ushort.Parse(endpoint[1]);
+                    ServerEndpoint = NetworkEndpoint.Parse(endpoint[0], port);
+
+                    Debug.Log($"Starting ping to address {m_EndpointString}.");
                 }
+
+                m_EndpointString = GUILayout.TextField(m_EndpointString);
             }
+        }
+
+        /// <summary>Update the statistics that are displayed in the UI.</summary>
+        /// <param name="count">Number of pings sent.</param>
+        /// <param name="rtt">Round-trip time (RTT) of the last ping.</param>
+        public void UpdateStatistics(int count, int rtt)
+        {
+            m_PingCount = count;
+            m_PingLastRTT = rtt;
         }
     }
 }

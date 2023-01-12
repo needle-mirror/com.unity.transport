@@ -1,5 +1,18 @@
 # Change log
 
+## [2.0.0-pre.5] - 2023-01-12
+
+### Changes
+* Revert to Collections 2.1.0-pre.6 as pre.7 is not promoted yet.
+
+## [2.0.0-pre.4] - 2023-01-12
+
+### Changes
+* Update Burst dependency to 1.8.2.
+* Update Collections dependency to 2.1.0-pre.7.
+* The `InternalId` and `Version` properties of `NetworkConnection` are now internal. These referred to internal values and using them directly was error-prone since values could be reused across connections. To compare connections reliably, compare the `NetworkConnection` objects directly (they implement all the relevant operators and interfaces).
+* Replace `NetworkDriverIdentifierParameter` (and `WithNetworkDriverIdentifierParameters`) with a more general `LoggingParameter` (and `WithLoggingParameters`). Note that currently these parameters don't affect anything, and are there for future use only.
+
 ## [2.0.0-pre.3] - 2022-11-29
 
 ### Changes

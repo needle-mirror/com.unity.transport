@@ -2,6 +2,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
@@ -14,8 +15,8 @@ namespace Unity.Networking.Transport
 
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {
-            if (settings.TryGet<NetworkDriverIdentifierParameter>(out var identifier))
-                m_DriverIdentifier = identifier.Label;
+            if (settings.TryGet<LoggingParameter>(out var identifier))
+                m_DriverIdentifier = identifier.DriverName;
             else
                 m_DriverIdentifier = "unidentified";
             return 0;

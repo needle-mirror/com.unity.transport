@@ -1,9 +1,8 @@
 {
-    "name": "Ping",
+    "name": "Unity.Networking.Transport.Samples.Ping",
     "rootNamespace": "",
     "references": [
         "Unity.Burst",
-        "Unity.Entities",
         "Unity.Collections",
         "Unity.Networking.Transport",
         "Unity.Jobs"

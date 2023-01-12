@@ -1,37 +1,50 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.0.0-pre.3",
+  "version": "2.0.0-pre.5",
   "unity": "2022.2",
   "unityRelease": "0a18",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
-    "com.unity.collections": "2.1.0-pre.2",
-    "com.unity.burst": "1.7.3",
+    "com.unity.collections": "2.1.0-pre.6",
+    "com.unity.burst": "1.8.2",
     "com.unity.mathematics": "1.2.6"
   },
   "relatedPackages": {
     "com.unity.transport.tests": "0.0.0"
   },
+  "_upm": {
+    "changelog": "### Changes\n* Revert to Collections 2.1.0-pre.6 as pre.7 is not promoted yet."
+  },
   "upmCi": {
-    "footprint": "f4fbffc8e2f3f8be77870d9b794402d9bd59c9bc"
+    "footprint": "5fb8d0de53e3c978343415161ff932abc89ade11"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.0/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "d4259f6d85730357a30a702129c7c83760c24b0e"
+    "revision": "0fbd7b4b034a044c92c7b55c3a6e2c860bd5a1f5"
   },
   "samples": [
     {
-      "displayName": "Ping/Pong Sample",
-      "description": "Several samples on the basics of jobs, mainthread setups using the Unity Transport",
+      "displayName": "Jobified Client and Server",
+      "description": "Very simple client and server implementations using jobs. Meant to tie in with the package documentation.",
+      "path": "Samples~/JobifiedClientServer"
+    },
+    {
+      "displayName": "Ping Sample",
+      "description": "Small application to compute round-trip time (ping) between client and server.",
       "path": "Samples~/Ping"
     },
     {
-      "displayName": "Unity Relay with Unity Transport",
-      "description": "Basic sample on how to use Unity Relay with Unity Transport, your project must depend on com.unity.services.relay",
+      "displayName": "Ping Sample (with Relay)",
+      "description": "Small application to compute round-trip time (ping) between client and host, using Unity Relay.",
       "path": "Samples~/RelayPing"
+    },
+    {
+      "displayName": "Simple Client and Server",
+      "description": "Simplest possible client and server implementations. Meant to tie in with the package documentation.",
+      "path": "Samples~/SimpleClientServer"
     }
   ]
 }

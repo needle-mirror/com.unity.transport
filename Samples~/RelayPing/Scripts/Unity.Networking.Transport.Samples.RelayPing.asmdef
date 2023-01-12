@@ -1,5 +1,5 @@
 {
-    "name": "Code",
+    "name": "Unity.Networking.Transport.Samples.RelayPing",
     "rootNamespace": "",
     "references": [
         "Unity.Jobs",

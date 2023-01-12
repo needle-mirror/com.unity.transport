@@ -1,135 +1,177 @@
-using Unity.Burst;
 using UnityEngine;
-using Unity.Networking.Transport;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Networking.Transport;
 
 namespace Unity.Networking.Transport.Samples
 {
+    /// <summary>Component responsible for sending pings to the server.</summary>
     public class PingClientBehaviour : MonoBehaviour
     {
-        struct PendingPing
-        {
-            public int id;
-            public float time;
-        }
+        /// <summary>UI component to get the server endpoint and update statistics.</summay>
+        public PingClientUIBehaviour PingClientUI;
+
+        // Frequency (in seconds) at which to send ping messages.
+        private const float k_PingFrequency = 1.0f;
 
         private NetworkDriver m_ClientDriver;
-        private NativeArray<NetworkConnection> m_clientToServerConnection;
-        // pendingPings is an array of pings sent to the server which have not yet received a response.
-        // Currently we only support one ping in-flight
-        private NativeArray<PendingPing> m_pendingPings;
-        // The ping stats are two integers, time for last ping and number of pings
-        private NativeArray<int> m_pingStats;
 
-        private JobHandle m_updateHandle;
+        // Connection and ping statistics. Values that can be modified by a job are stored in
+        // NativeReferences since jobs can only modify values in native containers.
+        private NativeReference<NetworkConnection> m_ClientConnection;
+        private NativeReference<int> m_PingLastRTT;
+        private int m_PingCount;
+        private float m_LastSendTime;
 
-        void Start()
+        // Handle to the job chain of the ping client. We need to keep this around so that we can
+        // schedule the jobs in one execution of Update and complete it in the next.
+        private JobHandle m_ClientJobHandle;
+
+        private void Start()
         {
-            // Create a NetworkDriver for the client. We could bind to a specific address but in this case we rely on the
-            // implicit bind since we do not need to bing to anything special
             m_ClientDriver = NetworkDriver.Create();
 
-            m_pendingPings = new NativeArray<PendingPing>(64, Allocator.Persistent);
-            m_pingStats = new NativeArray<int>(2, Allocator.Persistent);
-            m_clientToServerConnection = new NativeArray<NetworkConnection>(1, Allocator.Persistent);
+            m_ClientConnection = new NativeReference<NetworkConnection>(Allocator.Persistent);
+            m_PingLastRTT = new NativeReference<int>(Allocator.Persistent);
         }
 
-        void OnDestroy()
+        private void OnDestroy()
         {
-            // All jobs must be completed before we can dispose the data they use
-            m_updateHandle.Complete();
+            // All jobs must be completed before we can dispose of the data they use.
+            m_ClientJobHandle.Complete();
+
             m_ClientDriver.Dispose();
-            m_pendingPings.Dispose();
-            m_pingStats.Dispose();
-            m_clientToServerConnection.Dispose();
+            m_ClientConnection.Dispose();
+            m_PingLastRTT.Dispose();
         }
 
+        // Job that will send ping messages to the server.
         [BurstCompile]
-        struct PingJob : IJob
+        private struct PingSendJob : IJob
         {
-            public NetworkDriver driver;
-            public NativeArray<NetworkConnection> connection;
-            public NativeArray<PendingPing> pendingPings;
-            public NativeArray<int> pingStats;
-            public float fixedTime;
+            public NetworkDriver.Concurrent Driver;
+            public NetworkConnection Connection;
+            public float CurrentTime;
 
             public void Execute()
             {
-                DataStreamReader strm;
-                NetworkEvent.Type cmd;
-                // Process all events on the connection. If the connection is invalid it will return Empty immediately
-                while ((cmd = connection[0].PopEvent(driver, out strm)) != NetworkEvent.Type.Empty)
+                var result = Driver.BeginSend(Connection, out var writer);
+                if (result < 0)
                 {
-                    if (cmd == NetworkEvent.Type.Connect)
-                    {
-                        // When we get the connect message we can start sending data to the server
-                        // Set the ping id to a sequence number for the new ping we are about to send
-                        pendingPings[0] = new PendingPing {id = pingStats[0], time = fixedTime};
-                        // Create a 4 byte data stream which we can store our ping sequence number in
+                    Debug.LogError($"Couldn't send ping (error code {result}).");
+                    return;
+                }
 
-                        if (driver.BeginSend(connection[0], out var pingData) == 0)
-                        {
-                            pingData.WriteInt(pingStats[0]);
-                            driver.EndSend(pingData);
-                        }
-                        // Update the number of sent pings
-                        pingStats[0] = pingStats[0] + 1;
-                    }
-                    else if (cmd == NetworkEvent.Type.Data)
+                // We write the current time in the ping message, and the server will just resend
+                // it back, allowing us to compute the RTT for that ping message.
+                writer.WriteFloat(CurrentTime);
+
+                result = Driver.EndSend(writer);
+                if (result < 0)
+                {
+                    Debug.LogError($"Couldn't send ping (error code {result}).");
+                    return;
+                }
+            }
+        }
+
+        // Job to run after a driver update, which will deal with update the client connection and
+        // reacting to ping messages received by the servers.
+        [BurstCompile]
+        private struct PingUpdateJob : IJob
+        {
+            public NetworkDriver Driver;
+            public NativeReference<NetworkConnection> Connection;
+            public NativeReference<int> PingLastRTT;
+            public float CurrentTime;
+
+            public void Execute()
+            {
+                NetworkEvent.Type eventType;
+                while ((eventType = Connection.Value.PopEvent(Driver, out var reader)) != NetworkEvent.Type.Empty)
+                {
+                    switch (eventType)
                     {
-                        // When the pong message is received we calculate the ping time and disconnect
-                        pingStats[1] = (int)((fixedTime - pendingPings[0].time) * 1000);
-                        connection[0].Disconnect(driver);
-                        connection[0] = default(NetworkConnection);
-                    }
-                    else if (cmd == NetworkEvent.Type.Disconnect)
-                    {
-                        // If the server disconnected us we clear out connection
-                        connection[0] = default(NetworkConnection);
+                        // Connect event means the connection has been established.
+                        case NetworkEvent.Type.Connect:
+                            Debug.Log("Connected to server.");
+                            break;
+
+                        // Disconnect event means the connection was closed (server exited).
+                        case NetworkEvent.Type.Disconnect:
+                            Debug.Log("Got disconnected from server.");
+
+                            // Storing a default value as the connection will make the Update method
+                            // retry to connect when it next executes.
+                            Connection.Value = default;
+                            break;
+
+                        // Data events must be ping messages sent by the server.
+                        case NetworkEvent.Type.Data:
+                            PingLastRTT.Value = (int)((CurrentTime - reader.ReadFloat()) * 1000);
+                            break;
                     }
                 }
             }
         }
 
-        void LateUpdate()
+        private void Update()
         {
-            // On fast clients we can get more than 4 frames per fixed update, this call prevents warnings about TempJob
-            // allocation longer than 4 frames in those cases
-            m_updateHandle.Complete();
-        }
+            // First, complete the previously-scheduled job chain.
+            m_ClientJobHandle.Complete();
 
-        void FixedUpdate()
-        {
-            // Wait for the previous frames ping to complete before starting a new one, the Complete in LateUpdate is not
-            // enough since we can get multiple FixedUpdate per frame on slow clients
-            m_updateHandle.Complete();
-
-            var serverEP = PingClientUIBehaviour.ServerEndpoint;
-            // If the client ui indicates we should be sending pings but we do not have an active connection we create one
-            if (serverEP.IsValid && !m_clientToServerConnection[0].IsCreated)
-                m_clientToServerConnection[0] = m_ClientDriver.Connect(serverEP);
-            // If the client ui indicates we should not be sending pings but we do have a connection we close that connection
-            if (!serverEP.IsValid && m_clientToServerConnection[0].IsCreated)
+            if (PingClientUI.IsPingRunning)
             {
-                m_clientToServerConnection[0].Disconnect(m_ClientDriver);
-                m_clientToServerConnection[0] = default(NetworkConnection);
+                var currentTime = Time.realtimeSinceStartup;
+
+                // Update the UI with the latest statistics.
+                PingClientUI.UpdateStatistics(m_PingCount, m_PingLastRTT.Value);
+
+                // Connect if there's no connection already.
+                if (!m_ClientConnection.Value.IsCreated)
+                {
+                    m_ClientConnection.Value = m_ClientDriver.Connect(PingClientUI.ServerEndpoint);
+                }
+
+                var updateJob = new PingUpdateJob
+                {
+                    Driver = m_ClientDriver,
+                    Connection = m_ClientConnection,
+                    PingLastRTT = m_PingLastRTT,
+                    CurrentTime = currentTime
+                };
+
+                // If it's time to send, schedule a send job.
+                var state = m_ClientDriver.GetConnectionState(m_ClientConnection.Value);
+                if (state == NetworkConnection.State.Connected && currentTime - m_LastSendTime >= k_PingFrequency)
+                {
+                    m_LastSendTime = currentTime;
+                    m_PingCount++;
+
+                    m_ClientJobHandle = new PingSendJob
+                    {
+                        Driver = m_ClientDriver.ToConcurrent(),
+                        Connection = m_ClientConnection.Value,
+                        CurrentTime = currentTime
+                    }.Schedule();
+                }
+
+                // Schedule a job chain with the ping send job (if scheduled), the driver update
+                // job, and then the ping update job. All jobs will run one after the other.
+                m_ClientJobHandle = m_ClientDriver.ScheduleUpdate(m_ClientJobHandle);
+                m_ClientJobHandle = updateJob.Schedule(m_ClientJobHandle);
             }
-
-            // Update the ping client UI with the ping statistics computed by teh job scheduled previous frame since that
-            // is now guaranteed to have completed
-            PingClientUIBehaviour.UpdateStats(m_pingStats[0], m_pingStats[1]);
-            var pingJob = new PingJob
+            else
             {
-                driver = m_ClientDriver,
-                connection = m_clientToServerConnection,
-                pendingPings = m_pendingPings,
-                pingStats = m_pingStats,
-                fixedTime = Time.fixedTime
-            };
-            // Schedule a chain with the driver update followed by the ping job
-            m_updateHandle = m_ClientDriver.ScheduleUpdate();
-            m_updateHandle = pingJob.Schedule(m_updateHandle);
+                // Make sure we disconnect if there was a running ping.
+                if (m_ClientConnection.Value.IsCreated)
+                {
+                    Debug.Log("Closing connection to server.");
+                    m_ClientDriver.Disconnect(m_ClientConnection.Value);
+                    m_ClientConnection.Value = default;
+                }
+            }
         }
     }
 }

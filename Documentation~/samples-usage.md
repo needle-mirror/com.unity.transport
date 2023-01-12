@@ -1,17 +1,23 @@
-# Sample projects
+# Using sample projects
 
-The Unity Transport package comes with a `Samples` folder containing simple assembly definitions and associated scenes that serve to illustrate basic aspects of the library. 
+The Unity Transport package comes with a `Samples` folder containing simple assembly definitions and associated scenes that serve to illustrate basic aspects of the library.
+
+These samples can be imported through the package manager window, when selecting the Unity Transport package. The pane on the right with the package's details contains a section with all the samples.
+
+The following samples are provided with the package:
+
+## SimpleClientServer
+
+Contains the code for the [documentation section](client-server-simple.md) about creating a simple client and server.
+
+## JobifiedClientServer
+
+Contains the code for the [documentation section](client-server-jobs.md) about creating a jobified client and server.
 
 ## Ping
 
-Implements a simple ping/pong service. Correlating client and server behaviours are supplied for two scenarios. In the first scenario with `PingMainThreadServerBehaviour` and `PingMainThreadClientBehaviour`, the peers are implemented to process messages in the main thread only. In the second scenario covered by `PingServerBehaviour` and `PingClientBehaviour` the code shows how to take advantage of the Burst compiler and the job system.
-
-## Pipeline
-
-This sample shows how to define pipeline stages as described in [Pipelines](pipelines-usage.md). The code demonstrates a pipeline definition for unreliable sequenced delivery based on a default `UDPNetworkInterface`.
-
-**Note**: Consider using pipeline stages carefully as depending on the underlying `NetworkInterface` used certain pipeline configurations cannot add value to the quality of service and might in fact be detrimental. For example, it makes sense to have a pipeline stage for unreliable sequenced delivery over a `UDPNetworkInterface` but over a `WebSocketNetworkInterface` it will only incur overhead try to offer something that the underlying network interface already provided.
+Implements a simple ping/pong service. The code shows how to take advantage of the Burst compiler and the job system.
 
 ## RelayPing
 
-This is re-write of the [Ping](#ping) sample mentioned above that uses the [Unity Relay Service](https://unity.com/products/relay) to connect players. The code demonstrates how to manipulate and pass custom [Network Settings](network-settings.md) to a network driver.
+This is re-write of the 'Ping' sample mentioned above that uses the [Unity Relay service](https://unity.com/products/relay) to connect players.

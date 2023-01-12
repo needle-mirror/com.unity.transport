@@ -1,168 +1,151 @@
-using Unity.Burst;
 using UnityEngine;
-using Unity.Networking.Transport;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Networking.Transport;
 
 namespace Unity.Networking.Transport.Samples
 {
+    /// <summary>Component that will listen for ping connections and answer pings.</summary>
     public class PingServerBehaviour : MonoBehaviour
     {
-        public NetworkDriver m_ServerDriver;
-        private NativeList<NetworkConnection> m_connections;
+        /// <summary>Port on which the server will listen.</summary>
+        public ushort Port = 7777;
 
-        private JobHandle m_updateHandle;
+        private NetworkDriver m_ServerDriver;
+        private NativeList<NetworkConnection> m_ServerConnections;
 
-        void Start()
+        // Handle to the job chain of the ping server. We need to keep this around so that we can
+        // schedule the jobs in one execution of Update and complete it in the next.
+        private JobHandle m_ServerJobHandle;
+
+        private void Start()
         {
-            ushort serverPort = 9000;
-            // Create the server driver, bind it to a port and start listening for incoming connections
             m_ServerDriver = NetworkDriver.Create();
-            var addr = NetworkEndpoint.AnyIpv4;
-            addr.Port = serverPort;
-            if (m_ServerDriver.Bind(addr) != 0)
-                Debug.Log($"Failed to bind to port {serverPort}");
-            else
-                m_ServerDriver.Listen();
+            m_ServerConnections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
 
-            m_connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
+            // Bind the server to the "any" address (0.0.0.0) so that it will listen on all local
+            // IP addresses. This is usually the behavior you want for a server.
+            var listenEndpoint = NetworkEndpoint.AnyIpv4.WithPort(Port);
+            if (m_ServerDriver.Bind(listenEndpoint) < 0)
+            {
+                Debug.LogError($"Failed to bind server to 0.0.0.0:{Port}.");
+                return;
+            }
+
+            // Now call Listen so that the server will actually start listening for connections.
+            if (m_ServerDriver.Listen() < 0)
+            {
+                Debug.LogError("Failed to start listening for new connections.");
+                return;
+            }
         }
 
-        void OnDestroy()
+        private void OnDestroy()
         {
-            // All jobs must be completed before we can dispose the data they use
-            m_updateHandle.Complete();
+            // All jobs must be completed before we can dispose of the data they use.
+            m_ServerJobHandle.Complete();
+
             m_ServerDriver.Dispose();
-            m_connections.Dispose();
+            m_ServerConnections.Dispose();
         }
 
+        // Job to clean up old connections and accept new ones.
         [BurstCompile]
-        struct DriverUpdateJob : IJob
+        private struct ConnectionsUpdateJob : IJob
         {
-            public NetworkDriver driver;
-            public NativeList<NetworkConnection> connections;
+            public NetworkDriver Driver;
+            public NativeList<NetworkConnection> Connections;
 
             public void Execute()
             {
-                // Remove connections which have been destroyed from the list of active connections
-                for (int i = 0; i < connections.Length; ++i)
+                // Remove old connections from the list of active connections;
+                for (int i = 0; i < Connections.Length; i++)
                 {
-                    if (!connections[i].IsCreated)
+                    if (!Connections[i].IsCreated)
                     {
-                        connections.RemoveAtSwapBack(i);
-                        // Index i is a new connection since we did a swap back, check it again
-                        --i;
+                        Connections.RemoveAtSwapBack(i);
+                        i--; // Need to re-process index i since it's a new connection.
                     }
                 }
 
-                // Accept all new connections
-                while (true)
+                // Accept all new connections.
+                NetworkConnection connection;
+                while ((connection = Driver.Accept()) != default)
                 {
-                    var con = driver.Accept();
-                    // "Nothing more to accept" is signaled by returning an invalid connection from accept
-                    if (!con.IsCreated)
-                        break;
-                    connections.Add(con);
+                    Connections.Add(connection);
                 }
             }
         }
 
-        static NetworkConnection ProcessSingleConnection(NetworkDriver.Concurrent driver, NetworkConnection connection)
-        {
-            DataStreamReader strm;
-            NetworkEvent.Type cmd;
-            // Pop all events for the connection
-            while ((cmd = driver.PopEventForConnection(connection, out strm)) != NetworkEvent.Type.Empty)
-            {
-                if (cmd == NetworkEvent.Type.Data)
-                {
-                    // For ping requests we reply with a pong message
-                    int id = strm.ReadInt();
-                    // Create a temporary DataStreamWriter to keep our serialized pong message
-                    if (driver.BeginSend(connection, out var pongData) == 0)
-                    {
-                        pongData.WriteInt(id);
-                        // Send the pong message with the same id as the ping
-                        driver.EndSend(pongData);
-                    }
-                }
-                else if (cmd == NetworkEvent.Type.Disconnect)
-                {
-                    // When disconnected we make sure the connection return false to IsCreated so the next frames
-                    // DriverUpdateJob will remove it
-                    return default(NetworkConnection);
-                }
-            }
-
-            return connection;
-        }
-
-#if ENABLE_IL2CPP
+        // Job to process events from all connections in parallel.
         [BurstCompile]
-        struct PongJob : IJob
+        private struct ConnectionsEventsJobs : IJobParallelForDefer
         {
-            public NetworkDriver.Concurrent driver;
-            public NativeList<NetworkConnection> connections;
-
-            public void Execute()
-            {
-                for (int i = 0; i < connections.Length; ++i)
-                    connections[i] = ProcessSingleConnection(driver, connections[i]);
-            }
-        }
-#else
-        [BurstCompile]
-        struct PongJob : IJobParallelForDefer
-        {
-            public NetworkDriver.Concurrent driver;
-            public NativeArray<NetworkConnection> connections;
+            public NetworkDriver.Concurrent Driver;
+            public NativeArray<NetworkConnection> Connections;
 
             public void Execute(int i)
             {
-                connections[i] = ProcessSingleConnection(driver, connections[i]);
+                var connection = Connections[i];
+
+                NetworkEvent.Type eventType;
+                while ((eventType = Driver.PopEventForConnection(connection, out var reader)) != NetworkEvent.Type.Empty)
+                {
+                    if (eventType == NetworkEvent.Type.Data)
+                    {
+                        // Received a ping message, answer back by sending back the timestamp.
+                        SendPingAnswer(connection, reader.ReadFloat());
+                    }
+                    else if (eventType == NetworkEvent.Type.Disconnect)
+                    {
+                        // By making it default-valued, the connections update job will clean it up.
+                        Connections[i] = default;
+                    }
+                }
+            }
+
+            private void SendPingAnswer(NetworkConnection connection, float timestamp)
+            {
+                var result = Driver.BeginSend(connection, out var writer);
+                if (result < 0)
+                {
+                    Debug.LogError($"Couldn't send ping answer (error code {result}).");
+                    return;
+                }
+
+                writer.WriteFloat(timestamp);
+
+                result = Driver.EndSend(writer);
+                if (result < 0)
+                {
+                    Debug.LogError($"Couldn't send ping answer (error code {result}).");
+                    return;
+                }
             }
         }
-#endif
 
-        void LateUpdate()
+        private void Update()
         {
-            // On fast clients we can get more than 4 frames per fixed update, this call prevents warnings about TempJob
-            // allocation longer than 4 frames in those cases
-            m_updateHandle.Complete();
-        }
+            // First, complete the previously-scheduled job chain.
+            m_ServerJobHandle.Complete();
 
-        void FixedUpdate()
-        {
-            // Wait for the previous frames ping to complete before starting a new one, the Complete in LateUpdate is not
-            // enough since we can get multiple FixedUpdate per frame on slow clients
-            m_updateHandle.Complete();
-            var updateJob = new DriverUpdateJob {driver = m_ServerDriver, connections = m_connections};
-            var pongJob = new PongJob
+            // Create the jobs first.
+            var updateJob = new ConnectionsUpdateJob
             {
-                // PongJob is a ParallelFor job, it must use the concurrent NetworkDriver
-                driver = m_ServerDriver.ToConcurrent(),
-                // PongJob uses IJobParallelForDeferExtensions, we *must* use AsDeferredJobArray in order to access the
-                // list from the job
-#if ENABLE_IL2CPP
-                // IJobParallelForDeferExtensions is not working correctly with IL2CPP
-                connections = m_connections
-#else
-                connections = m_connections.AsDeferredJobArray()
-#endif
+                Driver = m_ServerDriver,
+                Connections = m_ServerConnections
             };
-            // Update the driver should be the first job in the chain
-            m_updateHandle = m_ServerDriver.ScheduleUpdate();
-            // The DriverUpdateJob which accepts new connections should be the second job in the chain, it needs to depend
-            // on the driver update job
-            m_updateHandle = updateJob.Schedule(m_updateHandle);
-            // PongJob uses IJobParallelForDeferExtensions, we *must* schedule with a list as first parameter rather than
-            // an int since the job needs to pick up new connections from DriverUpdateJob
-            // The PongJob is the last job in the chain and it must depends on the DriverUpdateJob
-#if ENABLE_IL2CPP
-            m_updateHandle = pongJob.Schedule(m_updateHandle);
-#else
-            m_updateHandle = pongJob.Schedule(m_connections, 1, m_updateHandle);
-#endif
+            var eventsJobs = new ConnectionsEventsJobs
+            {
+                Driver = m_ServerDriver.ToConcurrent(),
+                Connections = m_ServerConnections.AsDeferredJobArray()
+            };
+
+            // Schedule the job chain.
+            m_ServerJobHandle = m_ServerDriver.ScheduleUpdate();
+            m_ServerJobHandle = updateJob.Schedule(m_ServerJobHandle);
+            m_ServerJobHandle = eventsJobs.Schedule(m_ServerConnections, 1, m_ServerJobHandle);
         }
     }
 }

@@ -1,8 +1,10 @@
+using System;
 using Unity.Collections;
 using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
+    [Obsolete("Use LoggingParameter instead.")]
     public struct NetworkDriverIdentifierParameter : INetworkParameter
     {
         public FixedString32Bytes Label;
@@ -23,6 +25,7 @@ namespace Unity.Networking.Transport
 
     public static class NetworkDriverIdentifierParameterExtensions
     {
+        [Obsolete("Use WithLoggingParameters instead.")]
         public static ref NetworkSettings WithDriverIdentifierParameters(ref this NetworkSettings settings, FixedString32Bytes label)
         {
             var parameter = new NetworkDriverIdentifierParameter
