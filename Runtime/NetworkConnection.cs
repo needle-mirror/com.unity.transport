@@ -191,6 +191,13 @@ namespace Unity.Networking.Transport
             return $"NetworkConnection[id{InternalId},v{Version}]";
         }
 
+        /// <summary>Return a fixed string representation of the connection.</summary>
+        /// <returns>Fixed string representation of the connection.</returns>
+        public FixedString128Bytes ToFixedString()
+        {
+            return FixedString.Format("NetworkConnection[id{0},v{1}]", InternalId, Version);
+        }
+
         internal int InternalId => m_ConnectionId.Id;
         internal int Version => m_ConnectionId.Version;
     }

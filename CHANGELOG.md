@@ -1,5 +1,10 @@
 # Change log
 
+## [2.0.0-pre.6] - 2023-01-13
+
+### New features
+* Added a `NetworkConnection.ToFixedString` method to allow logging network connections from Burst.
+
 ## [2.0.0-pre.5] - 2023-01-12
 
 ### Changes

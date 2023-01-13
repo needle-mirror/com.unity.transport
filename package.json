@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.0.0-pre.5",
+  "version": "2.0.0-pre.6",
   "unity": "2022.2",
   "unityRelease": "0a18",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
@@ -14,16 +14,16 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### Changes\n* Revert to Collections 2.1.0-pre.6 as pre.7 is not promoted yet."
+    "changelog": "### New features\n* Added a `NetworkConnection.ToFixedString` method to allow logging network connections from Burst."
   },
   "upmCi": {
-    "footprint": "5fb8d0de53e3c978343415161ff932abc89ade11"
+    "footprint": "b73f1f937329188e851a12384466beba96be832f"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.0/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "0fbd7b4b034a044c92c7b55c3a6e2c860bd5a1f5"
+    "revision": "d4142945f605514459ee1595f609366ac3ac3194"
   },
   "samples": [
     {
