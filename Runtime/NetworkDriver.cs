@@ -226,14 +226,20 @@ namespace Unity.Networking.Transport
                     totalCapacity -= extraCapacity;
                 }
 
-                var result = 0;
-                if ((result = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, m_NetworkSendInterface.UserData, totalCapacity)) != 0)
+                var sendHandle = default(NetworkInterfaceSendHandle);
+                if (totalCapacity > NetworkParameterConstants.MTU)
                 {
                     sendHandle.data = (IntPtr)UnsafeUtility.Malloc(totalCapacity, 8, Allocator.Temp);
                     sendHandle.capacity = totalCapacity;
                     sendHandle.id = 0;
                     sendHandle.size = 0;
                     sendHandle.flags = SendHandleFlags.AllocatedByDriver;
+                }
+                else
+                {
+                    var result = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, totalCapacity);
+                    if (result != 0)
+                        return result;
                 }
 
                 if (sendHandle.capacity < totalCapacity)
@@ -364,7 +370,7 @@ namespace Unity.Networking.Transport
                 {
                     var ret = 0;
                     NetworkInterfaceSendHandle originalHandle = sendHandle;
-                    if ((ret = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, originalHandle.size)) != 0)
+                    if ((ret = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, NetworkParameterConstants.MTU)) != 0)
                     {
                         return ret;
                     }

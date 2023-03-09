@@ -283,5 +283,109 @@ namespace Unity.Networking.Transport.Tests
                 });
             }
         }
+
+        [Test]
+        public void SendMessage_ReliableStressTest()
+        {
+            const int TotalPackets = 500;
+
+            for (uint seed = 1; seed <= 5; seed++)
+            {
+                Debug.Log($"Testing with random seed {seed}...");
+
+                var settings = new NetworkSettings();
+                settings.WithSimulatorStageParameters(
+                    maxPacketCount: 1000,
+                    maxPacketSize: NetworkParameterConstants.MTU,
+                    packetDelayMs: 0,
+                    packetJitterMs: 5,
+                    packetDropPercentage: 5,
+                    randomSeed: seed);
+                settings.WithReliableStageParameters(windowSize: 64);
+
+                var dummyData = new NativeArray<byte>(1000, Allocator.Temp);
+                var expectedPacketLength = dummyData.Length + sizeof(int);
+
+                using (var server = CreateServer(SecureProtocolMode.SecureProtocolDisabled, settings, new IPCNetworkInterface()))
+                using (var client = CreateClient(SecureProtocolMode.SecureProtocolDisabled, settings, new IPCNetworkInterface()))
+                {
+                    var serverPipeline = server.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage), typeof(SimulatorPipelineStageInSend));
+                    var clientPipeline = client.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage), typeof(SimulatorPipelineStageInSend));
+
+                    ConnectServerAndClient(NetworkEndPoint.LoopbackIpv4, server, client, out var s2cConnection, out var c2sConnection);
+
+                    var numServerDataEvents = 0;
+                    var numClientDataEvents = 0;
+
+                    var numServerPacketsSent = 0;
+                    var numClientPacketsSent = 0;
+
+                    WaitForCondition(() =>
+                    {
+                        while (numServerPacketsSent < TotalPackets)
+                        {
+                            Assert.AreEqual(0, server.BeginSend(serverPipeline, s2cConnection, out var serverWriter));
+                            serverWriter.WriteInt(numServerPacketsSent);
+                            serverWriter.WriteBytes(dummyData);
+
+                            var result = server.EndSend(serverWriter);
+                            if (result != expectedPacketLength)
+                            {
+                                Assert.AreEqual((int)Error.StatusCode.NetworkSendQueueFull, result);
+                                break;
+                            }
+                            numServerPacketsSent++;
+                        }
+
+                        while (numClientPacketsSent < TotalPackets)
+                        {
+                            Assert.AreEqual(0, client.BeginSend(clientPipeline, c2sConnection, out var clientWriter));
+                            clientWriter.WriteInt(numClientPacketsSent + 42000);
+                            clientWriter.WriteBytes(dummyData);
+
+                            var result = client.EndSend(clientWriter);
+                            if (result != expectedPacketLength)
+                            {
+                                Assert.AreEqual((int)Error.StatusCode.NetworkSendQueueFull, result);
+                                break;
+                            }
+                            numClientPacketsSent++;
+                        }
+
+                        server.ScheduleUpdate().Complete();
+                        client.ScheduleUpdate().Complete();
+
+                        NetworkEvent.Type ev;
+                        NetworkConnection connection;
+                        DataStreamReader reader;
+                        NetworkPipeline pipeline;
+
+                        while ((ev = server.PopEvent(out connection, out reader, out pipeline)) != NetworkEvent.Type.Empty)
+                        {
+                            Assert.AreEqual(NetworkEvent.Type.Data, ev);
+                            Assert.AreEqual(s2cConnection, connection);
+                            Assert.AreEqual(serverPipeline, pipeline);
+                            Assert.AreEqual(expectedPacketLength, reader.Length);
+                            Assert.AreEqual(numServerDataEvents + 42000, reader.ReadInt());
+
+                            numServerDataEvents++;
+                        }
+
+                        while ((ev = client.PopEvent(out connection, out reader, out pipeline)) != NetworkEvent.Type.Empty)
+                        {
+                            Assert.AreEqual(NetworkEvent.Type.Data, ev);
+                            Assert.AreEqual(c2sConnection, connection);
+                            Assert.AreEqual(clientPipeline, pipeline);
+                            Assert.AreEqual(expectedPacketLength, reader.Length);
+                            Assert.AreEqual(numClientDataEvents, reader.ReadInt());
+
+                            numClientDataEvents++;
+                        }
+
+                        return numServerDataEvents == TotalPackets && numClientDataEvents == TotalPackets;
+                    }, "Timed out waiting for all reliable packets.", 10000);
+                }
+            }
+        }
     }
 }

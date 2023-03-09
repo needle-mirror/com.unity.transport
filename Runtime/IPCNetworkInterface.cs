@@ -128,7 +128,7 @@ namespace Unity.Networking.Transport
                         return;
                     }
 
-                    var resultAppend = receiver.AppendPacket(ptr, ref endpoint, resultReceive);
+                    var resultAppend = receiver.AppendPacket(ptr, ref endpoint, resultReceive, NetworkPacketReceiver.AppendPacketMode.NoCopyNeeded);
                     if (resultAppend == false)
                         return;
                 }

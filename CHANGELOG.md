@@ -1,5 +1,12 @@
 # Change log
 
+## [1.3.2] - 2023-03-09
+
+### Fixes
+* Fixed issue where UWP Xbox builds were crashing because the split buffer fix was not including UWP defines.
+* Fixed an issue where `IPCNetworkInterface` would perform useless work for each packet received.
+* Fixed an issue where `ReliableSequencedPipelineStage` could end up duplicating packets when sending reliable packets while the send queue is full.
+
 ## [1.3.1] - 2022-12-09
 
 ### Changes

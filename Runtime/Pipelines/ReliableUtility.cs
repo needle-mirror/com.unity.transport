@@ -634,7 +634,7 @@ namespace Unity.Networking.Transport.Utilities
                 inBuffer.bufferLength = info->Size;
                 reliable->Delivered = startSequence;
 
-                if ((ushort)(startSequence + 1) <= latestReceivedPacket)
+                if (SequenceHelpers.LessThan16((ushort)startSequence, (ushort)latestReceivedPacket))
                 {
                     reliable->Resume = (ushort)(startSequence + 1);
                     needsResume = true;
@@ -902,7 +902,7 @@ namespace Unity.Networking.Transport.Utilities
             }
 
             var window = reliable->WindowSize - 1;
-            if (SequenceHelpers.GreaterThan16((ushort)(header.SequenceId + 1), (ushort)reliable->ReceivedPackets.Sequence))
+            if (SequenceHelpers.GreaterThan16(header.SequenceId, (ushort)reliable->ReceivedPackets.Sequence))
             {
                 int distance = SequenceHelpers.AbsDistance(header.SequenceId, (ushort)reliable->ReceivedPackets.Sequence);
 
@@ -927,7 +927,7 @@ namespace Unity.Networking.Transport.Utilities
 
                 reliable->ReceivedPackets.Sequence = header.SequenceId;
             }
-            else if (SequenceHelpers.LessThan16(header.SequenceId, (ushort)reliable->ReceivedPackets.Sequence))
+            else
             {
                 int distance = SequenceHelpers.AbsDistance(header.SequenceId, (ushort)reliable->ReceivedPackets.Sequence);
                 // If this is a resent packet the distance will seem very big and needs to be calculated again with adjustment for wrapping
