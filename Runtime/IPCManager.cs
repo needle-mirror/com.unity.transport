@@ -57,12 +57,16 @@ namespace Unity.Networking.Transport
             {
                 var packetProcessor = sendQueue[i];
 
+                if (packetProcessor.Length == 0)
+                    continue;
+
                 if (!GetChannelByEndpoint(ref packetProcessor.EndpointRef, out var toChannel))
                 {
                     if (packetProcessor.EndpointRef.Port == 0)
                         continue;
 
-                    CreateEndpoint(packetProcessor.EndpointRef.Port);
+                    var newEndpoint = CreateEndpoint(packetProcessor.EndpointRef.Port);
+                    GetChannelByEndpoint(ref newEndpoint, out toChannel);
                 }
 
                 var ipcData = new IPCData();

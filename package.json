@@ -1,31 +1,36 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.0.0-pre.6",
+  "version": "2.0.0-pre.7",
   "unity": "2022.2",
   "unityRelease": "0a18",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
     "com.unity.collections": "2.1.0-pre.6",
-    "com.unity.burst": "1.8.2",
+    "com.unity.burst": "1.8.3",
     "com.unity.mathematics": "1.2.6"
   },
   "relatedPackages": {
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### New features\n* Added a `NetworkConnection.ToFixedString` method to allow logging network connections from Burst."
+    "changelog": "### New features\n* Added a new `MultiNetworkDriver` API to make it easier to handle multiple `NetworkDriver` instances at the same time for cross-play scenarios. Refer to the \"cross-play support\" section of the documentation for more details on this feature. This new API is also showcased in a new \"CrossPlay\" package sample.\n\n### Changes\n* Update Burst dependency to 1.8.3.\n* The `QueuedSendMessage` structure was removed as it didn't serve any purpose anymore.\n* The `dependency` argument of `NetworkDriver.ScheduleFlushSend` is now optional.\n* `SequenceHelpers`, `RandomHelpers`, and the extensions in `NativeListExt` and `FixedStringExt` have all been made internal. These are all internal helper classes that shouldn't have been part of the public API in the first place.\n* Many APIs and types inside `ReliableUtility` have been made internal (among them all APIs and types dealing with send/receive contexts and packet information and timers). The information they contain was meant purely for internal consumption in the first place. The statistics and RTT information inside the shared context remains public.\n* Removed `errorCode` from `ReliableUtility.SharedContext`. Any useful information it can provide is already returned by higher-level APIs like `NetworkDriver.EndSend`.\n* Default send and receive queue sizes are now set to 512 packets (previous value was 64). The queue sizes are modifiable with `NetworkSettings.WithNetworkConfigParameters`.\n\n### Fixes\n* Fixed a possible exception in `IPCNetworkInterface` if it was fed an unknown endpoint.\n* Fixed `NetworkDriver.GetLocalEndpoint` when using `WebSocketNetworkInterface` (note that on web browsers this will now print a warning since local endpoints are not available on WebGL)."
   },
   "upmCi": {
-    "footprint": "b73f1f937329188e851a12384466beba96be832f"
+    "footprint": "c45ffcc2bb06b4280f5bc8a908302b1be03a1eea"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.0/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "d4142945f605514459ee1595f609366ac3ac3194"
+    "revision": "c5887e7909cf6789b70020500a4f5d5a106004e2"
   },
   "samples": [
+    {
+      "displayName": "Cross-play Example",
+      "description": "Example of how to use MultiNetworkDriver to create a server that accepts both UDP and WebSocket connections.",
+      "path": "Samples~/CrossPlay"
+    },
     {
       "displayName": "Jobified Client and Server",
       "description": "Very simple client and server implementations using jobs. Meant to tie in with the package documentation.",

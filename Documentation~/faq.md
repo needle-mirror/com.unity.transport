@@ -16,7 +16,9 @@ Servers should typically bind to IP address 0.0.0.0 (or its IPv6 equivalent) and
 driver.Bind(NetworkEndpoint.AnyIpv4.WithPort(7777));
 ```
 
-The only reason you would want to bind to a specific IP address instead of the wildcard is if your server has multiple interfaces and you want to limit clients to connect only through a particular one. This can be because of security reasons, or because another service is already listening on the same port on a different interface.
+For local development (i.e. both server and client running on the same PC), binding to `NetworkEndpoint.LoopbackIpv4` might be preferable. This prevents other machines from connecting to the server, which might be desirable in unsecure environments like public wireless networks or internet cafes.
+
+Otherwise, the only reason you would want to bind to a specific IP address instead of the wildcard is if your server has multiple interfaces and you want to limit clients to connect only through a particular one. This can be because of security reasons, or because another service is already listening on the same port on a different interface.
 
 ### When using Unity Relay
 
@@ -100,15 +102,15 @@ It means a buffer for the new message could not be acquired from the send queue.
 ```csharp
 var settings = new NetworkSettings();
 settings.WithNetworkConfigParameters(
-    sendQueueCapacity: 256
-    receiveQueueCapacity: 256);
+    sendQueueCapacity: 1024
+    receiveQueueCapacity: 1024);
 
 var driver = NetworkDriver.Create(settings);
 ```
 
 As the example above demonstrates, it is often a good idea to set the receive queue capacity to the same value. Failing to do so could add latency to the processing of packets, or even cause them to be dropped. This is because if the receive queue is full, newly-received packets will have to wait in OS buffers to be processed. If the OS buffers are full, new packets will be dropped.
 
-The default value for both send and receive queue capacity is 64. Increasing the values will result in increased memory usage (the impact is about 1500 bytes per unit of capacity).
+The default value for both send and receive queue capacity is 512. Increasing the values will result in increased memory usage (the impact is about 1500 bytes per unit of capacity). The values can also be decreased to reduce memory usage if necessary.
 
 ### If returnd by `EndSend`
 

@@ -13,13 +13,6 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
-    public unsafe struct QueuedSendMessage
-    {
-        public fixed byte Data[NetworkParameterConstants.MTU];
-        public NetworkEndpoint Dest;
-        public int DataLength;
-    }
-
     /// <summary>
     /// The NetworkDriver is an implementation of Virtual Connections over any transport.
     ///
@@ -30,16 +23,17 @@ namespace Unity.Networking.Transport
     /// </summary>
     public struct NetworkDriver : IDisposable
     {
-        /// <summary>
-        /// Create a Concurrent Copy of the NetworkDriver.
-        /// </summary>
+        /// <summary>Create a <see cref="Concurrent"/> copy of the <c>NetworkDriver</c>.</summary>
+        /// <returns>A <see cref="Concurrent"/> instance for the driver.</returns>
         public Concurrent ToConcurrent()
         {
+            if (!IsCreated)
+                return default;
+
             return new Concurrent
             {
                 m_EventQueue = m_EventQueue.ToConcurrent(),
                 m_ConnectionList = m_NetworkStack.Connections,
-                m_DisconnectReasons = m_DisconnectReasons,
                 m_PipelineProcessor = m_PipelineProcessor.ToConcurrent(),
                 m_DefaultHeaderFlags = m_DefaultHeaderFlags,
                 m_DriverSender = m_DriverSender.ToConcurrent(),
@@ -58,7 +52,6 @@ namespace Unity.Networking.Transport
             {
                 m_EventQueue = default,
                 m_ConnectionList = m_NetworkStack.Connections,
-                m_DisconnectReasons = m_DisconnectReasons,
                 m_PipelineProcessor = m_PipelineProcessor.ToConcurrent(),
                 m_DefaultHeaderFlags = m_DefaultHeaderFlags,
                 m_DriverSender = m_DriverSender.ToConcurrent(),
@@ -72,34 +65,37 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// The Concurrent struct is used to create an Concurrent instance of the GenericNetworkDriver.
+        /// Structure that can be used to access a <c>NetworkDriver</c> from multiple jobs. Only a
+        /// subset of operations are supported because not all operations are safe to perform
+        /// concurrently. Must be obtained with the <see cref="ToConcurrent"/> method.
         /// </summary>
         public struct Concurrent
         {
-            public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader)
+            /// <inheritdoc cref="NetworkDriver.PopEventForConnection"/>
+            public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader)
             {
-                return PopEventForConnection(connectionId, out reader, out var _);
+                return PopEventForConnection(connection, out reader, out var _);
             }
 
-            public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader, out NetworkPipeline pipeline)
+            /// <inheritdoc cref="NetworkDriver.PopEventForConnection"/>
+            public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader, out NetworkPipeline pipe)
             {
-                pipeline = default;
+                pipe = default;
 
                 reader = default;
-                if (m_ConnectionList.ConnectionAt(connection.InternalId) != connection.m_ConnectionId)
+                if (m_ConnectionList.ConnectionAt(connection.InternalId) != connection.ConnectionId)
                     return (int)NetworkEvent.Type.Empty;
 
                 var type = m_EventQueue.PopEventForConnection(connection.InternalId, out var offset, out var size, out var pipelineId);
-                pipeline = new NetworkPipeline { Id = pipelineId };
+                pipe = new NetworkPipeline { Id = pipelineId };
 
-                if (type == NetworkEvent.Type.Disconnect && offset < 0)
-                    reader = new DataStreamReader(m_DisconnectReasons.GetSubArray(math.abs(offset), 1));
-                else if (size > 0)
+                if (size > 0)
                     reader = new DataStreamReader(m_DriverReceiver.GetDataStreamSubArray(offset, size));
 
                 return type;
             }
 
+            /// <inheritdoc cref="NetworkDriver.MaxHeaderSize"/>
             public int MaxHeaderSize(NetworkPipeline pipe)
             {
                 var headerSize = m_PipelineProcessor.m_MaxPacketHeaderSize;
@@ -112,7 +108,7 @@ namespace Unity.Networking.Transport
                 return headerSize;
             }
 
-            struct PendingSend
+            internal struct PendingSend
             {
                 public NetworkPipeline Pipeline;
                 public NetworkConnection Connection;
@@ -120,41 +116,25 @@ namespace Unity.Networking.Transport
                 public int headerSize;
             }
 
-            /// <summary>
-            /// Acquires a DataStreamWriter for starting a asynchronous send.
-            /// </summary>
-            /// <param name="id">The NetworkConnection id to write through</param>
-            /// <param name="writer">A DataStreamWriter to write to</param>
-            /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
-            /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
-            /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
-            public unsafe int BeginSend(NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
+            /// <inheritdoc cref="NetworkDriver.BeginSend"/>
+            public unsafe int BeginSend(NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
             {
-                return BeginSend(NetworkPipeline.Null, id, out writer, requiredPayloadSize);
+                return BeginSend(NetworkPipeline.Null, connection, out writer, requiredPayloadSize);
             }
 
-            /// <summary>
-            /// Acquires a DataStreamWriter for starting a asynchronous send.
-            /// </summary>
-            /// <param name="pipe">The NetworkPipeline to write through</param>
-            /// <param name="id">The NetworkConnection id to write through</param>
-            /// <param name="writer">A DataStreamWriter to write to</param>
-            /// <param name="requiredPayloadSize">If you require the payload to be of certain size</param>
-            /// <value>Returns <see cref="StatusCode.Success"/> on a successful acquire. Otherwise returns an <see cref="StatusCode"/> indicating the error.</value>
-            /// <remarks> Will throw a <exception cref="InvalidOperationException"></exception> if the connection is in a Connecting state.</remarks>
-            public unsafe int BeginSend(NetworkPipeline pipe, NetworkConnection id,
-                out DataStreamWriter writer, int requiredPayloadSize = 0)
+            /// <inheritdoc cref="NetworkDriver.BeginSend"/>
+            public unsafe int BeginSend(NetworkPipeline pipe, NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
             {
                 writer = default;
 
-                if (id.InternalId < 0 || id.InternalId >= m_ConnectionList.Count)
+                if (connection.InternalId < 0 || connection.InternalId >= m_ConnectionList.Count)
                     return (int)Error.StatusCode.NetworkIdMismatch;
 
-                var connection = m_ConnectionList.ConnectionAt(id.InternalId);
-                if (connection.Version != id.Version)
+                var c = m_ConnectionList.ConnectionAt(connection.InternalId);
+                if (c.Version != connection.Version)
                     return (int)Error.StatusCode.NetworkVersionMismatch;
 
-                if (m_ConnectionList.GetConnectionState(connection) != NetworkConnection.State.Connected)
+                if (m_ConnectionList.GetConnectionState(c) != NetworkConnection.State.Connected)
                     return (int)Error.StatusCode.NetworkStateMismatch;
 
                 var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) + 1 : 0;
@@ -222,7 +202,7 @@ namespace Unity.Networking.Transport
                 *(PendingSend*)writer.m_SendHandleData = new PendingSend
                 {
                     Pipeline = pipe,
-                    Connection = id,
+                    Connection = connection,
                     SendHandle = sendHandle,
                     headerSize = m_PacketPadding,
                 };
@@ -232,13 +212,7 @@ namespace Unity.Networking.Transport
                 return (int)Error.StatusCode.Success;
             }
 
-            /// <summary>
-            /// Ends a asynchronous send.
-            /// </summary>
-            /// <param name="writer">If you require the payload to be of certain size.</param>
-            /// <value>The length of the buffer sent if nothing went wrong.</value>
-            /// <exception cref="InvalidOperationException">If EndSend is called without a matching BeginSend call.</exception>
-            /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
+            /// <inheritdoc cref="NetworkDriver.EndSend"/>
             public unsafe int EndSend(DataStreamWriter writer)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -298,13 +272,7 @@ namespace Unity.Networking.Transport
                 return writer.Length;
             }
 
-            /// <summary>
-            /// Aborts an asynchronous send. If calling this, there is not need to call <see cref="EndSend"/>.
-            /// </summary>
-            /// <param name="writer">If you require the payload to be of certain size.</param>
-            /// <value>The length of the buffer sent if nothing went wrong.</value>
-            /// <exception cref="InvalidOperationException">If AbortSend is called without a matching BeginSend call.</exception>
-            /// <exception cref="InvalidOperationException">If the connection got closed between the call of being and end send.</exception>
+            /// <inheritdoc cref="NetworkDriver.AbortSend"/>
             public unsafe void AbortSend(DataStreamWriter writer)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -344,9 +312,9 @@ namespace Unity.Networking.Transport
                     sendHandle.size = originalHandle.size;
                 }
 
-                var endpoint = m_ConnectionList.GetConnectionEndpoint(sendConnection.m_ConnectionId);
+                var endpoint = m_ConnectionList.GetConnectionEndpoint(sendConnection.ConnectionId);
                 sendHandle.size -= m_PacketPadding;
-                var result = m_DriverSender.EndSend(ref endpoint, ref sendHandle, m_PacketPadding, sendConnection.m_ConnectionId);
+                var result = m_DriverSender.EndSend(ref endpoint, ref sendHandle, m_PacketPadding, sendConnection.ConnectionId);
 
                 // TODO: We temporarily add always a pipeline id (even if it's 0) when using new Layers
                 if (!hasPipeline)
@@ -365,6 +333,7 @@ namespace Unity.Networking.Transport
                 }
             }
 
+            /// <inheritdoc cref="NetworkDriver.GetConnectionState"/>
             public NetworkConnection.State GetConnectionState(NetworkConnection id)
             {
                 if (id.InternalId < 0 || id.InternalId >= m_ConnectionList.Count)
@@ -378,7 +347,6 @@ namespace Unity.Networking.Transport
             }
 
             internal NetworkEventQueue.Concurrent m_EventQueue;
-            internal NativeArray<byte> m_DisconnectReasons;
 
             [ReadOnly] internal ConnectionList m_ConnectionList;
             internal NetworkPipelineProcessor.Concurrent m_PipelineProcessor;
@@ -408,18 +376,22 @@ namespace Unity.Networking.Transport
 #endif
 
         NetworkEventQueue m_EventQueue;
-        private NativeArray<byte> m_DisconnectReasons;
 
-        [ReadOnly] NativeArray<int> m_InternalState;
+        private struct InternalState
+        {
+            public long LastUpdateTime;
+            public long UpdateTimeAdjustment;
+            public bool Bound;
+            public bool Listening;
+        }
 
         [NativeDisableContainerSafetyRestriction]
-        NativeArray<long> m_UpdateTime;
+        private NativeReference<InternalState> m_InternalState;
 
-        private NetworkConfigParameter m_NetworkParams;
         private NetworkPipelineProcessor m_PipelineProcessor;
         private UdpCHeader.HeaderFlags m_DefaultHeaderFlags;
 
-        internal NetworkSettings m_NetworkSettings;
+        [ReadOnly] internal NetworkSettings m_NetworkSettings;
 
         /// <summary>Current settings used by the driver.</summary>
         /// <remarks>
@@ -428,21 +400,31 @@ namespace Unity.Networking.Transport
         /// </remarks>
         public NetworkSettings CurrentSettings => m_NetworkSettings.AsReadOnly();
 
-        private const int k_InternalStateListening = 0;
-        private const int k_InternalStateBound = 1;
+        public bool Bound
+        {
+            get => m_InternalState.Value.Bound;
+            private set
+            {
+                var state = m_InternalState.Value;
+                state.Bound = value;
+                m_InternalState.Value = state;
+            }
+        }
 
         public bool Listening
         {
-            get => m_InternalState[k_InternalStateListening] != 0;
-            private set => m_InternalState[k_InternalStateListening] = value ? 1 : 0;
+            get => m_InternalState.Value.Listening;
+            private set
+            {
+                var state = m_InternalState.Value;
+                state.Listening = value;
+                m_InternalState.Value = state;
+            }
         }
 
-        public bool Bound => m_InternalState[k_InternalStateBound] == 1;
+        internal long LastUpdateTime => m_InternalState.Value.LastUpdateTime;
 
-        private const int k_LastUpdateTime = 0;
-        private const int k_UpdateTimeAdjustment = 1;
-
-        internal long LastUpdateTime => m_UpdateTime[k_LastUpdateTime];
+        internal int PipelineCount => m_PipelineProcessor.PipelineCount;
 
         /// <summary>
         /// Helper function for creating a NetworkDriver.
@@ -474,17 +456,19 @@ namespace Unity.Networking.Transport
             var driver = default(NetworkDriver);
 
             driver.m_NetworkSettings = new NetworkSettings(settings, Allocator.Persistent);
-            driver.m_NetworkParams = settings.GetNetworkConfigParameters();
+
+            var networkParams = settings.GetNetworkConfigParameters();
 #if !UNITY_WEBGL || UNITY_EDITOR
             // Legacy support for baselib queue capacity parameters
             #pragma warning disable 618
             if (settings.TryGet<BaselibNetworkParameter>(out var baselibParameter))
             {
-                if (driver.m_NetworkParams.sendQueueCapacity == NetworkParameterConstants.SendQueueCapacity &&
-                    driver.m_NetworkParams.receiveQueueCapacity == NetworkParameterConstants.ReceiveQueueCapacity)
+                if (networkParams.sendQueueCapacity == NetworkParameterConstants.SendQueueCapacity &&
+                    networkParams.receiveQueueCapacity == NetworkParameterConstants.ReceiveQueueCapacity)
                 {
-                    driver.m_NetworkParams.sendQueueCapacity = baselibParameter.sendQueueCapacity;
-                    driver.m_NetworkParams.receiveQueueCapacity = baselibParameter.receiveQueueCapacity;
+                    networkParams.sendQueueCapacity = baselibParameter.sendQueueCapacity;
+                    networkParams.receiveQueueCapacity = baselibParameter.receiveQueueCapacity;
+                    driver.m_NetworkSettings.AddRawParameterStruct(ref networkParams);
                 }
             }
             #pragma warning restore 618
@@ -504,20 +488,16 @@ namespace Unity.Networking.Transport
 
             driver.m_EventQueue = new NetworkEventQueue(NetworkParameterConstants.InitialEventQueueSize);
 
-            const int reasons = (int)DisconnectReason.Count;
-            driver.m_DisconnectReasons = new NativeArray<byte>(reasons, Allocator.Persistent);
-            for (var idx = 0; idx < reasons; ++idx)
-                driver.m_DisconnectReasons[idx] = (byte)idx;
-
-            driver.m_InternalState = new NativeArray<int>(2, Allocator.Persistent);
-
-            driver.m_UpdateTime = new NativeArray<long>(2, Allocator.Persistent);
-
             var time = TimerHelpers.GetCurrentTimestampMS();
-            driver.m_UpdateTime[k_LastUpdateTime] = driver.m_NetworkParams.fixedFrameTimeMS > 0 ? 1 : time;
-            driver.m_UpdateTime[k_UpdateTimeAdjustment] = 0;
+            var state = new InternalState
+            {
+                LastUpdateTime = networkParams.fixedFrameTimeMS > 0 ? 1 : time,
+                UpdateTimeAdjustment = 0,
+                Bound = false,
+                Listening = false,
+            };
 
-            driver.Listening = false;
+            driver.m_InternalState = new NativeReference<InternalState>(state, Allocator.Persistent);
 
             return driver;
         }
@@ -546,10 +526,8 @@ namespace Unity.Networking.Transport
             m_PipelineProcessor.Dispose();
 
             m_EventQueue.Dispose();
-            m_DisconnectReasons.Dispose();
 
             m_InternalState.Dispose();
-            m_UpdateTime.Dispose();
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_PendingBeginSend.Dispose();
 #endif
@@ -610,24 +588,32 @@ namespace Unity.Networking.Transport
 
         private void UpdateLastUpdateTime()
         {
-            long now = m_NetworkParams.fixedFrameTimeMS > 0
-                ? LastUpdateTime + m_NetworkParams.fixedFrameTimeMS
-                : TimerHelpers.GetCurrentTimestampMS() - m_UpdateTime[k_UpdateTimeAdjustment];
+            var state = m_InternalState.Value;
+            var networkParams = m_NetworkSettings.GetNetworkConfigParameters();
+
+            long now = networkParams.fixedFrameTimeMS > 0
+                ? LastUpdateTime + networkParams.fixedFrameTimeMS
+                : TimerHelpers.GetCurrentTimestampMS() - state.UpdateTimeAdjustment;
 
             long frameTime = now - LastUpdateTime;
-            if (m_NetworkParams.maxFrameTimeMS > 0 && frameTime > m_NetworkParams.maxFrameTimeMS)
+            if (networkParams.maxFrameTimeMS > 0 && frameTime > networkParams.maxFrameTimeMS)
             {
-                m_UpdateTime[k_UpdateTimeAdjustment] += frameTime - m_NetworkParams.maxFrameTimeMS;
-                now = LastUpdateTime + m_NetworkParams.maxFrameTimeMS;
+                state.UpdateTimeAdjustment += frameTime - networkParams.maxFrameTimeMS;
+                now = LastUpdateTime + networkParams.maxFrameTimeMS;
             }
 
-            unsafe
-            {
-                var ptr = (long *)m_UpdateTime.GetUnsafePtr();
-                Interlocked.Exchange(ref ptr[k_LastUpdateTime], now);
-            }
+            state.LastUpdateTime = now;
+            m_InternalState.Value = state;
         }
 
+        /// <summary>
+        /// Schedule an update job. This job will process incoming packets and check timeouts
+        /// (queueing up the relevant events to be consumed by <see cref="PopEvent"/> and
+        /// <see cref="Accept"/>) and will send any packets queued with <see cref="EndSend"/>. This
+        /// job should generally be scheduled once per tick.
+        /// </summary>
+        /// <param name="dependency">Job to depend on.</param>
+        /// <returns>Handle to the update job.</returns>
         public JobHandle ScheduleUpdate(JobHandle dependency = default)
         {
             UpdateLastUpdateTime();
@@ -646,7 +632,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     pendingSend = m_PendingBeginSend,
                     connectionList = connections,
-                    listenState = m_InternalState[k_InternalStateListening]
+                    listenState = Listening ? 1 : 0,
 #endif
                 };
 
@@ -663,7 +649,15 @@ namespace Unity.Networking.Transport
             }
         }
 
-        public JobHandle ScheduleFlushSend(JobHandle dependency)
+        /// <summary>
+        /// Schedule a send job. This job is basically a subset of the update job (see
+        /// <see cref="ScheduleUpdate"/>) and only takes care of sending packets queued with
+        /// <see cref="EndSend"/>. It should be lightweight enough to schedule multiple times per
+        /// tick to improve latency if there's a significant amount of packets being sent.
+        /// </summary>
+        /// <param name="dependency">Job to depend on.</param>
+        /// <returns>Handle to the send job.</returns>
+        public JobHandle ScheduleFlushSend(JobHandle dependency = default)
         {
             return m_NetworkStack.ScheduleSend(ref m_DriverSender, LastUpdateTime, dependency);
         }
@@ -802,7 +796,7 @@ namespace Unity.Networking.Transport
                     "Bind cannot be called after establishing connections");
 #endif
             var result = m_NetworkStack.Bind(ref endpoint);
-            m_InternalState[k_InternalStateBound] = result == 0 ? 1 : 0;
+            Bound = result == 0;
 
             return result;
         }
@@ -841,9 +835,9 @@ namespace Unity.Networking.Transport
 
             if (!Bound)
                 return -1;
+
             var ret = m_NetworkStack.Listen();
-            if (ret == 0)
-                Listening = true;
+            Listening = ret == 0;
             return ret;
         }
 
@@ -898,15 +892,16 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Disconnects a NetworkConnection
         /// </summary>
-        /// <param name="id">The NetworkConnection we want to Disconnect.</param>
+        /// <param name="connection">The NetworkConnection we want to Disconnect.</param>
         /// <value>Return 0 on success.</value>
-        public int Disconnect(NetworkConnection id)
+        public int Disconnect(NetworkConnection connection)
         {
-            var connectionState = GetConnectionState(id);
+            var connectionState = GetConnectionState(connection);
 
             if (connectionState != NetworkConnection.State.Disconnected)
             {
-                m_NetworkStack.Connections.StartDisconnecting(ref id.m_ConnectionId);
+                var c = connection.ConnectionId;
+                m_NetworkStack.Connections.StartDisconnecting(ref c);
             }
 
             return 0;
@@ -924,7 +919,7 @@ namespace Unity.Networking.Transport
         /// <exception cref="InvalidOperationException">If the the connection is invalid.</exception>
         public void GetPipelineBuffers(NetworkPipeline pipeline, NetworkPipelineStageId stageId, NetworkConnection connection, out NativeArray<byte> readProcessingBuffer, out NativeArray<byte> writeProcessingBuffer, out NativeArray<byte> sharedBuffer)
         {
-            if (m_NetworkStack.Connections.ConnectionAt(connection.InternalId) != connection.m_ConnectionId)
+            if (m_NetworkStack.Connections.ConnectionAt(connection.InternalId) != connection.ConnectionId)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException("Invalid connection");
@@ -947,26 +942,29 @@ namespace Unity.Networking.Transport
             return m_PipelineProcessor.GetWriteablePipelineParameter<T>(stageId);
         }
 
-        public NetworkConnection.State GetConnectionState(NetworkConnection con)
+        /// <summary>Get the current state of the given connection.</summary>
+        /// <param name="connection">Connection to get the state of.</param>
+        /// <returns>State of the connection.</returns>
+        public NetworkConnection.State GetConnectionState(NetworkConnection connection)
         {
-            var state = m_NetworkStack.Connections.GetConnectionState(con.m_ConnectionId);
+            var state = m_NetworkStack.Connections.GetConnectionState(connection.ConnectionId);
             return state == NetworkConnection.State.Disconnecting ? NetworkConnection.State.Disconnected : state;
         }
 
         [Obsolete("RemoteEndPoint has been renamed to GetRemoteEndpoint. (UnityUpgradable) -> GetRemoteEndpoint(*)", false)]
         public NetworkEndpoint RemoteEndPoint(NetworkConnection id)
         {
-            return m_NetworkStack.Connections.GetConnectionEndpoint(id.m_ConnectionId);
+            return m_NetworkStack.Connections.GetConnectionEndpoint(id.ConnectionId);
         }
 
         /// <summary>
         /// Get the remote endpoint of a connection (the endpoint used to reach the remote peer on the connection).
         /// </summary>
-        /// <param name="id">Connection to get the endpoint of.</param>
+        /// <param name="connection">Connection to get the endpoint of.</param>
         /// <returns>The remote endpoint of the connection.</returns>
-        public NetworkEndpoint GetRemoteEndpoint(NetworkConnection id)
+        public NetworkEndpoint GetRemoteEndpoint(NetworkConnection connection)
         {
-            return m_NetworkStack.Connections.GetConnectionEndpoint(id.m_ConnectionId);
+            return m_NetworkStack.Connections.GetConnectionEndpoint(connection.ConnectionId);
         }
 
         [Obsolete("LocalEndPoint has been renamed to GetLocalEndpoint. (UnityUpgradable) -> GetLocalEndpoint()", false)]
@@ -984,46 +982,107 @@ namespace Unity.Networking.Transport
             return m_NetworkStack.GetLocalEndpoint();
         }
 
+        /// <summary>Get the maximum size of headers when sending on the given pipeline.</summary>
+        /// <remarks>Only accounts for the Unity Transport headers (no UDP or IP).</remarks>
+        /// <param name="pipe">Pipeline to get the header size for.</param>
+        /// <returns>The maximum size of the headers on the given pipeline.</returns>
         public int MaxHeaderSize(NetworkPipeline pipe)
         {
             return ToConcurrentSendOnly().MaxHeaderSize(pipe);
         }
 
-        public int BeginSend(NetworkPipeline pipe, NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
+        /// <summary>Begin sending data on the given connection and pipeline.</summary>
+        /// <param name="pipe">Pipeline to send the data on.</param>
+        /// <param name="connection">Connection to send the data to.</param>
+        /// <param name="writer"><see cref="DataStreamWriter"/> the data can be written to.</param>
+        /// <param name="requiredPayloadSize">
+        /// Size that the returned <see cref="DataStreamWriter"/> must support. The method will
+        /// return an error if that payload size is not supported by the pipeline. Defaults to 0,
+        /// which means the <see cref="DataStreamWriter"/> will be as large as it can be.
+        /// </param>
+        /// <returns>0 on success, a negative error code on error.</returns>
+        public int BeginSend(NetworkPipeline pipe, NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
         {
-            return ToConcurrentSendOnly().BeginSend(pipe, id, out writer, requiredPayloadSize);
+            return ToConcurrentSendOnly().BeginSend(pipe, connection, out writer, requiredPayloadSize);
         }
 
-        public int BeginSend(NetworkConnection id, out DataStreamWriter writer, int requiredPayloadSize = 0)
+        /// <summary>Begin sending data on the given connection (default pipeline).</summary>
+        /// <param name="pipe">Pipeline to send the data on.</param>
+        /// <param name="connection">Connection to send the data to.</param>
+        /// <param name="writer"><see cref="DataStreamWriter"/> the data can be written to.</param>
+        /// <param name="requiredPayloadSize">
+        /// Size that the returned <see cref="DataStreamWriter"/> must support. The method will
+        /// return an error if that payload size is not supported by the pipeline. Defaults to 0,
+        /// which means the <see cref="DataStreamWriter"/> will be as large as it can be.
+        /// </param>
+        /// <returns>0 on success, a negative value on error.</returns>
+        public int BeginSend(NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
         {
-            return ToConcurrentSendOnly().BeginSend(NetworkPipeline.Null, id, out writer, requiredPayloadSize);
+            return ToConcurrentSendOnly().BeginSend(NetworkPipeline.Null, connection, out writer, requiredPayloadSize);
         }
 
+        /// <summary>
+        /// Enqueue a send operation for the data in the given <see cref="DataStreamWriter"/>,
+        /// which must have been obtained by a prior call to <see cref="BeginSend"/>.
+        /// </summary>
+        /// <remarks>
+        /// This method doesn't actually send anything on the wire. It simply enqueues the send
+        /// operation, which will be performed in the next <see cref="ScheduleFlushSend"/> or
+        /// <see cref="ScheduleUpdate"/> job.
+        /// </remarks>
+        /// <param name="writer"><see cref="DataStreamWriter"/> to send.</param>
+        /// <returns>The number of bytes to be sent on success, a negative value on error.</returns>
         public int EndSend(DataStreamWriter writer)
         {
             return ToConcurrentSendOnly().EndSend(writer);
         }
 
+        /// <summary>Aborts a send started with <see cref="BeginSend"/>.</summary>
+        /// <param name="writer"><see cref="DataStreamWriter"/> to cancel.</param>
         public void AbortSend(DataStreamWriter writer)
         {
             ToConcurrentSendOnly().AbortSend(writer);
         }
 
         /// <summary>
-        /// Pops an event
+        /// Pops the next event from the event queue, <see cref="NetworkEvent.Type.Empty"/> will be
+        /// returned if there are no more events to pop.
         /// </summary>
-        /// <param name="con"></param>
-        /// <param name="reader"></param>
-        /// <value>Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
-        /// then the DataStreamReader will contain the disconnect reason. If a listening NetworkDriver has received Data
-        /// events from a client, but the NetworkDriver has not Accepted the NetworkConnection yet, the Data event will
-        /// be discarded.<value/>
-        public NetworkEvent.Type PopEvent(out NetworkConnection con, out DataStreamReader reader)
+        /// <remarks>
+        /// The <c>reader</c> obtained from this method will contain different things for different
+        /// event types. For <see cref="NetworkEvent.Type.Data"/>, it contains the actual received
+        /// payload. For <see cref="NetworkEvent.Type.Disconnect"/>, it contains a single byte
+        /// identifying the reason for the disconnection (see <see cref="Error.DisconnectReason"/>).
+        /// For other event types, it contains nothing.
+        /// </remarks>
+        /// <param name="connection">Connection on which the event occured.</param>
+        /// <param name="reader">
+        /// <see cref="DataStreamReader"/> from which the event data (e.g. payload) can be read from.
+        /// </param>
+        /// <returns>The type of the event popped.</returns>
+        public NetworkEvent.Type PopEvent(out NetworkConnection connection, out DataStreamReader reader)
         {
-            return PopEvent(out con, out reader, out var _);
+            return PopEvent(out connection, out reader, out var _);
         }
 
-        public NetworkEvent.Type PopEvent(out NetworkConnection con, out DataStreamReader reader, out NetworkPipeline pipeline)
+        /// <summary>
+        /// Pops the next event from the event queue, <see cref="NetworkEvent.Type.Empty"/> will be
+        /// returned if there are no more events to pop.
+        /// </summary>
+        /// <remarks>
+        /// The <c>reader</c> obtained from this method will contain different things for different
+        /// event types. For <see cref="NetworkEvent.Type.Data"/>, it contains the actual received
+        /// payload. For <see cref="NetworkEvent.Type.Disconnect"/>, it contains a single byte
+        /// identifying the reason for the disconnection (see <see cref="Error.DisconnectReason"/>).
+        /// For other event types, it contains nothing.
+        /// </remarks>
+        /// <param name="connection">Connection on which the event occured.</param>
+        /// <param name="reader">
+        /// <see cref="DataStreamReader"/> from which the event data (e.g. payload) can be read from.
+        /// </param>
+        /// <param name="pipe">Pipeline on which the data event was received.</param>
+        /// <returns>The type of the event popped.</returns>
+        public NetworkEvent.Type PopEvent(out NetworkConnection connection, out DataStreamReader reader, out NetworkPipeline pipe)
         {
             reader = default;
 
@@ -1049,13 +1108,12 @@ namespace Unity.Networking.Transport
                 break;
             }
 
-            pipeline = new NetworkPipeline { Id = pipelineId };
+            pipe = new NetworkPipeline { Id = pipelineId };
 
-            if (type == NetworkEvent.Type.Disconnect && offset < 0)
-                reader = new DataStreamReader(m_DisconnectReasons.GetSubArray(math.abs(offset), 1));
-            else if (size > 0)
+            if (size > 0)
                 reader = new DataStreamReader(m_DriverReceiver.GetDataStreamSubArray(offset, size));
-            con = id < 0
+
+            connection = id < 0
                 ? default
                 : new NetworkConnection(m_NetworkStack.Connections.ConnectionAt(id));
 
@@ -1063,31 +1121,55 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Pops an event for a specific connection
+        /// Pops the next event from the event queue for the given connection,
+        /// <see cref="NetworkEvent.Type.Empty"/> will be returned if there are no more events.
         /// </summary>
-        /// <param name="connectionId"></param>
-        /// <param name="reader"></param>
-        /// <value>Returns the type of event received, if the value is a <see cref="NetworkEvent.Type.Disconnect"/> event
-        /// then the DataStreamReader will contain the disconnect reason.<value/>
-        public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader)
+        /// <remarks>
+        /// The <c>reader</c> obtained from this method will contain different things for different
+        /// event types. For <see cref="NetworkEvent.Type.Data"/>, it contains the actual received
+        /// payload. For <see cref="NetworkEvent.Type.Disconnect"/>, it contains a single byte
+        /// identifying the reason for the disconnection (see <see cref="Error.DisconnectReason"/>).
+        /// For other event types, it contains nothing.
+        /// </remarks>
+        /// <param name="connection">Connection for which to pop the event.</param>
+        /// <param name="reader">
+        /// <see cref="DataStreamReader"/> from which the event data (e.g. payload) can be read from.
+        /// </param>
+        /// <returns>The type of the event popped.</returns>
+        public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader)
         {
-            return PopEventForConnection(connectionId, out reader, out var _);
+            return PopEventForConnection(connection, out reader, out var _);
         }
 
-        public NetworkEvent.Type PopEventForConnection(NetworkConnection connectionId, out DataStreamReader reader, out NetworkPipeline pipeline)
+        /// <summary>
+        /// Pops the next event from the event queue for the given connection,
+        /// <see cref="NetworkEvent.Type.Empty"/> will be returned if there are no more events.
+        /// </summary>
+        /// <remarks>
+        /// The <c>reader</c> obtained from this method will contain different things for different
+        /// event types. For <see cref="NetworkEvent.Type.Data"/>, it contains the actual received
+        /// payload. For <see cref="NetworkEvent.Type.Disconnect"/>, it contains a single byte
+        /// identifying the reason for the disconnection (see <see cref="Error.DisconnectReason"/>).
+        /// For other event types, it contains nothing.
+        /// </remarks>
+        /// <param name="connection">Connection for which to pop the event.</param>
+        /// <param name="reader">
+        /// <see cref="DataStreamReader"/> from which the event data (e.g. payload) can be read from.
+        /// </param>
+        /// <param name="pipe">Pipeline on which the data event was received.</param>
+        /// <returns>The type of the event popped.</returns>
+        public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader, out NetworkPipeline pipe)
         {
             reader = default;
-            pipeline = default;
+            pipe = default;
 
-            if (connectionId.InternalId < 0 || connectionId.InternalId >= m_NetworkStack.Connections.Count ||
-                m_NetworkStack.Connections.ConnectionAt(connectionId.InternalId).Version != connectionId.Version)
+            if (connection.InternalId < 0 || connection.InternalId >= m_NetworkStack.Connections.Count ||
+                m_NetworkStack.Connections.ConnectionAt(connection.InternalId).Version != connection.Version)
                 return (int)NetworkEvent.Type.Empty;
-            var type = m_EventQueue.PopEventForConnection(connectionId.InternalId, out var offset, out var size, out var pipelineId);
-            pipeline = new NetworkPipeline { Id = pipelineId };
+            var type = m_EventQueue.PopEventForConnection(connection.InternalId, out var offset, out var size, out var pipelineId);
+            pipe = new NetworkPipeline { Id = pipelineId };
 
-            if (type == NetworkEvent.Type.Disconnect && offset < 0)
-                reader = new DataStreamReader(m_DisconnectReasons.GetSubArray(math.abs(offset), 1));
-            else if (size > 0)
+            if (size > 0)
                 reader = new DataStreamReader(m_DriverReceiver.GetDataStreamSubArray(offset, size));
 
             return type;

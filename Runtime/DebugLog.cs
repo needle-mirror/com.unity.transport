@@ -470,15 +470,6 @@ namespace Unity.Networking.Transport.Logging
 #endif
         }
 
-        public static void ErrorValueWasDeallocated(string valueName)
-        {
-#if USE_UNITY_LOGGING
-            Unity.Logging.Log.Error("The {ValueName} has been deallocated, it is not allowed to access it.", valueName);
-#else
-            UnityEngine.Debug.LogError($"The {valueName} has been deallocated, it is not allowed to access it.");
-#endif
-        }
-
         public static void ErrorParameterIsNotValid(string name)
         {
 #if USE_UNITY_LOGGING

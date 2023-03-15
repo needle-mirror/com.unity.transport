@@ -4,23 +4,37 @@ using Unity.Networking.Transport;
 
 namespace Unity.Networking.Transport.Samples
 {
-    public class ServerBehaviour : MonoBehaviour
+    public class CrossPlayServerBehaviour : MonoBehaviour
     {
-        NetworkDriver m_Driver;
+        MultiNetworkDriver m_Driver;
         NativeList<NetworkConnection> m_Connections;
 
         void Start()
         {
-            m_Driver = NetworkDriver.Create();
-            m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
-
             var endpoint = NetworkEndpoint.AnyIpv4.WithPort(7777);
-            if (m_Driver.Bind(endpoint) != 0)
+
+            var udpDriver = NetworkDriver.Create(new UDPNetworkInterface());
+            if (udpDriver.Bind(endpoint) != 0 || udpDriver.Listen() != 0)
             {
-                Debug.LogError("Failed to bind to port 7777.");
+                Debug.LogError("Failed to bind or listen to UDP port 7777.");
+                udpDriver.Dispose();
                 return;
             }
-            m_Driver.Listen();
+
+            var wsDriver = NetworkDriver.Create(new WebSocketNetworkInterface());
+            if (wsDriver.Bind(endpoint) != 0 || wsDriver.Listen() != 0)
+            {
+                Debug.LogError("Failed to bind or listen to TCP port 7777.");
+                udpDriver.Dispose();
+                wsDriver.Dispose();
+                return;
+            }
+
+            m_Driver = MultiNetworkDriver.Create();
+            m_Driver.AddDriver(udpDriver);
+            m_Driver.AddDriver(wsDriver);
+
+            m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
         }
 
         void OnDestroy()

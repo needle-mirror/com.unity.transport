@@ -239,7 +239,35 @@ namespace Unity.Networking.Transport
         /// Returns the local endpoint bound to the listen socket.
         /// </summary>
         /// <value>NetworkEndpoint</value>
-        public unsafe NetworkEndpoint LocalEndpoint => m_InternalData.Value.ListenEndpoint;
+        public unsafe NetworkEndpoint LocalEndpoint
+        {
+            get
+            {
+                // We return the first local endpoint that looks valid in the connection list, and
+                // fall back to the listen endpoint if there is none. This strategy works fine on
+                // clients. Technically on servers it may not always return the expected value if
+                // listening on 0.0.0.0 (because there could be multiple local endpoints), but it
+                // should be fine 99% of the time.
+                for (int i = 0; i < m_ConnectionList.Count; i++)
+                {
+                    var data = m_ConnectionMap[m_ConnectionList.ConnectionAt(i)];
+
+                    if (data.Socket.handle != IntPtr.Zero)
+                    {
+                        var endpoint = default(NetworkEndpoint);
+                        var error = default(ErrorState);
+
+                        Binding.Baselib_Socket_GetAddress(data.Socket, &endpoint.rawNetworkAddress, &error);
+                        if (error.code == (int)ErrorCode.Success && endpoint.Port != 0)
+                        {
+                            return endpoint;
+                        }
+                    }
+                }
+
+                return m_InternalData.Value.ListenEndpoint;
+            }
+        }
 
         public bool IsCreated => m_InternalData.IsCreated;
 

@@ -80,7 +80,10 @@ namespace Unity.Networking.Transport
     /// </summary>
     public struct NetworkConnection : IEquatable<NetworkConnection>
     {
-        internal ConnectionId m_ConnectionId;
+        // Be careful when using this directly as it also embeds the driver ID in its upper byte.
+        private ConnectionId m_ConnectionId;
+
+        internal ConnectionId ConnectionId => new ConnectionId { Id = InternalId, Version = Version };
 
         /// <summary>
         /// ConnectionState enumerates available connection states a connection can have.
@@ -199,6 +202,17 @@ namespace Unity.Networking.Transport
         }
 
         internal int InternalId => m_ConnectionId.Id;
-        internal int Version => m_ConnectionId.Version;
+
+        // Have to remove the driver ID that's stored in the upper byte of the version.
+        internal int Version => m_ConnectionId.Version & 0x00FFFFFF;
+
+        // The driver ID is stored in the upper byte of the version. The reason for doing this
+        // instead of using a separate field is to preserve compatibility with NGO which assumes
+        // NetworkConnection to have the same size as a ulong.
+        internal int DriverId
+        {
+            get => m_ConnectionId.Version >> 24;
+            set => m_ConnectionId.Version |= (value << 24);
+        }
     }
 }

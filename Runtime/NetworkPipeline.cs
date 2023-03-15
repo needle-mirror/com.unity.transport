@@ -515,6 +515,8 @@ namespace Unity.Networking.Transport
         private const int RecveiveSizeOffset = 1;
         private const int SharedSizeOffset = 2;
 
+        internal int PipelineCount => m_Pipelines.Length;
+
         internal struct PipelineImpl
         {
             public int FirstStageIndex;

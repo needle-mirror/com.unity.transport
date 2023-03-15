@@ -1,5 +1,23 @@
 # Change log
 
+## [2.0.0-pre.7] - 2023-03-15
+
+### New features
+* Added a new `MultiNetworkDriver` API to make it easier to handle multiple `NetworkDriver` instances at the same time for cross-play scenarios. Refer to the "cross-play support" section of the documentation for more details on this feature. This new API is also showcased in a new "CrossPlay" package sample.
+
+### Changes
+* Update Burst dependency to 1.8.3.
+* The `QueuedSendMessage` structure was removed as it didn't serve any purpose anymore.
+* The `dependency` argument of `NetworkDriver.ScheduleFlushSend` is now optional.
+* `SequenceHelpers`, `RandomHelpers`, and the extensions in `NativeListExt` and `FixedStringExt` have all been made internal. These are all internal helper classes that shouldn't have been part of the public API in the first place.
+* Many APIs and types inside `ReliableUtility` have been made internal (among them all APIs and types dealing with send/receive contexts and packet information and timers). The information they contain was meant purely for internal consumption in the first place. The statistics and RTT information inside the shared context remains public.
+* Removed `errorCode` from `ReliableUtility.SharedContext`. Any useful information it can provide is already returned by higher-level APIs like `NetworkDriver.EndSend`.
+* Default send and receive queue sizes are now set to 512 packets (previous value was 64). The queue sizes are modifiable with `NetworkSettings.WithNetworkConfigParameters`.
+
+### Fixes
+* Fixed a possible exception in `IPCNetworkInterface` if it was fed an unknown endpoint.
+* Fixed `NetworkDriver.GetLocalEndpoint` when using `WebSocketNetworkInterface` (note that on web browsers this will now print a warning since local endpoints are not available on WebGL).
+
 ## [2.0.0-pre.6] - 2023-01-13
 
 ### New features

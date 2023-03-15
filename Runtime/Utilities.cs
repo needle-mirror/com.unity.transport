@@ -146,10 +146,10 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    public static class SequenceHelpers
+    internal static class SequenceHelpers
     {
         // Calculate difference between the sequence IDs taking into account wrapping, so when you go from 65535 to 0 the distance is 1
-        public static int AbsDistance(ushort lhs, ushort rhs)
+        internal static int AbsDistance(ushort lhs, ushort rhs)
         {
             int distance;
             if (lhs < rhs)
@@ -159,51 +159,33 @@ namespace Unity.Networking.Transport.Utilities
             return distance;
         }
 
-        public static bool IsNewer(uint current, uint old)
+        // Not used, but was used by DOTS so keeping around for a while to be safe.
+        internal static bool IsNewer(uint current, uint old)
         {
-            // Invert the check so same does not count as newer
             return !(old - current < (1u << 31));
         }
 
-        public static bool GreaterThan16(ushort lhs, ushort rhs)
+        internal static bool GreaterThan16(ushort lhs, ushort rhs)
         {
             const uint max_sequence_divide_2 = 0x7FFF;
             return lhs > rhs && lhs - rhs <= (ushort)max_sequence_divide_2 ||
                 lhs < rhs && rhs - lhs > (ushort)max_sequence_divide_2;
         }
 
-        public static bool LessThan16(ushort lhs, ushort rhs)
+        internal static bool LessThan16(ushort lhs, ushort rhs)
         {
             return GreaterThan16(rhs, lhs);
         }
 
-        public static bool StalePacket(ushort sequence, ushort oldSequence, ushort windowSize)
+        internal static bool StalePacket(ushort sequence, ushort oldSequence, ushort windowSize)
         {
             return LessThan16(sequence, (ushort)(oldSequence - windowSize));
         }
-
-        public static string BitMaskToString(uint mask)
-        {
-            //  31     24      16      8       0
-            // |-------+-------+-------+--------|
-            //  00000000000000000000000000000000
-
-            const int bits = 4 * 8;
-            var sb = new char[bits];
-
-            for (var i = bits - 1; i >= 0; i--)
-            {
-                sb[i] = (mask & 1) != 0 ? '1' : '0';
-                mask >>= 1;
-            }
-
-            return new string(sb);
-        }
     }
 
-    public static class FixedStringHexExt
+    internal static class FixedStringHexExt
     {
-        public static FormatError AppendHex<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
+        internal static FormatError AppendHex<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
             int shamt = 12;
             // Find the first non-zero nibble
@@ -226,7 +208,7 @@ namespace Unity.Networking.Transport.Utilities
             return err != FormatError.None ? FormatError.Overflow : FormatError.None;
         }
         
-        public static FormatError AppendHex2<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
+        internal static FormatError AppendHex2<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
         {
             if (val <= 0xf)
             {
@@ -238,7 +220,7 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    public static class NativeListExt
+    internal static class NativeListExt
     {
         /// <summary>
         /// This function will make sure that <see cref="sizeToFit"/> can fit into <see cref="list"/>.
@@ -247,7 +229,7 @@ namespace Unity.Networking.Transport.Utilities
         /// </summary>
         /// <param name="list">List that should be resized if sizeToFit >= its size</param>
         /// <param name="sizeToFit">Requested size that should fit into list</param>
-        public static void ResizeUninitializedTillPowerOf2<T>(this NativeList<T> list, int sizeToFit) where T : unmanaged
+        internal static void ResizeUninitializedTillPowerOf2<T>(this NativeList<T> list, int sizeToFit) where T : unmanaged
         {
             var n = list.Capacity;
 
@@ -267,7 +249,7 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    public static class RandomHelpers
+    internal static class RandomHelpers
     {
         private static readonly SharedStatic<long> s_SharedSeed = SharedStatic<long>.GetOrCreate<SharedRandomKey>(16);
         private class SharedRandomKey {}
@@ -290,18 +272,9 @@ namespace Unity.Networking.Transport.Utilities
         }
 
         // returns ushort in [1..ushort.MaxValue] range
-        public static ushort GetRandomUShort()
+        internal static ushort GetRandomUShort()
         {
             return (ushort)GetRandomGenerator().NextUInt(1, ushort.MaxValue - 1);
-        }
-
-        // returns ulong in [1..ulong.MaxValue] range
-        public static ulong GetRandomULong()
-        {
-            var random = GetRandomGenerator();
-            var high = random.NextUInt(0, uint.MaxValue - 1);
-            var low = random.NextUInt(1, uint.MaxValue - 1);
-            return ((ulong)high << 32) | (ulong)low;
         }
 
         internal unsafe static ConnectionToken GetRandomConnectionToken()

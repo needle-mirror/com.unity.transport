@@ -15,7 +15,7 @@ namespace Unity.Networking.Transport
         internal const int k_HandshakeSize = 4 + k_HeaderSize;
         internal const uint k_ProtocolSignatureAndVersion = 0x00505455 | (k_ProtocolVersion << 3 * 8); // Reversed for endianness
 
-        private enum ConnectionState
+        internal enum ConnectionState
         {
             Default = 0,
             AwaitingAccept,
@@ -36,7 +36,7 @@ namespace Unity.Networking.Transport
             Heartbeat = 3,
         }
 
-        private struct SimpleConnectionData
+        internal struct SimpleConnectionData
         {
             public ConnectionId UnderlyingConnection;
             public ConnectionToken Token;
@@ -47,7 +47,7 @@ namespace Unity.Networking.Transport
             public Error.DisconnectReason DisconnectReason;
         }
 
-        private unsafe struct ControlPacketCommand
+        internal unsafe struct ControlPacketCommand
         {
             private const int k_Capacity = k_HandshakeSize;
             public ConnectionId Connection;
@@ -139,29 +139,21 @@ namespace Unity.Networking.Transport
 
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dependency)
         {
-            if (m_UnderlyingConnectionList.IsCreated)
+            var job = new ReceiveJobWrapper
             {
-                // TODO: revert when MTT-4557 is fixed
-                // return ScheduleReceive(new ReceiveJob<UnderlyingConnectionList>(), new UnderlyingConnectionList(ref m_UnderlyingConnectionList), ref arguments, dependency);
-                var job = new ReceiveJob2
-                {
-                    Connections = m_ConnectionList,
-                    ConnectionsData = m_ConnectionsData,
-                    UnderlyingConnections = new UnderlyingConnectionList(ref m_UnderlyingConnectionList),
-                    ReceiveQueue = arguments.ReceiveQueue,
-                    ControlCommands = m_ControlCommands,
-                    TokensHashMap = m_TokensHashMap,
-                    Time = arguments.Time,
-                    ConnectTimeout = m_ConnectTimeout,
-                    MaxConnectionAttempts = m_MaxConnectionAttempts,
-                    DisconnectTimeout = m_DisconnectTimeout,
-                    HeartbeatTimeout = m_HeartbeatTimeout,
-                };
-
-                return job.Schedule(dependency);
-            }
-            else
-                return ScheduleReceive(new ReceiveJob<NullUnderlyingConnectionList>(), default, ref arguments, dependency);
+                Connections = m_ConnectionList,
+                ConnectionsData = m_ConnectionsData,
+                UnderlyingConnections = m_UnderlyingConnectionList,
+                ReceiveQueue = arguments.ReceiveQueue,
+                ControlCommands = m_ControlCommands,
+                TokensHashMap = m_TokensHashMap,
+                Time = arguments.Time,
+                ConnectTimeout = m_ConnectTimeout,
+                MaxConnectionAttempts = m_MaxConnectionAttempts,
+                DisconnectTimeout = m_DisconnectTimeout,
+                HeartbeatTimeout = m_HeartbeatTimeout,
+            };
+            return job.Schedule(dependency);
         }
 
         private JobHandle ScheduleReceive<T>(ReceiveJob<T> job, T underlyingConnectionList, ref ReceiveJobArguments arguments, JobHandle dependency)
@@ -250,12 +242,14 @@ namespace Unity.Networking.Transport
             }
         }
 
+        // TODO Remove wrapper once MTT-4557 is fixed.
         [BurstCompile]
-        private struct ReceiveJob<T> : IJob where T : unmanaged, IUnderlyingConnectionList
+        private struct ReceiveJobWrapper : IJob
         {
             public ConnectionList Connections;
+            [NativeDisableContainerSafetyRestriction]
+            public ConnectionList UnderlyingConnections;
             public ConnectionDataMap<SimpleConnectionData> ConnectionsData;
-            public T UnderlyingConnections;
             public PacketsQueue ReceiveQueue;
             public NativeList<ControlPacketCommand> ControlCommands;
             public NativeParallelHashMap<ConnectionToken, ConnectionId> TokensHashMap;
@@ -267,347 +261,47 @@ namespace Unity.Networking.Transport
 
             public void Execute()
             {
-                ProcessReceivedMessages();
-                ProcessConnectionStates();
-            }
-
-            private void ProcessConnectionStates()
-            {
-                // Disconnect if underlying connection is disconnected.
-                var underlyingDisconnections = UnderlyingConnections.QueryFinishedDisconnections(Allocator.Temp);
-                var count = underlyingDisconnections.Length;
-                for (int i = 0; i < count; i++)
+                if (UnderlyingConnections.IsCreated)
                 {
-                    var disconnection = underlyingDisconnections[i];
-                    var connectionId = FindConnectionByUnderlyingConnection(ref disconnection.Connection);
-                    var connectionState = Connections.GetConnectionState(connectionId);
-
-                    if (connectionState == NetworkConnection.State.Disconnected ||
-                        connectionState == NetworkConnection.State.Disconnecting)
-                    {
-                        continue;
-                    }
-
-                    var connectionData = ConnectionsData[connectionId];
-
-                    Connections.StartDisconnecting(ref connectionId);
-                    connectionData.DisconnectReason = disconnection.Reason;
-                    connectionData.State = ConnectionState.Default;
-                    ConnectionsData[connectionId] = connectionData;
+                    var job = new ReceiveJob<UnderlyingConnectionList>();
+                    job.Connections = Connections;
+                    job.ConnectionsData = ConnectionsData;
+                    job.UnderlyingConnections = new UnderlyingConnectionList(ref UnderlyingConnections);
+                    job.ReceiveQueue = ReceiveQueue;
+                    job.ControlCommands = ControlCommands;
+                    job.TokensHashMap = TokensHashMap;
+                    job.Time = Time;
+                    job.ConnectTimeout = ConnectTimeout;
+                    job.DisconnectTimeout = DisconnectTimeout;
+                    job.HeartbeatTimeout = HeartbeatTimeout;
+                    job.MaxConnectionAttempts = MaxConnectionAttempts;
+                    job.Execute();
                 }
-
-                count = Connections.Count;
-                for (int i = 0; i < count; i++)
+                else
                 {
-                    var connectionId = Connections.ConnectionAt(i);
-                    var connectionState = Connections.GetConnectionState(connectionId);
-
-                    switch (connectionState)
-                    {
-                        case NetworkConnection.State.Disconnecting:
-                            SendDisconnectMessageIfRequired(ref connectionId);
-                            ProcessDisconnecting(ref connectionId);
-                            break;
-                        case NetworkConnection.State.Connecting:
-                            ProcessConnecting(ref connectionId);
-                            break;
-                        case NetworkConnection.State.Connected:
-                            ProcessConnected(ref connectionId);
-                            break;
-                    }
+                    var job = new ReceiveJob<NullUnderlyingConnectionList>();
+                    job.Connections = Connections;
+                    job.ConnectionsData = ConnectionsData;
+                    job.UnderlyingConnections = default;
+                    job.ReceiveQueue = ReceiveQueue;
+                    job.ControlCommands = ControlCommands;
+                    job.TokensHashMap = TokensHashMap;
+                    job.Time = Time;
+                    job.ConnectTimeout = ConnectTimeout;
+                    job.DisconnectTimeout = DisconnectTimeout;
+                    job.HeartbeatTimeout = HeartbeatTimeout;
+                    job.MaxConnectionAttempts = MaxConnectionAttempts;
+                    job.Execute();
                 }
-            }
-
-            private void SendDisconnectMessageIfRequired(ref ConnectionId connectionId)
-            {
-                var connectionData = ConnectionsData[connectionId];
-
-                if (connectionData.State == ConnectionState.Established && connectionData.DisconnectReason != Error.DisconnectReason.ClosedByRemote)
-                {
-                    // The disconnection was requested but no disconnection message has been sent yet.
-                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Disconnect, ref connectionData.Token));
-
-                    connectionData.State = ConnectionState.DisconnectionSent;
-                    ConnectionsData[connectionId] = connectionData;
-                }
-            }
-
-            private void ProcessDisconnecting(ref ConnectionId connectionId)
-            {
-                var connectionData = ConnectionsData[connectionId];
-
-                // If the underlying connection can be disconnected then we can clean the connection data
-                // at this protocol level so it can be then completed in the connection list.
-                if (UnderlyingConnections.TryDisconnect(ref connectionData.UnderlyingConnection))
-                {
-                    Connections.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
-
-                    TokensHashMap.Remove(connectionData.Token);
-                }
-            }
-
-            private void ProcessConnecting(ref ConnectionId connectionId)
-            {
-                var connectionData = ConnectionsData[connectionId];
-                var connectionState = connectionData.State;
-
-                if (connectionState == ConnectionState.Default)
-                {
-                    var endpoint = Connections.GetConnectionEndpoint(connectionId);
-
-                    if (UnderlyingConnections.TryConnect(ref endpoint, ref connectionData.UnderlyingConnection))
-                    {
-                        // The connection was just created, we need to initialize it.
-                        connectionData.State = ConnectionState.AwaitingAccept;
-                        connectionData.Token = RandomHelpers.GetRandomConnectionToken();
-                        connectionData.LastSendTime = Time;
-                        connectionData.ConnectionAttempts++;
-
-                        TokensHashMap.Add(connectionData.Token, connectionId);
-
-                        ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionRequest, ref connectionData.Token));
-
-                        ConnectionsData[connectionId] = connectionData;
-                        return;
-                    }
-
-                    ConnectionsData[connectionId] = connectionData;
-                }
-
-                // Check for connect timeout and connection attempts.
-                // Note that while connecting, LastSendTime can only track connection requests.
-                if (Time - connectionData.LastSendTime > ConnectTimeout)
-                {
-                    if (connectionData.ConnectionAttempts >= MaxConnectionAttempts)
-                    {
-                        Connections.StartDisconnecting(ref connectionId);
-                        connectionData.DisconnectReason = Error.DisconnectReason.MaxConnectionAttempts;
-
-                        ConnectionsData[connectionId] = connectionData;
-
-                        ProcessDisconnecting(ref connectionId);
-                    }
-                    else
-                    {
-                        connectionData.ConnectionAttempts++;
-                        connectionData.LastSendTime = Time;
-
-                        ConnectionsData[connectionId] = connectionData;
-
-                        // Send connect request only if underlying connection has been fully established.
-                        if (connectionState == ConnectionState.AwaitingAccept)
-                            ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionRequest, ref connectionData.Token));
-                    }
-                }
-            }
-
-            private void ProcessConnected(ref ConnectionId connectionId)
-            {
-                var connectionData = ConnectionsData[connectionId];
-
-                // Check for the disconnect timeout.
-                if (Time - connectionData.LastReceiveTime > DisconnectTimeout)
-                {
-                    Connections.StartDisconnecting(ref connectionId);
-                    connectionData.DisconnectReason = Error.DisconnectReason.Timeout;
-                    ConnectionsData[connectionId] = connectionData;
-
-                    SendDisconnectMessageIfRequired(ref connectionId);
-                    ProcessDisconnecting(ref connectionId);
-                }
-
-                // Check for the heartbeat timeout.
-                if (HeartbeatTimeout > 0 && Time - connectionData.LastSendTime > HeartbeatTimeout)
-                {
-                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Heartbeat, ref connectionData.Token));
-                }
-            }
-
-            private void ProcessReceivedMessages()
-            {
-                var count = ReceiveQueue.Count;
-                for (int i = 0; i < count; i++)
-                {
-                    var packetProcessor = ReceiveQueue[i];
-
-                    if (packetProcessor.Length == 0)
-                        continue;
-
-                    if (ProcessHandshakeReceive(ref packetProcessor))
-                    {
-                        packetProcessor.Drop();
-                        continue;
-                    }
-
-                    if (packetProcessor.Length < k_HeaderSize)
-                    {
-                        packetProcessor.Drop();
-                        continue;
-                    }
-
-                    var messageType = (MessageType)packetProcessor.RemoveFromPayloadStart<byte>();
-                    var connectionToken = packetProcessor.RemoveFromPayloadStart<ConnectionToken>();
-                    var connectionId = FindConnectionByToken(ref connectionToken);
-
-                    if (!connectionId.IsCreated || Connections.GetConnectionState(connectionId) != NetworkConnection.State.Connected)
-                    {
-                        packetProcessor.Drop();
-                        continue;
-                    }
-
-                    switch (messageType)
-                    {
-                        case MessageType.Disconnect:
-                        {
-                            var connectionData = ConnectionsData[connectionId];
-
-                            Connections.StartDisconnecting(ref connectionId);
-                            connectionData.DisconnectReason = Error.DisconnectReason.ClosedByRemote;
-                            ConnectionsData[connectionId] = connectionData;
-
-                            ProcessDisconnecting(ref connectionId);
-
-                            packetProcessor.Drop();
-                            break;
-                        }
-                        case MessageType.Data:
-                        {
-                            PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
-                            packetProcessor.ConnectionRef = connectionId;
-                            break;
-                        }
-                        case MessageType.Heartbeat:
-                        {
-                            PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
-                            packetProcessor.Drop();
-                            break;
-                        }
-                        default:
-                            DebugLog.ReceivedMessageWasNotProcessed(messageType);
-                            packetProcessor.Drop();
-                            break;
-                    }
-                }
-            }
-
-            private void PreprocessMessage(ref ConnectionId connectionId, ref NetworkEndpoint endpoint)
-            {
-                var connectionData = ConnectionsData[connectionId];
-
-                // Update the endpoint for reconnection, but only if the connection was previously
-                // fully establilshed.
-                if (connectionData.State == ConnectionState.Established)
-                    Connections.UpdateConnectionAddress(ref connectionId, ref endpoint);
-
-                // Any valid message updates last receive time
-                connectionData.LastReceiveTime = Time;
-
-                ConnectionsData[connectionId] = connectionData;
-            }
-
-            private ConnectionId FindConnectionByToken(ref ConnectionToken token)
-            {
-                if (TokensHashMap.TryGetValue(token, out var connectionId))
-                    return connectionId;
-
-                return default;
-            }
-
-            private ConnectionId FindConnectionByUnderlyingConnection(ref ConnectionId underlyingConnection)
-            {
-                var count = ConnectionsData.Length;
-                for (int i = 0; i < count; i++)
-                {
-                    var connectionData = ConnectionsData.DataAt(i);
-                    if (connectionData.UnderlyingConnection == underlyingConnection)
-                        return ConnectionsData.ConnectionAt(i);
-                }
-
-                return default;
-            }
-
-            private bool ProcessHandshakeReceive(ref PacketProcessor packetProcessor)
-            {
-                if (packetProcessor.Length != SimpleConnectionLayer.k_HandshakeSize)
-                    return false;
-
-                if ((packetProcessor.GetPayloadDataRef<int>(0) & 0xFFFFFF00) == (k_ProtocolSignatureAndVersion & 0xFFFFFF00))
-                {
-                    var protocolVersion = packetProcessor.GetPayloadDataRef<byte>(3);
-                    if (protocolVersion != k_ProtocolVersion)
-                    {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        DebugLog.ProtocolMismatch(k_ProtocolVersion, protocolVersion);
-#endif
-                        return true;
-                    }
-
-                    var handshakeSeq = (HandshakeType)packetProcessor.GetPayloadDataRef<byte>(4);
-                    var connectionToken = packetProcessor.GetPayloadDataRef<ConnectionToken>(5);
-                    var connectionId = FindConnectionByToken(ref connectionToken);
-                    var connectionData = ConnectionsData[connectionId];
-                    switch (handshakeSeq)
-                    {
-                        case HandshakeType.ConnectionRequest:
-                        {
-                            // Whole new connection request for a new connection.
-                            if (!connectionId.IsCreated)
-                            {
-                                connectionId = Connections.StartConnecting(ref packetProcessor.EndpointRef);
-                                Connections.FinishConnectingFromRemote(ref connectionId);
-                                connectionData = new SimpleConnectionData
-                                {
-                                    State = ConnectionState.Established,
-                                    Token = connectionToken,
-                                    UnderlyingConnection = packetProcessor.ConnectionRef,
-                                };
-                                TokensHashMap.Add(connectionToken, connectionId);
-                            }
-
-                            connectionData.LastSendTime = Time;
-                            ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionAccept, ref connectionToken));
-                            break;
-                        }
-
-                        case HandshakeType.ConnectionAccept:
-                        {
-                            if (connectionId.IsCreated &&
-                                connectionData.State == ConnectionState.AwaitingAccept)
-                            {
-                                connectionData.State = ConnectionState.Established;
-                                Connections.FinishConnectingFromLocal(ref connectionId);
-                            }
-                            else
-                            {
-                                // Received a connection accept for an unknown connection
-                                return true;
-                            }
-
-                            break;
-                        }
-
-                        // We got a malformed packet
-                        default:
-                            return true;
-                    }
-
-                    connectionData.LastReceiveTime = Time;
-                    ConnectionsData[connectionId] = connectionData;
-                    return true;
-                }
-
-                return false;
             }
         }
 
-        // TODO: MTT-4557. There seems to be a bug in DOTS Runtime about where the NativeQueue in the UnderlyingConnection list
-        // does not get its safety handle properly set up if this job uses generics. Duplicating it seems to fix it for now
         [BurstCompile]
-        private struct ReceiveJob2 : IJob
+        internal struct ReceiveJob<T> : IJob where T : unmanaged, IUnderlyingConnectionList
         {
             public ConnectionList Connections;
             public ConnectionDataMap<SimpleConnectionData> ConnectionsData;
-            public UnderlyingConnectionList UnderlyingConnections;
+            public T UnderlyingConnections;
             public PacketsQueue ReceiveQueue;
             public NativeList<ControlPacketCommand> ControlCommands;
             public NativeParallelHashMap<ConnectionToken, ConnectionId> TokensHashMap;

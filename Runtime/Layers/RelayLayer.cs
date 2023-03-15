@@ -10,7 +10,7 @@ namespace Unity.Networking.Transport
     {
         private const int k_DeferredSendQueueSize = 10;
 
-        private struct ProtocolData
+        internal struct ProtocolData
         {
             public RelayConnectionStatus ConnectionStatus;
             public RelayServerData ServerData;
@@ -22,7 +22,7 @@ namespace Unity.Networking.Transport
             public int HeartbeatTime;
         }
 
-        private struct ConnectionData
+        internal struct ConnectionData
         {
             public long LastConnectAttempt;
         }
@@ -170,7 +170,7 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
-        private struct ReceiveJob<T> : IJob where T : unmanaged, IUnderlyingConnectionList
+        internal struct ReceiveJob<T> : IJob where T : unmanaged, IUnderlyingConnectionList
         {
             public ConnectionList Connections;
             public ConnectionDataMap<ConnectionData> ConnectionsData;

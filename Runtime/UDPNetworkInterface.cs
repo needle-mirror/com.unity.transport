@@ -196,27 +196,9 @@ namespace Unity.Networking.Transport
             m_InternalState.Dispose();
         }
 
-        // TODO: Remove once baselib api is fully burst compatible
-        struct ConvertEndpointsToRegisteredJob : IJob
-        {
-            public PacketsQueue SendQueue;
-            public UnsafeBaselibNetworkArray SendBuffers;
-            public PacketBufferLayout PacketBufferLayout;
-
-            public void Execute()
-            {
-                var count = SendQueue.Count;
-                for (int i = 0; i < SendQueue.Count; i++)
-                {
-                    var packetProcessor = SendQueue[i];
-                    var request = GetRequest(packetProcessor.m_BufferIndex, ref SendBuffers, ref PacketBufferLayout);
-                    if (!ConvertEndpointBufferToRegisteredNetwork(request.remoteEndpoint.slice))
-                        packetProcessor.Drop();
-                }
-            }
-        }
-
+#if !UNITY_DOTSRUNTIME // TODO Remove when all required baselib APIs are Burst-compatible.
         [BurstCompile]
+#endif
         struct FlushSendJob : IJob
         {
             public PacketsQueue SendQueue;
@@ -244,6 +226,9 @@ namespace Unity.Networking.Transport
                         continue;
 
                     var request = GetRequest(packetProcessor.m_BufferIndex, ref SendBuffers, ref PacketBufferLayout);
+
+                    if (!ConvertEndpointBufferToRegisteredNetwork(request.remoteEndpoint.slice))
+                        packetProcessor.Drop();
 
                     request.payload.offset += (uint)packetProcessor.Offset;
                     request.payload.data += packetProcessor.Offset;
@@ -355,27 +340,9 @@ namespace Unity.Networking.Transport
             }
         }
 
-        // TODO: Remove once baselib api is fully burst compatible
-        struct ConvertEndpointsToGenericJob : IJob
-        {
-            public PacketsQueue ReceiveQueue;
-            public UnsafeBaselibNetworkArray ReceiveBuffers;
-            public PacketBufferLayout PacketBufferLayout;
-
-            public void Execute()
-            {
-                var count = ReceiveQueue.Count;
-                for (int i = 0; i < ReceiveQueue.Count; i++)
-                {
-                    var packetProcessor = ReceiveQueue[i];
-                    var request = GetRequest(packetProcessor.m_BufferIndex, ref ReceiveBuffers, ref PacketBufferLayout);
-                    if (!ConvertEndpointBufferToGeneric(request.remoteEndpoint.slice))
-                        packetProcessor.Drop();
-                }
-            }
-        }
-
+#if !UNITY_DOTSRUNTIME // TODO Remove when all required baselib APIs are Burst-compatible.
         [BurstCompile]
+#endif
         struct ReceiveJob : IJob
         {
             public PacketsQueue ReceiveQueue;
@@ -489,6 +456,20 @@ namespace Unity.Networking.Transport
 #endif
                     MarkSocketAsNeedingRecreate(ref InternalState);
                 }
+
+                ConvertEndpointsToGeneric();
+            }
+
+            private void ConvertEndpointsToGeneric()
+            {
+                var count = ReceiveQueue.Count;
+                for (int i = 0; i < ReceiveQueue.Count; i++)
+                {
+                    var packetProcessor = ReceiveQueue[i];
+                    var request = GetRequest(packetProcessor.m_BufferIndex, ref ReceiveBuffers, ref PacketBufferLayout);
+                    if (!ConvertEndpointBufferToGeneric(request.remoteEndpoint.slice))
+                        packetProcessor.Drop();
+                }
             }
         }
 
@@ -504,7 +485,7 @@ namespace Unity.Networking.Transport
                 return dep;
             }
 
-            var job = new ReceiveJob
+            return new ReceiveJob
             {
                 InternalState = m_InternalState,
                 ReceiveQueue = arguments.ReceiveQueue,
@@ -513,14 +494,6 @@ namespace Unity.Networking.Transport
                 PacketBufferLayout = m_PacketBufferLayout,
                 UpdateTime = arguments.Time,
             }.Schedule(dep);
-
-            // TODO: Remove this job once baseli api if fully burst compatible
-            return new ConvertEndpointsToGenericJob
-            {
-                ReceiveQueue = arguments.ReceiveQueue,
-                ReceiveBuffers = m_ReceiveBuffers,
-                PacketBufferLayout = m_PacketBufferLayout,
-            }.Schedule(job);
         }
 
         public JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dep)
@@ -528,15 +501,7 @@ namespace Unity.Networking.Transport
             if (m_InternalState.Value.SocketStatus != SocketStatus.SocketNormal)
                 return dep;
 
-            // TODO: Remove this job once baseli api if fully burst compatible
-            var convertJob = new ConvertEndpointsToRegisteredJob
-            {
-                SendQueue = arguments.SendQueue,
-                SendBuffers = m_SendBuffers,
-                PacketBufferLayout = m_PacketBufferLayout,
-            }.Schedule(dep);
-
-            var job = new FlushSendJob
+            return new FlushSendJob
             {
                 InternalState = m_InternalState,
                 SendQueue = arguments.SendQueue,
@@ -544,8 +509,7 @@ namespace Unity.Networking.Transport
                 PacketBufferLayout = m_PacketBufferLayout,
                 // TODO Find a way to expose this to users.
                 WaitForCompletedSends = (byte)0,
-            };
-            return job.Schedule(convertJob);
+            }.Schedule(dep);
         }
 
         /// <summary>

@@ -41,9 +41,9 @@ namespace Unity.Networking.Transport
             if (!m_Parameters.IsCreated)
             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new ObjectDisposedException(null, $"The {nameof(NetworkSettings)} has been deallocated, it is not allowed to access it.");
+                throw new ObjectDisposedException($"The {nameof(NetworkSettings)} has been deallocated, it is not allowed to access it.");
 #else
-                DebugLog.ErrorValueWasDeallocated("NetworkSettings");
+                DebugLog.LogError($"The {nameof(NetworkSettings)} has been deallocated, it is not allowed to access it.");
                 return false;
 #endif
             }

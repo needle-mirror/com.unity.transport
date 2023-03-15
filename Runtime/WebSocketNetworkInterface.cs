@@ -66,7 +66,6 @@ namespace Unity.Networking.Transport
 
         unsafe struct InternalData
         {
-            public NetworkEndpoint ListenEndpoint;
             public int ConnectTimeoutMS; // maximum time to wait for a connection to complete
 
             // If non-empty, will connect to this hostname with the wss:// protocol. Otherwise the
@@ -94,7 +93,14 @@ namespace Unity.Networking.Transport
             return m_ConnectionList;
         }
 
-        public unsafe NetworkEndpoint LocalEndpoint => m_InternalData.Value.ListenEndpoint;
+        public unsafe NetworkEndpoint LocalEndpoint
+        {
+            get
+            {
+                DebugLog.LogWarning("Local endpoint is not available in web browsers.");
+                return NetworkEndpoint.AnyIpv4;
+            }
+        }
 
         public bool IsCreated => m_InternalData.IsCreated;
 
@@ -119,7 +125,6 @@ namespace Unity.Networking.Transport
 
             var state = new InternalData
             {
-                ListenEndpoint = NetworkEndpoint.AnyIpv4,
                 ConnectTimeoutMS = networkConfiguration.connectTimeoutMS * networkConfiguration.maxConnectAttempts,
                 SecureHostname = secureHostname,
             };
@@ -131,10 +136,6 @@ namespace Unity.Networking.Transport
 
         public unsafe int Bind(NetworkEndpoint endpoint)
         {
-            var state = m_InternalData.Value;
-            state.ListenEndpoint = endpoint;
-            m_InternalData.Value = state;
-
             return 0;
         }
 

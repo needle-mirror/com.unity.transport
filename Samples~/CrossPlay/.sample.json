@@ -1,0 +1,4 @@
+{
+    "displayName": "Cross-play Example",        
+    "description": "Example of how to use MultiNetworkDriver to create a server that accepts both UDP and WebSocket connections."
+}

@@ -40,11 +40,11 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// The default capacity of the receive queue. This value can be overridden using the <see cref="NetworkConfigParameter"/>
         /// </summary>
-        public const int ReceiveQueueCapacity = 64;
+        public const int ReceiveQueueCapacity = 512;
         /// <summary>
         /// The default capacity of the send queue. This value can be overridden using the <see cref="NetworkConfigParameter"/>
         /// </summary>
-        public const int SendQueueCapacity = 64;
+        public const int SendQueueCapacity = 512;
         /// <summary>
         /// Maximum size of a packet that can be sent by the transport.
         /// </summary>

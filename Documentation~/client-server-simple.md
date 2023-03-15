@@ -213,6 +213,7 @@ else if (cmd == NetworkEvent.Type.Disconnect)
 {
     Debug.Log("Client disconnected from the server.");
     m_Connections[i] = default;
+    break;
 }
 ```
 

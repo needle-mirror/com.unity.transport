@@ -69,6 +69,18 @@ namespace Unity.Networking.Transport
             return offset;
         }
 
+        // Interface to add disconnect reasons to the stream
+        internal int AppendToStream(byte value)
+        {
+            m_DataStream.ResizeUninitializedTillPowerOf2(m_DataStream.Length + 1);
+            var offset = m_DataStream.Length;
+
+            m_DataStream.Length = offset + 1;
+            m_DataStream[offset] = value;
+
+            return offset;
+        }
+
         // Interface for receiving data from a pipeline
         internal unsafe void PushDataEvent(NetworkConnection con, int pipelineId, byte* dataPtr, int dataLength, ref NetworkEventQueue eventQueue)
         {

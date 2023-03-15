@@ -43,7 +43,6 @@ namespace Unity.Networking.Transport
             var slice = default(InboundRecvBuffer);
             ReliableUtility.Context* reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
             ReliableUtility.SharedContext* shared = (ReliableUtility.SharedContext*)ctx.internalSharedProcessBuffer;
-            shared->errorCode = 0;
             if (reliable->Resume == ReliableUtility.NullEntry)
             {
                 if (inboundBuffer.bufferLength <= 0)
@@ -86,10 +85,6 @@ namespace Unity.Networking.Transport
                         ReliableUtility.SetPacket(ctx.internalProcessBuffer, result, inboundBuffer.Slice(ReliableUtility.PacketHeaderWireSize(ctx)));
                         slice = ReliableUtility.ResumeReceive(ctx, reliable->Delivered + 1, ref needsResume);
                     }
-                }
-                else if (result == (int)ReliableUtility.ErrorCodes.Duplicated_Packet)
-                {
-                    shared->DuplicatesSinceLastAck++;
                 }
             }
             else

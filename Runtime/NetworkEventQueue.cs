@@ -23,7 +23,6 @@ namespace Unity.Networking.Transport
         [FieldOffset(0)] internal Type type;
         [FieldOffset(2)] internal short pipelineId;
         [FieldOffset(4)] internal int connectionId;
-        [FieldOffset(8)] internal int status;
         [FieldOffset(8)] internal int offset;
         [FieldOffset(12)] internal int size;
     }
@@ -104,15 +103,12 @@ namespace Unity.Networking.Transport
             NetworkEvent ev = m_ConnectionEventQ[connectionId * MaxEvents + idx];
             pipelineId = ev.pipelineId;
 
-            if (ev.type == NetworkEvent.Type.Data)
+            if (ev.type == NetworkEvent.Type.Data || ev.type == NetworkEvent.Type.Disconnect)
             {
                 offset = ev.offset;
                 size = ev.size;
             }
-            else if (ev.type == NetworkEvent.Type.Disconnect && ev.status != (int)Error.DisconnectReason.Default)
-            {
-                offset = -ev.status;
-            }
+
             return ev.type;
         }
 
@@ -255,14 +251,10 @@ namespace Unity.Networking.Transport
                 NetworkEvent ev = m_ConnectionEventQ[connectionId * MaxEvents + idx];
                 pipelineId = ev.pipelineId;
 
-                if (ev.type == NetworkEvent.Type.Data)
+                if (ev.type == NetworkEvent.Type.Data || ev.type == NetworkEvent.Type.Disconnect)
                 {
                     offset = ev.offset;
                     size = ev.size;
-                }
-                else if (ev.type == NetworkEvent.Type.Disconnect && ev.status != (int)Error.DisconnectReason.Default)
-                {
-                    offset = -ev.status;
                 }
 
                 return ev.type;

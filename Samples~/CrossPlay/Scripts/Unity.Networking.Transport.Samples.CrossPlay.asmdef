@@ -1,0 +1,17 @@
+{
+    "name": "Unity.Networking.Transport.Samples.CrossPlay",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Collections",
+        "Unity.Networking.Transport"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": ["!UNITY_WEBGL || UNITY_EDITOR"],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

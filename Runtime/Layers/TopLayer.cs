@@ -87,7 +87,7 @@ namespace Unity.Networking.Transport
 
                 if (pipelineId > 0)
                 {
-                    var connection = new NetworkConnection { m_ConnectionId = packetProcessor.ConnectionRef };
+                    var connection = new NetworkConnection(packetProcessor.ConnectionRef);
                     var packetPtr = (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset;
                     PipelineProcessor.Receive(pipelineId, ref Receiver, ref EventQueue, ref connection, packetPtr, packetProcessor.Length);
                 }
@@ -133,11 +133,14 @@ namespace Unity.Networking.Transport
                     if (disconnectionCommand.Reason == Error.DisconnectReason.Default)
                         continue;
 
+                    var offset = Receiver.AppendToStream((byte)disconnectionCommand.Reason);
+
                     EventQueue.PushEvent(new NetworkEvent
                     {
                         connectionId = disconnectionCommand.Connection.Id,
                         type = NetworkEvent.Type.Disconnect,
-                        status = (int)disconnectionCommand.Reason
+                        offset = offset,
+                        size = 1
                     });
                 }
             }
