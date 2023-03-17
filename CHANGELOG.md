@@ -1,5 +1,10 @@
 # Change log
 
+## [1.3.3] - 2023-03-17
+
+### Fixes
+* Fixed an issue where calling `ScheduleFlushSend` before the socket was bound would still result in socket system calls being made, resulting in errors being logged.
+
 ## [1.3.2] - 2023-03-09
 
 ### Fixes

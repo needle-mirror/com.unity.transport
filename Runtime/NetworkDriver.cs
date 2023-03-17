@@ -899,7 +899,10 @@ namespace Unity.Networking.Transport
         /// <returns>The job handle</returns>
         public JobHandle ScheduleFlushSend(JobHandle dep)
         {
-            return s_NetworkInterfaces[m_NetworkInterfaceIndex].ScheduleSend(m_ParallelSendQueue, dep);
+            if (Bound)
+                return s_NetworkInterfaces[m_NetworkInterfaceIndex].ScheduleSend(m_ParallelSendQueue, dep);
+            else
+                return dep;
         }
 
         void InternalUpdate()
