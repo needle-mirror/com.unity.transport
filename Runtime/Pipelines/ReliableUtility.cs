@@ -13,19 +13,25 @@ namespace Unity.Networking.Transport.Utilities
         private const int k_DefaultWindowSize = 32;
 
         /// <summary>
-        /// Sets the <see cref="ReliableUtility.Parameters"/> values for the <see cref="NetworkSettings"/>
+        /// Sets the <see cref="ReliableUtility.Parameters"/> in the settings.
         /// </summary>
-        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
-        /// <param name="windowSize"><seealso cref="ReliableUtility.Parameters.WindowSize"/></param>
-        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
+        /// <param name="settings">Settings to modify.</param>
+        /// <param name="windowSize"><inheritdoc cref="ReliableUtility.Parameters.WindowSize"/></param>
+        /// <param name="minimumResendTime"><inheritdoc cref="ReliableUtility.Parameters.MinimumResendTime"/></param>
+        /// <param name="maximumResendTime"><inheritdoc cref="ReliableUtility.Parameters.MaximumResendTime"/></param>
+        /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithReliableStageParameters(
             ref this NetworkSettings settings,
-            int windowSize = k_DefaultWindowSize
+            int windowSize = k_DefaultWindowSize,
+            int minimumResendTime = ReliableUtility.DefaultMinimumResendTime,
+            int maximumResendTime = ReliableUtility.DefaultMaximumResendTime
         )
         {
             var parameter = new ReliableUtility.Parameters
             {
                 WindowSize = windowSize,
+                MinimumResendTime = minimumResendTime,
+                MaximumResendTime = maximumResendTime,
             };
 
             settings.AddRawParameterStruct(ref parameter);
@@ -34,63 +40,108 @@ namespace Unity.Networking.Transport.Utilities
         }
 
         /// <summary>
-        /// Gets the <see cref="ReliableUtility.Parameters"/>
+        /// Gets the <see cref="ReliableUtility.Parameters"/> in the settings.
         /// </summary>
-        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
-        /// <returns>Returns the <see cref="ReliableUtility.Parameters"/> values for the <see cref="NetworkSettings"/></returns>
+        /// <param name="settings">Settings to get parameters from.</param>
+        /// <returns>Structure containing the reliable parameters.</returns>
         public static ReliableUtility.Parameters GetReliableStageParameters(ref this NetworkSettings settings)
         {
             if (!settings.TryGet<ReliableUtility.Parameters>(out var parameters))
             {
                 parameters.WindowSize = k_DefaultWindowSize;
+                parameters.MinimumResendTime = ReliableUtility.DefaultMinimumResendTime;
+                parameters.MaximumResendTime = ReliableUtility.DefaultMaximumResendTime;
             }
 
             return parameters;
         }
     }
 
+    /// <summary>
+    /// Utility types, methods, and constants for the <see cref="ReliableSequencedPipelineStage"/>.
+    /// </summary>
     public struct ReliableUtility
     {
         /// <summary>Statistics tracked internally by the reliable pipeline stage.</summary>
         public struct Statistics
         {
             /// <summary>Number of packets received by the pipeline stage.</summary>
+            /// <value>Number of packets.</value>
             public int PacketsReceived;
+
             /// <summary>Number of packets sent by the pipeline stage.</summary>
+            /// <value>Number of packets.</value>
             public int PacketsSent;
+
             /// <summary>Number of packets that were dropped in transit.</summary>
+            /// <value>Number of packets.</value>
             public int PacketsDropped;
+
             /// <summary>Number of packets that arrived out of order.</summary>
+            /// <value>Number of packets.</value>
             public int PacketsOutOfOrder;
+
             /// <summary>Number of duplicated packets received by the pipeline stage.</summary>
             /// <remarks>Doesn't differentiate between real duplicates and resends.</remarks>
+            /// <value>Number of packets.</value>
             public int PacketsDuplicated;
+
             /// <summary>Number of stale packets received by the pipeline stage.</summary>
+            /// <value>Number of packets.</value>
             public int PacketsStale;
+
             /// <summary>Number of packets resent by the pipeline stage.</summary>
+            /// <value>Number of packets.</value>
             public int PacketsResent;
         }
 
-        /// <summary>RTT information tracked internally by the reliable pipeline stage.</summary>
+        /// <summary>
+        /// RTT (round-trip time) information tracked internally by the reliable pipeline stage. Can
+        /// be read from the <see cref="SharedContext"/>, which itself can be obtained through the
+        /// <see cref="NetworkDriver.GetPipelineBuffers"/> method.
+        /// </summary>
         public struct RTTInfo
         {
             /// <summary>RTT of the last packet acknowledged.</summary>
+            /// <value>RTT in milliseconds.</value>
             public int LastRtt;
+
             /// <summary>Smoothed RTT of the last packets acknowledged.</summary>
+            /// <value>Smoothed RTT in milliseconds.</value>
             public float SmoothedRtt;
+
             /// <summary>Variance of the smoothed RTT.</summary>
+            /// <value>Smoothed RTT variance in milliseconds.</value>
             public float SmoothedVariance;
+
             /// <summary>Timeout used to resend unacknowledged packets.</summary>
+            /// <value>Resend timeout in milliseconds.</value>
             public int ResendTimeout;
         }
 
         internal const int NullEntry = -1;
 
-        /// <summary>The least amount of time we'll wait until a packet resend is performed.</summary>
-        public const int DefaultMinimumResendTime = 64; // This is 4x16ms (assumes a 60hz update rate).
+        /// <summary>
+        /// Minimum amount of time to wait before a reliable packet is resent if it's not been
+        /// acknowledged. Can be modified at runtime with <see cref="SetMinimumResendTime"/>, or
+        /// configured when creating a driver through custom <see cref="NetworkSettings"/>.
+        /// </summary>
+        /// <value>Minimum resend time in milliseconds.</value>
+        public const int DefaultMinimumResendTime = 64;
 
-        /// <summary>The maximum amount of time we'll wait to resend a packet.</summary>
-        public const int MaximumResendTime = 200;
+        /// <summary>
+        /// Maximum amount of time to wait before a reliable packet is resent if it's not been
+        /// acknowledged. That is, even with a high RTT the reliable pipeline will never wait
+        /// longer than this value to resend a packet. Can be modified at runtime with
+        /// <see cref="SetMaximumResendTime"/> or configured when creating a driver through
+        /// custom <see cref="NetworkSettings"/>.
+        /// </summary>
+        /// <value>Maximum resend time in milliseconds.</value>
+        public const int DefaultMaximumResendTime = 200;
+
+        /// <summary>Obsolete. Renamed to <c>DefaultMaximumResendTime</c>.</summary>
+        [Obsolete("Renamed to DefaultMaximumResendTime. (UnityUpgradable) -> DefaultMaximumResendTime")]
+        public const int MaximumResendTime = DefaultMaximumResendTime;
 
         // If we receive 3 duplicates AFTER our last send, then it's more likely that one of our
         // ACKs was lost and the remote is trying to resend us a packet we won't acknowledge.
@@ -110,6 +161,10 @@ namespace Unity.Networking.Transport.Utilities
             public ulong LastAckMask;
         }
 
+        /// <summary>
+        /// Context shared by both the send and receive direction of the reliable pipeline. Can be
+        /// obtained through the last parameter of <see cref="NetworkDriver.GetPipelineBuffers"/>.
+        /// </summary>
         public struct SharedContext
         {
             // Context for sent packets: last sequence ID sent, last ID we sent that was acked by
@@ -123,13 +178,33 @@ namespace Unity.Networking.Transport.Utilities
 
             internal int DuplicatesSinceLastAck;
 
+            /// <summary>
+            /// Effective window size of the reliable pipeline. Can't be modified at runtime, but
+            /// can be set at configuration time through <see cref="NetworkSettings"/>.
+            /// </summary>
+            /// <value>Window size in number of packets.</value>
             public int WindowSize;
+
+            /// <summary>
+            /// Effective minimum resend time for unacknowledged reliable packets. Can be modified
+            /// through <see cref="ReliableUtility.SetMinimumResendTime"/>.
+            /// </summary>
+            /// <value>Minimum resend time in milliseconds.</value>
             public int MinimumResendTime;
 
+            /// <summary>
+            /// Effective maximum resend time for unacknowledged reliable packets. Can be modified
+            /// through <see cref="ReliableUtility.SetMaximumResendTime"/>.
+            /// </summary>
+            /// <value>Minimum resend time in milliseconds.</value>
+            public int MaximumResendTime;
+
             /// <summary>Statistics for the reliable pipeline.</summary>
+            /// <value>Reliable pipeline statistics.</value>
             public Statistics stats;
 
             /// <summary>Timing information used to calculate resend timeouts.</summary>
+            /// <value>RTT information.</value>
             public RTTInfo RttInfo;
 
             internal int TimerDataOffset;
@@ -158,9 +233,26 @@ namespace Unity.Networking.Transport.Utilities
             /// Maximum number in-flight packets per pipeline/connection combination. Default value
             /// is 32 but can be increased to 64 at the cost of slightly larger packet headers.
             /// </summary>
+            /// <value>Window size in number of packets.</value>
             public int WindowSize;
 
-            /// <inheritdoc />
+            /// <summary>
+            /// Minimum amount of time to wait before a reliable packet is resent if it's not been
+            /// acknowledged. Default value is 64ms, which should be set lower if all connections
+            /// are expected to be very good (RTT of 25ms or less).
+            /// </summary>
+            /// <value>Minimum resend time in milliseconds.</value>
+            public int MinimumResendTime;
+
+            /// <summary>
+            /// Maximum amount of time to wait before a reliable packet is resent if it's not been
+            /// acknowledged. Default value is 200ms, which should be set higher if all connections
+            /// are expected to have a higher latency than that.
+            /// </summary>
+            /// <value>Maximum resend time in milliseconds.</value>
+            public int MaximumResendTime;
+
+            /// <inheritdoc/>
             public bool Validate()
             {
                 var valid = true;
@@ -168,7 +260,25 @@ namespace Unity.Networking.Transport.Utilities
                 if (WindowSize < 0 || WindowSize > 64)
                 {
                     valid = false;
-                    DebugLog.ErrorReliableWindowSize(WindowSize);
+                    DebugLog.LogError($"{nameof(WindowSize)} value ({WindowSize}) must be between 0 and 64.");
+                }
+
+                if (MinimumResendTime <= 0)
+                {
+                    valid = false;
+                    DebugLog.LogError($"{nameof(MinimumResendTime)} value ({MinimumResendTime}) must be positive.");
+                }
+
+                if (MaximumResendTime <= 0)
+                {
+                    valid = false;
+                    DebugLog.LogError($"{nameof(MaximumResendTime)} value ({MaximumResendTime}) must be positive.");
+                }
+
+                if (MaximumResendTime <= MinimumResendTime)
+                {
+                    valid = false;
+                    DebugLog.LogError($"{nameof(MaximumResendTime)} must be greater than {nameof(MinimumResendTime)}");
                 }
 
                 return valid;
@@ -268,7 +378,8 @@ namespace Unity.Networking.Transport.Utilities
             {
                 WindowSize = param.WindowSize,
                 SentPackets = new SequenceBufferContext { Acked = NullEntry, AckMask = ~0ul, LastAckMask = ~0ul },
-                MinimumResendTime = DefaultMinimumResendTime,
+                MinimumResendTime = param.MinimumResendTime,
+                MaximumResendTime = param.MaximumResendTime,
                 ReceivedPackets = new SequenceBufferContext { Sequence = NullEntry, AckMask = ~0ul, LastAckMask = ~0ul },
                 RttInfo = new RTTInfo { SmoothedVariance = 5, SmoothedRtt = 50, ResendTimeout = 50, LastRtt = 50 },
                 TimerDataOffset = AlignedSizeOf<SharedContext>(),
@@ -705,8 +816,8 @@ namespace Unity.Networking.Transport.Utilities
         private static unsafe int CurrentResendTime(byte* sharedBuffer)
         {
             var sharedCtx = (SharedContext*)sharedBuffer;
-            if (sharedCtx->RttInfo.ResendTimeout > MaximumResendTime)
-                return MaximumResendTime;
+            if (sharedCtx->RttInfo.ResendTimeout > sharedCtx->MaximumResendTime)
+                return sharedCtx->MaximumResendTime;
             return Math.Max(sharedCtx->RttInfo.ResendTimeout, sharedCtx->MinimumResendTime);
         }
 
@@ -858,12 +969,41 @@ namespace Unity.Networking.Transport.Utilities
             return false;
         }
 
-        public static unsafe void SetMinimumResendTime(int value, NetworkDriver driver,
-            NetworkPipeline pipeline, NetworkConnection con)
+        /// <summary>
+        /// Modify the minimum resend time used by the reliable pipeline stage for the given
+        /// pipeline and connection. The default value should be good for most use cases, unless the
+        /// connection is extremely good (less than 25ms RTT), in which case lowering this value
+        /// could potentially reduce latency when packet loss occurs.
+        /// </summary>
+        /// <param name="value">New minimum resend time.</param>
+        /// <param name="driver">Driver to modify.</param>
+        /// <param name="pipeline">Pipeline to modify.</param>
+        /// <param name="connection">Connection to modify the value for.</param>
+        public static unsafe void SetMinimumResendTime(int value, NetworkDriver driver, NetworkPipeline pipeline, NetworkConnection connection)
         {
-            driver.GetPipelineBuffers(pipeline, NetworkPipelineStageId.Get<ReliableSequencedPipelineStage>(), con, out var receiveBuffer, out var sendBuffer, out var sharedBuffer);
+            var stageId = NetworkPipelineStageId.Get<ReliableSequencedPipelineStage>();
+            driver.GetPipelineBuffers(pipeline, stageId, connection, out _, out _, out var sharedBuffer);
             var sharedCtx = (SharedContext*)sharedBuffer.GetUnsafePtr();
             sharedCtx->MinimumResendTime = value;
+        }
+
+        /// <summary>
+        /// Modify the maximum resend time used by the reliable pipeline stage for the given
+        /// pipeline and connection. The default value should be good for most use cases, unless the
+        /// connection is rather poor (more than 200ms RTT), in which case this value should be
+        /// increased to be slightly above the RTT (otherwise the pipeline will useless resend
+        /// packets, increasing bandwidth usage).
+        /// </summary>
+        /// <param name="value">New maximum resend time.</param>
+        /// <param name="driver">Driver to modify.</param>
+        /// <param name="pipeline">Pipeline to modify.</param>
+        /// <param name="connection">Connection to modify the value for.</param>
+        public static unsafe void SetMaximumResendTime(int value, NetworkDriver driver, NetworkPipeline pipeline, NetworkConnection connection)
+        {
+            var stageId = NetworkPipelineStageId.Get<ReliableSequencedPipelineStage>();
+            driver.GetPipelineBuffers(pipeline, stageId, connection, out _, out _, out var sharedBuffer);
+            var sharedCtx = (SharedContext*)sharedBuffer.GetUnsafePtr();
+            sharedCtx->MaximumResendTime = value;
         }
     }
 }

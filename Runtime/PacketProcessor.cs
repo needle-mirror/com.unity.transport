@@ -6,7 +6,9 @@ using Unity.Networking.Transport.Logging;
 namespace Unity.Networking.Transport
 {
     /// <summary>
-    /// Provides an API for processing packets.
+    /// An API representing a packet acquired from a <see cref="PacketsQueue"/>, and which allows
+    /// modifying the packet. The packet is represented as a slice inside a fixed-size buffer, which
+    /// is why APIs like <see cref="BytesAvailableAtEnd"/> are offered.
     /// </summary>
     public unsafe struct PacketProcessor
     {
@@ -18,45 +20,51 @@ namespace Unity.Networking.Transport
         private PacketBuffer PacketBuffer => m_Queue.GetPacketBuffer(m_BufferIndex);
 
         /// <summary>
-        /// Whether the packet processor is valid.
+        /// Whether the packet processor was obtained from a valid <see cref="PacketsQueue"/>.
         /// </summary>
+        /// <value>True if obtained from a valid queue, false otherwise.</value>
         public bool IsCreated => m_Queue.IsCreated;
-        /// <summary>
-        /// The size of the current data of the packet.
-        /// </summary>
+
+        /// <summary>Size of the packet's data inside the buffer.</summary>
+        /// <value>Size in bytes.</value>
         public int Length => PacketMetadataRef.DataLength;
-        /// <summary>
-        /// The current offset in the packet buffer of the data.
-        /// </summary>
+
+        /// <summary>Offset of the packet's first byte inside the buffer.</summary>
+        /// <value>Offset in bytes.</value>
         public int Offset => PacketMetadataRef.DataOffset;
-        /// <summary>
-        /// The total capacity of the packet.
-        /// </summary>
+
+        /// <summary>Size of the buffer containing the packet.</summary>
+        /// <value>Size in bytes.</value>
         public int Capacity => PacketMetadataRef.DataCapacity;
-        /// <summary>
-        /// The available amount of bytes at the end of the packet data.
-        /// </summary>
+
+        /// <summary>Bytes available in the buffer after the end of the packet.</summary>
+        /// <value>Size in bytes.</value>
         public int BytesAvailableAtEnd => Capacity - (Offset + Length);
-        /// <summary>
-        /// The available amount of bytes at the begining of the packet data.
-        /// </summary>
+
+        /// <summary>Bytes available in the buffer before the start of the packet.</summary>
+        /// <value>Size in bytes.</value>
         public int BytesAvailableAtStart => Offset;
-        /// <summary>
-        /// A reference to the Endpoint of the packet.
-        /// </summary>
-        public ref NetworkEndpoint EndpointRef => ref *((NetworkEndpoint*)PacketBuffer.Endpoint);
-        /// <summary>
-        /// A reference to the connection ID of the packet.
-        /// </summary>
-        internal ref ConnectionId ConnectionRef => ref PacketMetadataRef.Connection;
 
         /// <summary>
-        /// Gets a reference to the payload data reinterpreted to the type T.
+        /// A reference to the endpoint of the packet. For packets in the receive queue, this is
+        /// the endpoint from which the packet was received. For packets in the send queue, this is
+        /// the endpoint the packet is destined to. This must be set appropriately for
+        /// newly-enqueued packets.
         /// </summary>
-        /// <typeparam name="T">The type of the data.</typeparam>
-        /// <param name="offset">The offset from the start of the payload.</param>
-        /// <returns>Returns a reference to the Payload data</returns>
-        /// <exception cref="ArgumentException">Throws an execption if there is no enough bytes in the payload for the specified type.</exception>
+        /// <value>Endpoint associated with the packet.</value>
+        public ref NetworkEndpoint EndpointRef => ref *((NetworkEndpoint*)PacketBuffer.Endpoint);
+
+        internal ref ConnectionId ConnectionRef => ref PacketMetadataRef.Connection;
+
+        /// <summary>Get a reference to the payload data reinterpreted to the type T.</summary>
+        /// <typeparam name="T">Type of the data.</typeparam>
+        /// <param name="offset">Offset from the start of the payload.</param>
+        /// <returns>Returns a reference to the payload data</returns>
+        /// <exception cref="ArgumentException">
+        /// If there is not enough bytes in the payload for the specified type. Only thrown when
+        /// collections checks are enabled (i.e. in the editor). Otherwise the obtained reference
+        /// may be partially corrupted.
+        /// </exception>
         public ref T GetPayloadDataRef<T>(int offset = 0) where T : unmanaged
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -67,11 +75,15 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Copies the provided bytes at the end of the packet and increases its size accordingly.
+        /// Copy the provided bytes at the end of the packet and increases its size accordingly.
         /// </summary>
-        /// <param name="dataPtr">The pointer to the data to copy.</param>
-        /// <param name="size">The size in bytes to copy.</param>
-        /// <exception cref="ArgumentException">Throws an exception if there are not enough bytes available at the end of the packet.</exception>
+        /// <param name="dataPtr">Pointer to the data to copy.</param>
+        /// <param name="size">Size in bytes to copy.</param>
+        /// <exception cref="ArgumentException">
+        /// If there are not enough bytes available at the end of the packet. Only thrown when
+        /// collections checks are enabled (i.e. in the editor). Otherwise an error is logged and
+        /// nothing is copied.
+        /// </exception>
         public void AppendToPayload(void* dataPtr, int size)
         {
             if (size > BytesAvailableAtEnd)
@@ -87,21 +99,28 @@ namespace Unity.Networking.Transport
             PacketMetadataRef.DataLength += size;
         }
 
-        /// <summary>
-        /// </summary>
-        /// <param name="processor">The packet processor to copy the data from.</param>
-        /// <exception cref="ArgumentException">Throws an exception if there are not enough bytes available at the end of the packet.</exception>
+        /// <summary>Append the content of the given packet at the end of this one.</summary>
+        /// <param name="processor">Packet processor to copy the data from.</param>
+        /// <exception cref="ArgumentException">
+        /// If there are not enough bytes available at the end of the packet. Only thrown when
+        /// collections checks are enabled (i.e. in the editor). Otherwise an error is logged and
+        /// nothing is copied.
+        /// </exception>
         public void AppendToPayload(PacketProcessor processor)
         {
             AppendToPayload((byte*)processor.GetUnsafePayloadPtr() + processor.Offset, processor.Length);
         }
 
         /// <summary>
-        /// Copies the provided value at the end of the packet and increases its size accordingly.
+        /// Copy the provided value at the end of the packet and increase its size accordingly.
         /// </summary>
-        /// <typeparam name="T">The type of the data to copy.</typeparam>
-        /// <param name="value">The value to copy.</param>
-        /// <exception cref="ArgumentException">Throws an exception if there are not enough bytes available at the end of the packet.</exception>
+        /// <typeparam name="T">Type of the data to copy.</typeparam>
+        /// <param name="value">Value to copy.</param>
+        /// <exception cref="ArgumentException">
+        /// If there are not enough bytes available at the end of the packet. Only thrown when
+        /// collections checks are enabled (i.e. in the editor). Otherwise an error is logged and
+        /// nothing is copied.
+        /// </exception>
         public void AppendToPayload<T>(T value) where T : unmanaged
         {
             var size = UnsafeUtility.SizeOf<T>();
@@ -119,11 +138,15 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Copies the provided value at the start of the packet and increases its size accordingly.
+        /// Copy the provided value at the start of the packet and increase its size accordingly.
         /// </summary>
-        /// <typeparam name="T">The type of the data to copy.</typeparam>
-        /// <param name="value">The value to copy.</param>
-        /// <exception cref="ArgumentException">Throws an exception if there are not enough bytes available at the end of the packet.</exception>
+        /// <typeparam name="T">Type of the data to copy.</typeparam>
+        /// <param name="value">Value to copy.</param>
+        /// <exception cref="ArgumentException">
+        /// If there are not enough bytes available at the start of the packet. Only thrown when
+        /// collections checks are enabled (i.e. in the editor). Otherwise an error is logged and
+        /// nothing is copied.
+        /// </exception>
         public void PrependToPayload<T>(T value) where T : unmanaged
         {
             var size = UnsafeUtility.SizeOf<T>();
@@ -143,11 +166,15 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Gets and removes the data at the start of the payload reinterpreted to the type T.
+        /// Get and remove data at the start of the payload reinterpreted to the type T.
         /// </summary>
-        /// <typeparam name="T">The type of the data.</typeparam>
-        /// <returns>The extracted data value</returns>
-        /// <exception cref="ArgumentException">Throws an execption if there is no enough bytes in the payload for the specified type.</exception>
+        /// <typeparam name="T">Type of the data.</typeparam>
+        /// <returns>Extracted data value.</returns>
+        /// <exception cref="ArgumentException">
+        /// If there are not enough bytes available at the start of the packet. Only thrown when
+        /// collections checks are enabled (i.e. in the editor). Otherwise an error is logged and
+        /// a default value is returned.
+        /// </exception>
         public T RemoveFromPayloadStart<T>() where T : unmanaged
         {
             var size = UnsafeUtility.SizeOf<T>();
@@ -168,11 +195,15 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Fill the buffer with the data at the start of the payload.
+        /// Fill the provided buffer with the data at the start of the payload, and remove that
+        /// data from the packet, decreasing its size accordingly.
         /// </summary>
         /// <param name="ptr">Pointer to the start of the buffer to fill.</param>
         /// <param name="size">Size of the buffer to fill.</param>
-        /// <exception cref="ArgumentException">If provided buffer is larger than payload.</exception>
+        /// <exception cref="ArgumentException">
+        /// If the buffer is larger than the packet. Only thrown when collections checks are enabled
+        /// (i.e. in the editor). Otherwise an error is logged and nothing is copied.
+        /// </exception>
         public void RemoveFromPayloadStart(void* ptr, int size)
         {
             if (size > Length)
@@ -191,11 +222,16 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Copies the current packet data to the destination pointer.
+        /// Fill the provided buffer with the data at the start of the payload. The copied data
+        /// will remain in the packet (compare to <see cref="RemoveFromPayloadStart"/> which
+        /// removes the data from the packet).
         /// </summary>
-        /// <param name="destinationPtr">The destination pointer where the data will be copied.</param>
-        /// <returns>Returns the ammount of bytes copied.</returns>
-        /// <exception cref="OverflowException">Throws an exception if the packet has overflowed the buffer.</exception>
+        /// <param name="destinationPtr">Pointer to the buffer data will be copied to.</param>
+        /// <returns>Ammount of bytes copied.</returns>
+        /// <exception cref="ArgumentException">
+        /// If the buffer is larger than the packet. Only thrown when collections checks are enabled
+        /// (i.e. in the editor). Otherwise an error is logged and nothing is copied.
+        /// </exception>
         public int CopyPayload(void* destinationPtr, int size)
         {
             if (Length <= 0)
@@ -226,9 +262,7 @@ namespace Unity.Networking.Transport
             return copiedBytes;
         }
 
-        /// <summary>
-        /// Gets the unsafe pointer of the packet data.
-        /// </summary>
+        /// <summary>Get a raw pointer to the packet data.</summary>
         /// <returns>A pointer to the packet data.</returns>
         public void* GetUnsafePayloadPtr()
         {
@@ -252,7 +286,9 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Drops the packet.
+        /// Drop the packet from its queue by setting its length to 0. Packets with a length of 0
+        /// are considered to be dropped from the queue and will be batch-recycled at the end of the
+        /// update cycle. This is more performant than properly releasing packets one at a time.
         /// </summary>
         public void Drop()
         {

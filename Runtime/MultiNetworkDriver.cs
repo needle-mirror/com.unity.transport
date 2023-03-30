@@ -9,21 +9,19 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// The <c>MultiNetworkDriver</c> structure is a way to manipulate multiple instances of
     /// <see cref="NetworkDriver"/> at the same time. This abstraction is meant to make it easy to
-    /// work with servers that must accept different connection types at the same time (e.g. both
-    /// UDP and WebSocket connections). This is useful for cross-play support across different
-    /// platforms.
+    /// work with servers that must accept different connection types (e.g. both UDP and WebSocket
+    /// connections). This is useful for cross-play support across different platforms.
     /// </summary>
     /// <example>
     /// This code below shows how to create a <c>MultiNetworkDriver</c> that accepts both UDP and
-    /// WebSocket connections. Note how the constituent drivers must already be in the listening
-    /// state before being added to the <c>MultiNetworkDriver</c>.
+    /// WebSocket connections.
     /// <code>
     ///     var udpDriver = NetworkDriver.Create(new UDPNetworkInterface());
-    ///     udpDriver.Bind(NetworkEndpoint.AnyIpv4.WithPort(7777));
+    ///     udpDriver.Bind(NetworkEndpoint.AnyIpv4.WithPort(7777)); // UDP port
     ///     udpDriver.Listen();
     ///
     ///     var wsDriver = NetworkDriver.Create(new WebSocketNetworkInterface());
-    ///     wsDriver.Bind(NetworkEndpoint.AnyIpv4.WithPort(7777));
+    ///     wsDriver.Bind(NetworkEndpoint.AnyIpv4.WithPort(7777)); // TCP port
     ///     wsDriver.Listen();
     ///
     ///     var multiDriver = MultiNetworkDriver.Create();
@@ -38,6 +36,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// The maximum number of drivers that can be added to a <c>MultiNetworkDriver</c>.
         /// </summary>
+        /// <value>Number of drivers.</value>
         public const int MaxDriverCount = 4;
 
         // Those need to be internal so that GetDriverRef can access them.
@@ -47,13 +46,15 @@ namespace Unity.Networking.Transport
         internal NetworkDriver Driver4;
 
         /// <summary>Number of drivers that have been added.</summary>
+        /// <value>Number of drivers.</value>
         public int DriverCount { get; private set; }
 
         /// <summary>Whether the <c>MultiNetworkDriver</c> has been created.</summary>
+        /// <value>True if created, false otherwise.</value>
         public bool IsCreated => Driver1.IsCreated;
 
         /// <summary>Create a new <c>MultiNetworkDriver</c> instance.</summary>
-        /// <returns>The new <c>MultiNetworkDriver</c> instace.</returns>
+        /// <returns>The new <c>MultiNetworkDriver</c> instance.</returns>
         public static MultiNetworkDriver Create()
         {
             var multiDriver = default(MultiNetworkDriver);
@@ -83,9 +84,6 @@ namespace Unity.Networking.Transport
         {
             if (!driver.IsCreated)
                 throw new ArgumentException("Invalid driver (driver is not created).");
-
-            if (!driver.Listening)
-                throw new ArgumentException("Invalid driver (driver is not in the listening state).");
 
             // We can't just check the number of connections in the list because that would include
             // connections that are disconnected, and connections pending an Accept call.
@@ -140,8 +138,9 @@ namespace Unity.Networking.Transport
 
         /// <summary>
         /// Add a <see cref="NetworkDriver"/> instance to the <c>MultiNetworkDriver</c>. This driver
-        /// instance must already be in the listening state, must not already have any active
-        /// connections, and must have the same number of pipelines as previously added instances.
+        /// instance must not already have any active connections, and must have the same number of
+        /// pipelines as previously added instances. Drivers that are intended to take on a server
+        /// role must also already be in the listening state.
         /// </summary>
         /// <remarks>
         /// The <c>MultiNetworkDriver</c> takes ownership of the <see cref="NetworkDriver"/>. While
@@ -158,10 +157,9 @@ namespace Unity.Networking.Transport
         /// If the <c>MultiNetworkDriver</c> is at capacity (see <see cref="MaxDriverCount"/>).
         /// </exception>
         /// <exception cref="ArgumentException">
-        /// If the driver is not listening, if it already has active connections, or if it doesn't
-        /// have as many pipelines as previous added drivers. Note that this exception is only
-        /// thrown when safety checks are enabled (i.e. in the editor), otherwise the driver will
-        /// be added anyway.
+        /// If the driver already has active connections, or if it doesn't have as many pipelines as
+        /// previously added drivers. Note that this exception is only thrown when safety checks are
+        /// enabled (i.e. in the editor), otherwise the driver will be added anyway.
         /// </exception>
         public int AddDriver(NetworkDriver driver)
         {
@@ -275,26 +273,26 @@ namespace Unity.Networking.Transport
                 return this.GetDriverRef(connection.DriverId).GetConnectionState(connection);
             }
 
-            /// <inheritdoc cref="MultiNetworkDriver.PopEventForConnection"/>
+            /// <inheritdoc cref="MultiNetworkDriver.PopEventForConnection(NetworkConnection, out DataStreamReader)"/>
             public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader)
             {
                 return PopEventForConnection(connection, out reader, out var _);
             }
 
-            /// <inheritdoc cref="MultiNetworkDriver.PopEventForConnection"/>
+            /// <inheritdoc cref="MultiNetworkDriver.PopEventForConnection(NetworkConnection, out DataStreamReader, out NetworkPipeline)"/>
             public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader, out NetworkPipeline pipe)
             {
                 CheckConnection(connection);
                 return this.GetDriverRef(connection.DriverId).PopEventForConnection(connection, out reader, out pipe);
             }
 
-            /// <inheritdoc cref="MultiNetworkDriver.BeginSend"/>
+            /// <inheritdoc cref="MultiNetworkDriver.BeginSend(NetworkConnection, out DataStreamWriter, int)"/>
             public int BeginSend(NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
             {
                 return BeginSend(NetworkPipeline.Null, connection, out writer, requiredPayloadSize);
             }
 
-            /// <inheritdoc cref="MultiNetworkDriver.BeginSend"/>
+            /// <inheritdoc cref="MultiNetworkDriver.BeginSend(NetworkPipeline, NetworkConnection, out DataStreamWriter, int)"/>
             public int BeginSend(NetworkPipeline pipe, NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
             {
                 CheckConnection(connection);
@@ -393,15 +391,35 @@ namespace Unity.Networking.Transport
         {
             for (int id = 1; id <= DriverCount; id++)
             {
-                var connection = this.GetDriverRef(id).Accept();
-                if (connection != default)
+                if (this.GetDriverRef(id).Listening)
                 {
-                    connection.DriverId = id;
-                    return connection;
+                    var connection = this.GetDriverRef(id).Accept();
+                    if (connection != default)
+                    {
+                        connection.DriverId = id;
+                        return connection;
+                    }
                 }
             }
 
             return default;
+        }
+
+        /// <inheritdoc cref="NetworkDriver.Connect"/>
+        /// <param name="driverId">
+        /// ID of the driver to connect, as obtained with <see cref="AddDriver"/>.
+        /// </param>
+        public NetworkConnection Connect(int driverId, NetworkEndpoint endpoint)
+        {
+            CheckDriverId(driverId);
+
+            var connection = this.GetDriverRef(driverId).Connect(endpoint);
+            if (connection != default)
+            {
+                connection.DriverId = driverId;
+            }
+
+            return connection;
         }
 
         /// <inheritdoc cref="NetworkDriver.Disconnect"/>
@@ -434,18 +452,13 @@ namespace Unity.Networking.Transport
             return this.GetDriverRef(connection.DriverId).GetRemoteEndpoint(connection);
         }
 
-        /// <inheritdoc cref="NetworkDriver.PopEvent"/>
-        /// <exception cref="InvalidOperationException">
-        /// If the <c>MultiNetworkDriver</c> doesn't have any driver added to it. Note that this
-        /// exception is only thrown when safety checks are enabled (i.e. in the editor). otherwise
-        /// this operation is a no-op and <see cref="NetworkEvent.Type.Empty"/> is returned.
-        /// </exception>
+        /// <inheritdoc cref="NetworkDriver.PopEvent(out NetworkConnection, out DataStreamReader)"/>
         public NetworkEvent.Type PopEvent(out NetworkConnection connection, out DataStreamReader reader)
         {
             return PopEvent(out connection, out reader, out _);
         }
 
-        /// <inheritdoc cref="NetworkDriver.PopEvent"/>
+        /// <inheritdoc cref="NetworkDriver.PopEvent(out NetworkConnection, out DataStreamReader, out NetworkPipeline)"/>
         public NetworkEvent.Type PopEvent(out NetworkConnection connection, out DataStreamReader reader, out NetworkPipeline pipe)
         {
             connection = default;
@@ -465,7 +478,7 @@ namespace Unity.Networking.Transport
             return NetworkEvent.Type.Empty;
         }
 
-        /// <inheritdoc cref="NetworkDriver.PopEventForConnection"/>
+        /// <inheritdoc cref="NetworkDriver.PopEventForConnection(NetworkConnection, out DataStreamReader)"/>
         /// <exception cref="ArgumentException">
         /// If <c>connection</c> was not obtained by a prior call to this <c>MultiNetworkDriver</c>.
         /// </exception>
@@ -474,7 +487,7 @@ namespace Unity.Networking.Transport
             return PopEventForConnection(connection, out reader, out _);
         }
 
-        /// <inheritdoc cref="NetworkDriver.PopEventForConnection"/>
+        /// <inheritdoc cref="NetworkDriver.PopEventForConnection(NetworkConnection, out DataStreamReader, out NetworkPipeline)"/>
         /// <exception cref="ArgumentException">
         /// If <c>connection</c> was not obtained by a prior call to this <c>MultiNetworkDriver</c>.
         /// </exception>
@@ -484,7 +497,7 @@ namespace Unity.Networking.Transport
             return this.GetDriverRef(connection.DriverId).PopEventForConnection(connection, out reader, out pipe);
         }
 
-        /// <inheritdoc cref="NetworkDriver.BeginSend"/>
+        /// <inheritdoc cref="NetworkDriver.BeginSend(NetworkConnection, out DataStreamWriter, int)"/>
         /// <exception cref="ArgumentException">
         /// If <c>connection</c> was not obtained by a prior call to this <c>MultiNetworkDriver</c>.
         /// </exception>
@@ -493,7 +506,7 @@ namespace Unity.Networking.Transport
             return BeginSend(NetworkPipeline.Null, connection, out writer, requiredPayloadSize);
         }
 
-        /// <inheritdoc cref="NetworkDriver.BeginSend"/>
+        /// <inheritdoc cref="NetworkDriver.BeginSend(NetworkPipeline, NetworkConnection, out DataStreamWriter, int)"/>
         /// <exception cref="ArgumentException">
         /// If <c>connection</c> was not obtained by a prior call to this <c>MultiNetworkDriver</c>.
         /// </exception>

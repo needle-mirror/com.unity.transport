@@ -3,14 +3,14 @@ using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport.Logging
 {
-    /// <summary>Parameters related to how UTP logs messages.</summary>
+    /// <summary>Parameters related to how UTP logs messages. Currently unused.</summary>
     public struct LoggingParameter : INetworkParameter
     {
         /// <summary>Label to use for this driver in the logs.</summary>
+        /// <value>Label as a fixed-length string.</value>
         public FixedString32Bytes DriverName;
 
-        /// <summary>Validate the settings.</summary>
-        /// <returns>True if the settings are valid, false otherwise.</returns>
+        /// <inheritdoc/>
         public bool Validate()
         {
             if (DriverName.IsEmpty)
@@ -27,11 +27,11 @@ namespace Unity.Networking.Transport.Logging
     public static class LoggingParameterExtensions
     {
         /// <summary>
-        /// Sets the <see cref="LoggingParameter"/> values for the given <see cref="NetworkSettings"/>.
+        /// Sets the <see cref="FragmentationUtility.Parameters"/> in the settings.
         /// </summary>
-        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="driverName">Label to use for this driver in the logs.</param>
-        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
+        /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithLoggingParameters(ref this NetworkSettings settings, FixedString32Bytes driverName)
         {
             var parameter = new LoggingParameter { DriverName = driverName };

@@ -11,15 +11,35 @@ using Unity.Services.Relay.Models;
 
 namespace Unity.Networking.Transport.Relay
 {
+    /// <summary>Connection information about the relay server.</summary>
     public unsafe struct RelayServerData
     {
+        /// <summary>Endpoint the relay server can be reached on.</summary>
+        /// <value>Server endpoint (IP address and port).</value>
         public NetworkEndpoint Endpoint;
+
+        /// <summary>Nonce that will be used in the connection handshake.</summary>
+        /// <value>HMAC key nonce.</value>
         public ushort Nonce;
+
+        /// <summary>Connection data of the allocation.</summary>
+        /// <value>Connection data structure.</value>
         public RelayConnectionData ConnectionData;
+
+        /// <summary>Connection data of the host.</summary>
+        /// <value>Connection data structure.</value>
         public RelayConnectionData HostConnectionData;
+
+        /// <summary>Allocation ID for the server connection.</summary>
+        /// <value>Allocation ID.</value>
         public RelayAllocationId AllocationId;
+
+        /// <summary>HMAC key used to authentify the connection.</summary>
+        /// <value>HMAC key.</value>
         public RelayHMACKey HMACKey;
 
+        /// <summary>Whether the connection is using a secure protocol or not.</summary>
+        /// <value>True if using DTLS or WSS, false if using UDP.</value>
         public readonly byte IsSecure;
 
         // TODO Should be computed on connection binding (but not Burst compatible today).
@@ -100,7 +120,7 @@ namespace Unity.Networking.Transport.Relay
         /// resolution to map it to an IP address. If the hostname is not in the OS cache, this
         /// operation can possibly block for a long time (between 20 and 120 milliseconds). If this
         /// is a concern, perform the DNS resolution asynchronously and pass in the resulting IP
-        /// address directly (see <see cref="System.Net.Dns.GetHostEntryAsync"/>).
+        /// address directly (for example with <c>System.Net.Dns.GetHostEntryAsync"</c>).
         /// </remarks>
         /// <param name="host">IP address or hostname of the Relay server.</param>
         /// <param name="port">Port of the Relay server.</param>
@@ -118,7 +138,7 @@ namespace Unity.Networking.Transport.Relay
             HostString = host;
         }
 
-        /// <summary>Create a new Relay server data structure (low level constructor).</summary>
+        /// <summary>Create a new Relay server data structure (low-level constructor).</summary>
         /// <param name="endpoint">Endpoint of the Relay server.</param>
         /// <param name="nonce">Nonce used in connection handshake (preferably random).</param>
         /// <param name="allocationId">ID of the Relay allocation.</param>
@@ -146,6 +166,7 @@ namespace Unity.Networking.Transport.Relay
             HostString = endpoint.ToFixedString();
         }
 
+        /// <summary>Increment the nonce and recompute the HMAC.</summary>
         public void IncrementNonce()
         {
             Nonce++;

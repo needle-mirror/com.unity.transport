@@ -5,18 +5,22 @@ using Unity.Networking.Transport.Logging;
 namespace Unity.Networking.Transport.Relay
 {
     /// <summary>
-    /// Allocation Id is a unique identifier for a connected client/host to a Relay server.
-    /// This identifier is used by the Relay protocol as the address of the client.
+    /// The allocation ID is a unique identifier for a connected client/host to a Relay server.
     /// </summary>
     public unsafe struct RelayAllocationId : IEquatable<RelayAllocationId>, IComparable<RelayAllocationId>
     {
+        /// <summary>Length of an allocation ID.</summary>
+        /// <value>Length in bytes.</value>
         public const int k_Length = 16;
+
+        /// <summary>Raw value of the allocation ID.</summary>
+        /// <value>Allocation ID as a fixed byte array.</value>
         public fixed byte Value[k_Length];
 
-        /// <summary>Convert a raw buffer to a <see cref="RelayAllocationId"/></summary>
+        /// <summary>Convert a raw buffer to an allocation ID.</summary>
         /// <param name="dataPtr">Raw pointer to buffer to convert.</param>
         /// <param name="length">Length of the buffer to convert.</param>
-        /// <returns>New <see cref="RelayAllocationId"/>.</returns>
+        /// <returns>New allocation ID.</returns>
         public static RelayAllocationId FromBytePointer(byte* dataPtr, int length)
         {
             if (length != k_Length)
@@ -34,9 +38,9 @@ namespace Unity.Networking.Transport.Relay
             return allocationId;
         }
 
-        /// <summary>Convert a byte array to a <see cref="RelayAllocationId"/></summary>
+        /// <summary>Convert a byte array to an allocation ID.</summary>
         /// <param name="data">Array to convert.</param>
-        /// <returns>New <see cref="RelayAllocationId"/>.</returns>
+        /// <returns>New allocation ID.</returns>
         public static RelayAllocationId FromByteArray(byte[] data)
         {
             fixed(byte* ptr = data)

@@ -5,6 +5,11 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// An unmanaged network interface that can act as a wrapper for a managed one. Use
+    /// <see cref="ManagedNetworkInterfaceExtensions.WrapToUnmanaged"/> to obtain an instance. Do
+    /// not create one manually.
+    /// </summary>
     public unsafe struct NetworkInterfaceUnmanagedWrapper<T> : INetworkInterface where T : INetworkInterface
     {
         private static ManagedCallWrapper s_LocalEndpoint_FPtr;
@@ -50,6 +55,7 @@ namespace Unity.Networking.Transport
             arguments.Return = arguments.InterfaceReference.Element.LocalEndpoint;
         }
 
+        /// <inheritdoc/>
         public NetworkEndpoint LocalEndpoint
         {
             get
@@ -78,6 +84,7 @@ namespace Unity.Networking.Transport
             arguments.Return = arguments.InterfaceReference.Element.Bind(arguments.Endpoint);
         }
 
+        /// <inheritdoc/>
         public int Bind(NetworkEndpoint endpoint)
         {
             var arguments = new Bind_Arguments
@@ -130,6 +137,7 @@ namespace Unity.Networking.Transport
             UnsafeUtility.WriteArrayElement(argumentsPtr, 0, arguments);
         }
 
+        /// <inheritdoc/>
         public int Initialize(ref NetworkSettings settings, ref int packetPadding)
         {
             var arguments = new Initialize_Arguments
@@ -162,6 +170,7 @@ namespace Unity.Networking.Transport
             arguments.Return = arguments.InterfaceReference.Element.Listen();
         }
 
+        /// <inheritdoc/>
         public int Listen()
         {
             var arguments = new Listen_Arguments
@@ -191,6 +200,7 @@ namespace Unity.Networking.Transport
             UnsafeUtility.WriteArrayElement(argumentsPtr, 0, arguments);
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleReceive(ref ReceiveJobArguments receiveJobArguments, JobHandle dep)
         {
             var arguments = new ScheduleReceive_Arguments
@@ -226,6 +236,7 @@ namespace Unity.Networking.Transport
             UnsafeUtility.WriteArrayElement(argumentsPtr, 0, arguments);
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleSend(ref SendJobArguments sendJobArguments, JobHandle dep)
         {
             var arguments = new ScheduleSend_Arguments
@@ -243,15 +254,21 @@ namespace Unity.Networking.Transport
         }
     }
 
+    /// <summary>Extension methods to work with a managed <see cref="INetworkInterface"/>.</summary>
     public static class ManagedNetworkInterfaceExtensions
     {
         /// <summary>
-        /// Creates an unmanaged wrapper for a managed INetworkInterface.
+        /// Creates an unmanaged wrapper for a managed <see cref="INetworkInterface"/>. Network
+        /// interface are required to be unmanaged (e.g. Burst-compatible), but there are cases
+        /// where this is impractical. This method allows creating an unmanaged version of a
+        /// managed network interface, at the cost of a slight performance overhead.
         /// </summary>
-        /// <typeparam name="T">The type of the managed INetworkInterface</typeparam>
-        /// <param name="networkInterface">The INetworkInterface instance to wrap.</param>
-        /// <returns>Returns the unmanaged wrapper instance for the network interface.</returns>
-        /// <exception cref="InvalidOperationException">Throws an InvalidOperationException if the type network interface is already an unamanged type.</exception>
+        /// <typeparam name="T">The type of the managed network interface.</typeparam>
+        /// <param name="networkInterface">Interface instance to wrap.</param>
+        /// <returns>Unmanaged wrapper instance for the network interface.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// If the type network interface is already an unmanaged type.
+        /// </exception>
         public static NetworkInterfaceUnmanagedWrapper<T> WrapToUnmanaged<T>(this T networkInterface) where T : INetworkInterface
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS

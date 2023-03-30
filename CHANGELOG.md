@@ -1,5 +1,21 @@
 # Change log
 
+## [2.0.0-pre.8] - 2023-03-30
+
+### New features
+* `MultiNetworkDriver` can then be used for client drivers too. The restriction on it accepting only listening drivers has been lifted, and it now offers a new `Connect` method to connect client drivers. This makes it easier to write networking code that can be shared between server and client.
+* Added a new `ReliableUtility.SetMaximumResendTime` static method, allowing to modify the maximum resend time of the reliable pipeline at runtime (there's already a similar method for the minimum resend time). Increasing this value can improve bandwidth usage for poor connections (RTT greater than 200ms).
+* Added the possibility of setting the minimum and maximum resend times of the reliable pipeline through `NetworkSettings` (with `WithReliableStageParameters`).
+
+### Changes
+* `NetworkEndpoint.TryParse` will now return false and log an error when attempting to parse an IPv6 address on platforms where IPv6 is not supported. The previous behavior was to throw an exception, but only in the editor. On the devices themselves, the address would be successfully parsed silently, which would lead to confusing socket errors down the line.
+* The `SimulatorUtility.Context` structure has been made internal. It contained only implementation details, or values that appeared useful but were actually either misleading or broken.
+* The `RelayMessageType` enum has been made internal. The only purpose of this type was to list the different messages of the Relay protocol, which is an implementation detail that should not be relevant to users.
+
+### Fixes
+* Fixed an issue where calling `ScheduleFlushSend` before the socket was bound would still result in socket system calls being made, resulting in errors being logged.
+* No warning will be printed when attempting to send on a WebSocket connection that has been closed by the remote peer (would only happen if calling `ScheduleFlushSend`).
+
 ## [2.0.0-pre.7] - 2023-03-15
 
 ### New features

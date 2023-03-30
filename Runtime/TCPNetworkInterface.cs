@@ -30,9 +30,6 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     internal struct TCPNetworkInterface : INetworkInterface
     {
-        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) => DebugLog.LogWarning(msg);
-
         static readonly NetworkSocket InvalidSocket = Binding.Baselib_Socket_Handle_Invalid;
 
         static bool IsValid(NetworkSocket socket) => socket.handle != default && socket.handle != InvalidSocket.handle;
@@ -113,7 +110,7 @@ namespace Unity.Networking.Transport
                     localEndpoint = address;
                     if (error.code != ErrorCode.Success)
                     {
-                        Warn($"Failed to get local endpoint for incoming connection: {error.code}");
+                        DebugLog.ErrorBaselib("Failed to get local endpoint.", error);
                         Binding.Baselib_Socket_Close(acceptedSocket);
                         acceptedSocket = InvalidSocket;
                     }
@@ -268,8 +265,6 @@ namespace Unity.Networking.Transport
                 return m_InternalData.Value.ListenEndpoint;
             }
         }
-
-        public bool IsCreated => m_InternalData.IsCreated;
 
         /// <summary>
         /// Initializes a instance of the UDPNetworkInterface struct.
@@ -612,7 +607,12 @@ namespace Unity.Networking.Transport
                     var nbytes = TCPSocket.Send(connectionData.Socket, (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset, packetProcessor.Length, out var error);
                     if (error.code != ErrorCode.Success || nbytes != packetProcessor.Length)
                     {
-                        Warn($"Send buffer overflow trying to send data to {ConnectionList.GetConnectionEndpoint(connectionId)}");
+                        if (error.code != ErrorCode.Disconnected)
+                        {
+                            // Likely incomplete send. Still want to disconnect but log an error.
+                            var endpoint = ConnectionList.GetConnectionEndpoint(connectionId).ToFixedString();
+                            DebugLog.LogError($"Overflow of OS send buffer while trying to send data to {endpoint}. Closing connection.");
+                        }
 
                         ConnectionList.StartDisconnecting(ref connectionId);
                         ConnectionList.FinishDisconnecting(ref connectionId, Error.DisconnectReason.Timeout);

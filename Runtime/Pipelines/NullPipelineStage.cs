@@ -3,6 +3,11 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// A pipeline stage that does nothing. This can be useful to create different "channels" of
+    /// communication for different types of messages, even when these messages do not otherwise
+    /// require any other guarantees provided by other pipeline stages.
+    /// </summary>
     [BurstCompile]
     public unsafe struct NullPipelineStage : INetworkPipelineStage
     {
@@ -31,6 +36,7 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
+        /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings netParams)
         {
             return new NetworkPipelineStage(
@@ -44,6 +50,7 @@ namespace Unity.Networking.Transport
             );
         }
 
+        /// <inheritdoc/>
         public int StaticSize => 0;
     }
 }

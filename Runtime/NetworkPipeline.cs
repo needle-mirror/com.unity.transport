@@ -12,6 +12,10 @@ using static Unity.Networking.Transport.NetworkPipelineStage;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Buffer passed to the <c>Send</c> method of a pipeline stage. This type is only useful if
+    /// implementing a custom <see cref="INetworkPipelineStage"/>.
+    /// </summary>
     public unsafe struct InboundSendBuffer
     {
         public byte* buffer;
@@ -30,6 +34,11 @@ namespace Unity.Networking.Transport
             bufferLength = bufferWithHeadersLength - headerPadding;
         }
     }
+
+    /// <summary>
+    /// Buffer passed to the <c>Receive</c> method of a pipeline stage. This type is only useful if
+    /// implementing a custom <see cref="INetworkPipelineStage"/>.
+    /// </summary>
     public unsafe struct InboundRecvBuffer
     {
         public byte* buffer;
@@ -47,6 +56,12 @@ namespace Unity.Networking.Transport
             return slice;
         }
     }
+
+    /// <summary>
+    /// Current context of a pipeline stage instance. This type is only useful if implementing a
+    /// custom <see cref="INetworkPipelineStage"/>, where it will get passed to the send and receive
+    /// methods of the pipeline.
+    /// </summary>
     public unsafe struct NetworkPipelineContext
     {
         public byte* staticInstanceBuffer;
@@ -60,12 +75,35 @@ namespace Unity.Networking.Transport
         public int accumulatedHeaderCapacity;
     }
 
+    /// <summary>Interface that custom pipeline stages must implement.</summary>
     public unsafe interface INetworkPipelineStage
     {
+        /// <summary>
+        /// Initialize the static storage for the pipeline from the settings. More importantly, this
+        /// method is responsible for providing the <see cref="NetworkPipelineStage"/> structure,
+        /// which contains function pointers for most of the pipeline stage functionality.
+        /// </summary>
+        /// <param name="staticInstanceBuffer">Static storage pointer.</param>
+        /// <param name="staticInstanceBufferLength">Static storage length.</param>
+        /// <param name="settings">Settings provided to the driver.</param>
+        /// <returns>Runtime information for a pipeline instance.</returns>
         NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings);
+
+        /// <summary>
+        /// Amount of data that the pipeline stage requires in "static" storage (storage shared by
+        /// all instances of the pipeline stage). For example, this is often used to store
+        /// configuration parameters obtained through <see cref="NetworkSettings"/>.
+        /// </summary>
+        /// <value>Size in bytes.</value>
         int StaticSize { get; }
     }
 
+    /// <summary>
+    /// Concrete implementation details of a pipeline stage. Only used if implementing custom
+    /// pipeline stages. Implementors of <see cref="INetworkPipelineStage"/> are required to produce
+    /// this structure on static initialization. The values in this structure will then be used at
+    /// runtime for each pipeline where the stage is used.
+    /// </summary>
     public unsafe struct NetworkPipelineStage
     {
         public NetworkPipelineStage(TransportFunctionPointer<ReceiveDelegate> Receive,
@@ -88,24 +126,36 @@ namespace Unity.Networking.Transport
             StaticStateStart = StaticStateCapacity = 0;
         }
 
+        /// <summary>
+        /// Requests that a pipeline stage can make in their send and receive methods.
+        /// </summary>
         [Flags]
         public enum Requests
         {
+            /// <summary>No request. Default value.</summary>
             None = 0,
+            /// <summary>Request to run the receive/send method immediately again.</summary>
             Resume = 1,
+            /// <summary>Request to run the receive method on the next update.</summary>
             Update = 2,
+            /// <summary>Request to run the send method on the next update.</summary>
             SendUpdate = 4,
+            /// <summary>Request to raise an error.</summary>
             Error = 8
         }
 
         // Be careful when changing the signature of the following delegates.
         // They are unsafely casted to function pointers with matching arguments.
+
+        /// <summary>Type of the method used for the receive direction of the pipeline.</summary>
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void ReceiveDelegate(ref NetworkPipelineContext ctx, ref InboundRecvBuffer inboundBuffer, ref Requests requests, int systemHeadersSize);
 
+        /// <summary>Type of the method used for the send direction of the pipeline.</summary>
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate int SendDelegate(ref NetworkPipelineContext ctx, ref InboundSendBuffer inboundBuffer, ref Requests requests, int systemHeadersSize);
 
+        /// <summary>Type of the method used to initialize connections.</summary>
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void InitializeConnectionDelegate(byte* staticInstanceBuffer, int staticInstanceBufferLength,
             byte* sendProcessBuffer, int sendProcessBufferLength, byte* recvProcessBuffer, int recvProcessBufferLength,
@@ -136,6 +186,8 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>Get the stage ID for the given stage type.</summary>
+        /// <typeparam name="T">Type of the <see cref="INetworkPipelineStage"/>.</typeparam>
+        /// <returns>Stage ID for the given stage type.</returns>
         public static NetworkPipelineStageId Get<T>() where T : unmanaged, INetworkPipelineStage
         {
             return new NetworkPipelineStageId { m_TypeHash = BurstRuntime.GetHashCode64<T>() };
@@ -154,9 +206,15 @@ namespace Unity.Networking.Transport
             lhs.m_TypeHash != rhs.m_TypeHash;
     }
 
+    /// <summary>
+    /// Identifier for a network pipeline obtained with <see cref="NetworkDriver.CreatePipeline"/>.
+    /// </summary>
     public struct NetworkPipeline : IEquatable<NetworkPipeline>
     {
         internal int Id;
+
+        /// <summary>The default pipeline. Acts as a no-op passthrough.</summary>
+        /// <value>Default pipeline used for sending.</value>
         public static NetworkPipeline Null => default;
 
         public static bool operator==(NetworkPipeline lhs, NetworkPipeline rhs)

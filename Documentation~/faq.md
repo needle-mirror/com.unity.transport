@@ -75,6 +75,25 @@ if (eventType == NetworkEvent.Type.Disconnect)
 
 The obtained value is from the `Error.DisconnectReason` enum and indicates why the `Disconnect` event was generated.
 
+## Why isn't the other end immediately notified of a disconnection?
+
+If you call `NetworkDriver.Disconnect` on a connection and then immediately dispose of the driver, you might notice that the other end of the connection is not immediately notified of the disconnection. Instead of quickly popping a `Disconnect` event on the connection, it only does so after 30 seconds or so (the default disconnection timeout).
+
+This is because calling `Disconnect` does not actually immediately send the disconnection request on the network (just like `EndSend` does not immediately send a message on the network). A driver update jobs needs to run for this to happen. So be sure to schedule and complete an update job before disposing of the driver if you just closed a connection:
+
+```csharp
+// Close the connection.
+driver.Disconnect(connection);
+// Schedule and complete an update job. This is required!
+driver.ScheduleUpdate().Complete();
+// Now it's okay to dispose of the driver.
+driver.Dispose();
+```
+
+A good way of achieving the above is to always wait a frame before shutting down the `NetworkDriver`. It gives enough time to the driver to do all its cleanup work before being disposed of. This is the strategy implemented by Netcode for GameObjects, for example.
+
+Note that it really is an update job that needs to run for the disconnection request to be sent. Calling `ScheduleFlushSend` is *not* sufficient, because disconnections require extra cleanup work that only occurs during update jobs.
+
 ## What's the largest message I can send?
 
 By default, the size of messages is limited by the [MTU](https://en.wikipedia.org/wiki/Maximum_transmission_unit), which ensures messages are not larger than a single IP packet on most network configurations. Because different protocols and pipelines will have different overhead, the size of the maximum useful payload that can be written to a `DataStreamWriter` may vary. There are two ways to obtain this value:

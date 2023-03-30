@@ -14,12 +14,9 @@ using Unity.Networking.Transport.Utilities;
 namespace Unity.Networking.Transport
 {
     /// <summary>
-    /// The NetworkDriver is an implementation of Virtual Connections over any transport.
-    ///
-    /// Basic usage:
-    /// <code>
-    /// var driver = new NetworkDriver.Create();
-    /// </code>
+    /// The <c>NetworkDriver</c> is the main API with which users interact with the Unity Transport
+    /// package. It can be thought of as a socket with extra features. Refer to the manual for
+    /// examples of how to use this API.
     /// </summary>
     public struct NetworkDriver : IDisposable
     {
@@ -71,13 +68,13 @@ namespace Unity.Networking.Transport
         /// </summary>
         public struct Concurrent
         {
-            /// <inheritdoc cref="NetworkDriver.PopEventForConnection"/>
+            /// <inheritdoc cref="NetworkDriver.PopEventForConnection(NetworkConnection, out DataStreamReader)"/>
             public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader)
             {
                 return PopEventForConnection(connection, out reader, out var _);
             }
 
-            /// <inheritdoc cref="NetworkDriver.PopEventForConnection"/>
+            /// <inheritdoc cref="NetworkDriver.PopEventForConnection(NetworkConnection, out DataStreamReader, out NetworkPipeline)"/>
             public NetworkEvent.Type PopEventForConnection(NetworkConnection connection, out DataStreamReader reader, out NetworkPipeline pipe)
             {
                 pipe = default;
@@ -116,13 +113,13 @@ namespace Unity.Networking.Transport
                 public int headerSize;
             }
 
-            /// <inheritdoc cref="NetworkDriver.BeginSend"/>
+            /// <inheritdoc cref="NetworkDriver.BeginSend(NetworkConnection, out DataStreamWriter, int)"/>
             public unsafe int BeginSend(NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
             {
                 return BeginSend(NetworkPipeline.Null, connection, out writer, requiredPayloadSize);
             }
 
-            /// <inheritdoc cref="NetworkDriver.BeginSend"/>
+            /// <inheritdoc cref="NetworkDriver.BeginSend(NetworkPipeline, NetworkConnection, out DataStreamWriter, int)"/>
             public unsafe int BeginSend(NetworkPipeline pipe, NetworkConnection connection, out DataStreamWriter writer, int requiredPayloadSize = 0)
             {
                 writer = default;
@@ -396,10 +393,18 @@ namespace Unity.Networking.Transport
         /// <summary>Current settings used by the driver.</summary>
         /// <remarks>
         /// Current settings are read-only and can't be modified except through methods like
-        /// <see cref="ModifySimulatorStageParameters" />.
+        /// <see cref="SimulatorStageParameterExtensions.ModifySimulatorStageParameters"/>.
         /// </remarks>
         public NetworkSettings CurrentSettings => m_NetworkSettings.AsReadOnly();
 
+        /// <summary>
+        /// Whether the driver has been bound to an endpoint with the <see cref="Bind"/> method.
+        /// Binding to an endpoint is a prerequisite to listening to new connections (with the
+        /// <see cref="Listen"/> method). It is also a prerequiste to making new connections, but
+        /// the <see cref="Connect"/> method will automatically bind the driver to the wildcard
+        /// address if it's not already bound.
+        /// </summary>
+        /// <value>True if the driver is bound, false otherwise.</value>
         public bool Bound
         {
             get => m_InternalState.Value.Bound;
@@ -411,6 +416,11 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <summary>
+        /// Whether the driver is listening for new connections (e.g. acting like a server). Use
+        /// the <see cref="Listen"/> method to start listening for new connections.
+        /// </summary>
+        /// <value>True if the driver is listening, false otherwise.</value>
         public bool Listening
         {
             get => m_InternalState.Value.Listening;
@@ -427,10 +437,10 @@ namespace Unity.Networking.Transport
         internal int PipelineCount => m_PipelineProcessor.PipelineCount;
 
         /// <summary>
-        /// Helper function for creating a NetworkDriver.
+        /// Create a new <c>NetworkDriver</c> with custom settings.
         /// </summary>
         /// <param name="settings">Configuration for the driver.</param>
-        /// <exception cref="InvalidOperationException"></exception>
+        /// <returns>Newly-constructed driver.</returns>
         public static NetworkDriver Create(NetworkSettings settings)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -440,17 +450,36 @@ namespace Unity.Networking.Transport
 #endif
         }
 
+        /// <summary>
+        /// Create a new <c>NetworkDriver</c> with default settings.
+        /// </summary>
+        /// <returns>Newly-constructed driver.</returns>
         public static NetworkDriver Create() => Create(new NetworkSettings(Allocator.Temp));
 
+        /// <summary>
+        /// Create a new <c>NetworkDriver</c> with a custom network interface.
+        /// </summary>
+        /// <typeparam name="N">Type of the network interface to use.</typeparam>
+        /// <param name="networkInterface">Instance of the custom network interface.</param>
+        /// <returns>Newly-constructed driver.</returns>
         public static NetworkDriver Create<N>(N networkInterface) where N : unmanaged, INetworkInterface
             => Create(ref networkInterface);
 
+        /// <inheritdoc cref="NetworkDriver.Create{N}(N)"/>
         public static NetworkDriver Create<N>(ref N networkInterface) where N : unmanaged, INetworkInterface
             => Create(ref networkInterface, new NetworkSettings(Allocator.Temp));
 
+        /// <summary>
+        /// Create a new <c>NetworkDriver</c> with a custom network interface and custom settings.
+        /// </summary>
+        /// <typeparam name="N">Type of the network interface to use.</typeparam>
+        /// <param name="networkInterface">Instance of the custom network interface.</param>
+        /// <param name="settings">Configuration for the driver.</param>
+        /// <returns>Newly-constructed driver.</returns>
         public static NetworkDriver Create<N>(N networkInterface, NetworkSettings settings) where N : unmanaged, INetworkInterface
             => Create(ref networkInterface, settings);
 
+        /// <inheritdoc cref="NetworkDriver.Create{N}(N, NetworkSettings)"/>
         public static NetworkDriver Create<N>(ref N networkInterface, NetworkSettings settings) where N : unmanaged, INetworkInterface
         {
             var driver = default(NetworkDriver);
@@ -502,11 +531,13 @@ namespace Unity.Networking.Transport
             return driver;
         }
 
-        [Obsolete("Use NetworkDriver.Create(INetworkInterface networkInterface) instead", true)]
+        /// <summary>Use <see cref="Create"/> to construct <c>NetworkDriver</c> instances.</summary>
+        [Obsolete("Use NetworkDriver.Create(INetworkInterface networkInterface) instead.", true)]
         public NetworkDriver(INetworkInterface netIf)
             => throw new NotImplementedException();
 
-        [Obsolete("Use NetworkDriver.Create(INetworkInterface networkInterface, NetworkSettings settings) instead", true)]
+        /// <summary>Use <see cref="Create"/> to construct <c>NetworkDriver</c> instances.</summary>
+        [Obsolete("Use NetworkDriver.Create(INetworkInterface networkInterface, NetworkSettings settings) instead.", true)]
         public NetworkDriver(INetworkInterface netIf, NetworkSettings settings)
             => throw new NotImplementedException();
 
@@ -533,6 +564,8 @@ namespace Unity.Networking.Transport
 #endif
         }
 
+        /// <summary>Whether the driver is been correctly created.</summary>
+        /// <value>True if correctly created, false otherwise.</value>
         public bool IsCreated => m_InternalState.IsCreated;
 
         [BurstCompile]
@@ -659,7 +692,7 @@ namespace Unity.Networking.Transport
         /// <returns>Handle to the send job.</returns>
         public JobHandle ScheduleFlushSend(JobHandle dependency = default)
         {
-            return m_NetworkStack.ScheduleSend(ref m_DriverSender, LastUpdateTime, dependency);
+            return Bound ? m_NetworkStack.ScheduleSend(ref m_DriverSender, LastUpdateTime, dependency) : dependency;
         }
 
         void InternalUpdate()
@@ -698,18 +731,22 @@ namespace Unity.Networking.Transport
 
         /// <summary>Register a custom pipeline stage.</summary>
         /// <remarks>
+        /// <para>
         /// Can only be called before a driver is bound (see <see cref="Bind" />).
-        ///
+        /// </para>
+        /// <para>
         /// Note that the default pipeline stages (<see cref="FragmentationPipelineStage" />,
         /// <see cref="ReliableSequencedPipelineStage" />, <see cref="UnreliableSequencedPipelineStage" />,
         /// and <see cref="SimulatorPipelineStage" />) don't need to be registered. Registering a
         /// pipeline stage is only required for custom ones.
+        /// </para>
         /// </remarks>
-        /// <typeparam name="T">The type of the pipeline stage (must be unmanaged).</typeparam>
+        /// <typeparam name="T">Type of the pipeline stage (must be unmanaged).</typeparam>
         /// <param name="stage">An instance of the pipeline stage.</param>
         /// <exception cref="InvalidOperationException">
-        /// If collections checks are enabled (ENABLE_UNITY_COLLECTIONS_CHECKS is defined), will be
-        /// thrown if called after the driver is bound or before it is created.
+        /// If the driver is not created or bound. Note that this is only thrown if safety checks
+        /// are enabled (i.e. in the editor). Otherwise the pipeline is registered anyway (with
+        /// likely erroneous behavior down the line).
         /// </exception>
         public void RegisterPipelineStage<T>(T stage) where T : unmanaged, INetworkPipelineStage
         {
@@ -730,8 +767,8 @@ namespace Unity.Networking.Transport
         /// </remarks>
         /// <param name="stages">Array of stages the pipeline should contain.</param>
         /// <exception cref="InvalidOperationException">
-        /// If collections checks are enabled (ENABLE_UNITY_COLLECTIONS_CHECKS is defined), will be
-        /// thrown if called after the driver has established connections or before it is created.
+        /// If called after the driver has established connections or before it is created. Note
+        /// this is only thrown if safety checks are enabled (i.e. in the editor).
         /// </exception>
         public NetworkPipeline CreatePipeline(params Type[] stages)
         {
@@ -749,18 +786,21 @@ namespace Unity.Networking.Transport
 
         /// <summary>Create a new pipeline from stage IDs.</summary>
         /// <remarks>
+        /// <para>
         /// The order of the different stages is important, as that is the order in which the stages
         /// will process a packet when sending messages (the reverse order is used when processing
         /// received packets).
-        ///
+        /// </para>
+        /// <para>
         /// Note that this method is Burst-compatible. Note also that no reference to the native
         /// array is kept internally by the driver. It is thus safe to dispose of it immediately
         /// after calling this method (or to use a temporary allocation for the array).
+        /// </para>
         /// </remarks>
         /// <param name="stages">Array of stage IDs the pipeline should contain.</param>
         /// <exception cref="InvalidOperationException">
-        /// If collections checks are enabled (ENABLE_UNITY_COLLECTIONS_CHECKS is defined), will be
-        /// thrown if called after the driver has established connections or before it is created.
+        /// If called after the driver has established connections or before it is created. Note
+        /// this is only thrown if safety checks are enabled (i.e. in the editor).
         /// </exception>
         public NetworkPipeline CreatePipeline(NativeArray<NetworkPipelineStageId> stages)
         {
@@ -774,13 +814,19 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Bind the driver to a endpoint.
+        /// Bind the driver to an endpoint. This endpoint would normally be a local IP address and
+        /// port which the driver will use for its communications. Binding to a wildcard address
+        /// (<see cref="NetworkEndpoint.AnyIpv4"/> or <see cref="NetworkEndpoint.AnyIpv6"/>) will
+        /// result in the driver using any local address for its communications, and binding to port
+        /// 0 will result in the driver using an ephemeral free port chosen by the OS.
         /// </summary>
-        /// <param name="endpoint">The endpoint to bind to.</param>
-        /// <value>Returns 0 on success. And a negative value if a error occured.</value>
-        /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
-        /// <exception cref="InvalidOperationException">If bind is called more then once on the driver</exception>
-        /// <exception cref="InvalidOperationException">If bind is called after a connection has already been established</exception>
+        /// <param name="endpoint">Endpoint to bind to.</param>
+        /// <returns>0 on success, negative error code on error.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// If the driver is not created properly, if it's already bound, or if there are already
+        /// connections made to the driver (although that shouldn't be possible). Note that these
+        /// exceptions are only thrown if safety checks are enabled (i.e. in the editor).
+        /// </exception>
         public int Bind(NetworkEndpoint endpoint)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -850,9 +896,11 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Checks to see if there are any new connections to Accept.
+        /// Accept any new incoming connections. Connections must be accepted before data can be
+        /// sent on them. It's also the only way to obtain the <see cref="NetworkConnection"/> value
+        /// for new connections on servers.
         /// </summary>
-        /// <value>If accept fails it returnes a default NetworkConnection.</value>
+        /// <returns>New connection if any, otherwise a default-value object.</returns>
         public NetworkConnection Accept()
         {
             if (!Listening)
@@ -863,16 +911,26 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Connects the driver to a endpoint
+        /// Establish a new connection to the given endpoint. Note that this only starts
+        /// establishing the new connection. From there it will either succeeds (a
+        /// <see cref="NetworkEvent.Type.Connect"/> event will pop on the connection) or fail (a
+        /// <see cref="NetworkEvent.Type.Disconnect"/> event will pop on the connection) at a
+        /// later time.
         /// </summary>
-        /// <value>If connect fails it returns a default NetworkConnection.</value>
-        /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
+        /// <remarks>
+        /// Establishing a new connection normally requires the driver to be bound (e.g. with the
+        /// <see cref="Bind"/> method), but if that's not the case when calling this method, the
+        /// driver will be implicitly bound to the appropriate wildcard address. This is a behavior
+        /// similar to BSD sockets, where calling <c>connect</c> automatically binds the socket to
+        /// an ephemeral port.
+        /// </remarks>
+        /// <param name="endpoint">Endpoint to connect to.</param>
+        /// <returns>New connection object, or a default-valued object on failure.</returns>
         public NetworkConnection Connect(NetworkEndpoint endpoint)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (!IsCreated)
-                throw new InvalidOperationException(
-                    "Driver must be constructed with a populated or empty INetworkParameter params list");
+                throw new InvalidOperationException("Driver must be constructed.");
 #endif
 
             if (!Bound)
@@ -890,10 +948,13 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Disconnects a NetworkConnection
+        /// Close a connection. Note that to properly notify a peer of this disconnection, it is
+        /// required to schedule at least one update with <see cref="ScheduleUpdate"/> and complete
+        /// it. Failing to do could leave the remote peer unaware that the connection has been
+        /// closed (however it will time out on its own after a while).
         /// </summary>
-        /// <param name="connection">The NetworkConnection we want to Disconnect.</param>
-        /// <value>Return 0 on success.</value>
+        /// <param name="connection">Connection to close.</param>
+        /// <returns>0 on success, a negative value on error.</returns>
         public int Disconnect(NetworkConnection connection)
         {
             var connectionState = GetConnectionState(connection);
@@ -908,15 +969,17 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Returns the PipelineBuffers for a specific pipeline and stage.
+        /// Get the low-level pipeline buffers for a given pipeline stage on a given pipeline and
+        /// for a given connection. Can be used to extract information from a pipeline at runtime.
+        /// Note that this is a low-level API which is not recommended for general use.
         /// </summary>
-        /// <param name="pipeline"></param>
-        /// <param name="stageId"></param>
-        /// <param name="connection"></param>
-        /// <param name="readProcessingBuffer"></param>
-        /// <param name="writeProcessingBuffer"></param>
-        /// <param name="sharedBuffer"></param>
-        /// <exception cref="InvalidOperationException">If the the connection is invalid.</exception>
+        /// <param name="pipeline">Pipeline to get the buffers from.</param>
+        /// <param name="stageId">Pipeline stage to get the buffers from.</param>
+        /// <param name="connection">Connection for which to get the pipeline buffers.</param>
+        /// <param name="readProcessingBuffer">Buffer used by the receive method of the pipeline.</param>
+        /// <param name="writeProcessingBuffer">Buffer used by the send method of the pipeline.</param>
+        /// <param name="sharedBuffer">Buffer used by both receive and send methods of the pipeline.</param>
+        /// <exception cref="InvalidOperationException">If the connection is invalid.</exception>
         public void GetPipelineBuffers(NetworkPipeline pipeline, NetworkPipelineStageId stageId, NetworkConnection connection, out NativeArray<byte> readProcessingBuffer, out NativeArray<byte> writeProcessingBuffer, out NativeArray<byte> sharedBuffer)
         {
             if (m_NetworkStack.Connections.ConnectionAt(connection.InternalId) != connection.ConnectionId)
@@ -951,6 +1014,7 @@ namespace Unity.Networking.Transport
             return state == NetworkConnection.State.Disconnecting ? NetworkConnection.State.Disconnected : state;
         }
 
+        /// <summary>Obsolete. Use <see cref="GetRemoteEndpoint"/> instead.</summary>
         [Obsolete("RemoteEndPoint has been renamed to GetRemoteEndpoint. (UnityUpgradable) -> GetRemoteEndpoint(*)", false)]
         public NetworkEndpoint RemoteEndPoint(NetworkConnection id)
         {
@@ -967,6 +1031,7 @@ namespace Unity.Networking.Transport
             return m_NetworkStack.Connections.GetConnectionEndpoint(connection.ConnectionId);
         }
 
+        /// <summary>Obsolete. Use <see cref="GetLocalEndpoint"/> instead.</summary>
         [Obsolete("LocalEndPoint has been renamed to GetLocalEndpoint. (UnityUpgradable) -> GetLocalEndpoint()", false)]
         public NetworkEndpoint LocalEndPoint()
         {
@@ -1176,18 +1241,21 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Returns the size of the EventQueue for a specific connection
+        /// Returns the size of the event queue for a specific connection. This is the number of
+        /// events that could be popped with <see cref="PopEventForConnection"/>.
         /// </summary>
-        /// <param name="connectionId"></param>
-        /// <value>If the connection is valid it returns the size of the event queue otherwise it returns 0.</value>
-        public int GetEventQueueSizeForConnection(NetworkConnection connectionId)
+        /// <param name="connection">Connection to get the event queue size of.</param>
+        /// <returns>Number of events in the connection's event queue.</returns>
+        public int GetEventQueueSizeForConnection(NetworkConnection connection)
         {
-            if (connectionId.InternalId < 0 || connectionId.InternalId >= m_NetworkStack.Connections.Count ||
-                m_NetworkStack.Connections.ConnectionAt(connectionId.InternalId).Version != connectionId.Version)
+            if (connection.InternalId < 0 || connection.InternalId >= m_NetworkStack.Connections.Count ||
+                m_NetworkStack.Connections.ConnectionAt(connection.InternalId).Version != connection.Version)
                 return 0;
-            return m_EventQueue.GetCountForConnection(connectionId.InternalId);
+            return m_EventQueue.GetCountForConnection(connection.InternalId);
         }
 
+        /// <summary>Error code raised by the last receive job, if any.</summary>
+        /// <value>Code from the <see cref="Error.StatusCode"/> enum.</value>
         public int ReceiveErrorCode
         {
             get => m_DriverReceiver.Result.ErrorCode;

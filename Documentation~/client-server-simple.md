@@ -338,6 +338,8 @@ else if (cmd == NetworkEvent.Type.Disconnect)
 }
 ```
 
+**Note**: If you were to close the connection before popping the `Disconnect` event (say you're closing it in response to a `Data` event), make sure to pop all remaining events for that connection anyway. Otherwise an error will be printed on the next update about resetting the event queue while there were pending events.
+
 ## Putting it all together
 
 To take this for a test run, you can add a new empty [GameObject](https://docs.unity3d.com/ScriptReference/GameObject.html) to our scene:

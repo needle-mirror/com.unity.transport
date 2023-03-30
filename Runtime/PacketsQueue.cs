@@ -12,9 +12,7 @@ using Unity.Networking.Transport.Utilities.LowLevel.Unsafe;
 
 namespace Unity.Networking.Transport
 {
-    /// <summary>
-    /// A queue of packets with an internal pool of preallocated packet buffers
-    /// </summary>
+    /// <summary>A queue of packets with an internal pool of preallocated packet buffers.</summary>
     public unsafe struct PacketsQueue : IDisposable
     {
         private NativeList<int> m_Queue;
@@ -35,9 +33,17 @@ namespace Unity.Networking.Transport
         internal int BuffersAvailable => m_Capacity - m_FreeList.InUse;
         internal int PayloadCapacity => m_PayloadSize;
         internal int EndpointCapacity => m_EndpointSize;
+
+        /// <summary>Total capacity of the queue.</summary>
+        /// <value>Capacity in number of packets.</value>
         public int Capacity => m_Capacity;
+
+        /// <summary>Number of packets currently in the queue.</summary>
+        /// <value>Count in number of packets.</value>
         public int Count => m_Queue.Length;
 
+        /// <summary>Whether the queue has been created or not.</summary>
+        /// <value>True if created, false otherwise.</value>
         public bool IsCreated => m_Buffers.IsCreated;
 
         internal ref PacketMetadata GetMetadataRef(int bufferIndex) => ref *(PacketMetadata*)(m_Buffers[bufferIndex].Metadata);
@@ -193,11 +199,11 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Gets the packet processor for the packetIndex.
+        /// Gets the packet processor for the packet at the given index.
         /// </summary>
-        /// <param name="packetIndex">The index of the packet in the current send queue.</param>
-        /// <returns>The packet processor for the packet in the provided index.</returns>
-        /// <exception cref="IndexOutOfRangeException">Throws an exception if the index provided is not valid.</exception>
+        /// <param name="packetIndex">Index of the packet in the queue.</param>
+        /// <returns>Packet processor for the packet at the provided index.</returns>
+        /// <exception cref="IndexOutOfRangeException">If the index is not valid.</exception>
         public PacketProcessor this[int packetIndex]
         {
             get
@@ -223,11 +229,10 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Acquires a new packet buffer from the packets pool if there are available and
-        /// returns its PacketProcessor.
+        /// Acquires a new packet buffer from the packets pool if there are any available.
         /// </summary>
-        /// <param name="packetProcessor">The PacketProcessor of the new packet.</param>
-        /// <returns>Returns true if the packet was created. Returns false if there are no buffers available.</returns>
+        /// <param name="packetProcessor">Packet processor for the new packet.</param>
+        /// <returns>True if a new packet was enqueued, false otherwise.</returns>
         public unsafe bool EnqueuePacket(out PacketProcessor packetProcessor)
         {
             if (TryAcquireBuffer(out var bufferIndex))
@@ -262,9 +267,11 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Coppies all the packets from the origin queue.
+        /// Copies all the packets from the given queue into this one. Note that no error is raised
+        /// if not all packets could be copied. It is the responsibility of the caller to ensure
+        /// that the queue can fit all the packets from the given queue.
         /// </summary>
-        /// <param name="originQueue">The queue that contains the packets to enqueue.</param>
+        /// <param name="originQueue">Queue that contains the packets to enqueue.</param>
         public void EnqueuePackets(ref PacketsQueue originQueue)
         {
             var count = originQueue.Count;

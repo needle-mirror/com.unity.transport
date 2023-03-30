@@ -83,21 +83,27 @@ namespace Unity.Networking.Transport
 
     /// <summary>Parameters for the global network simulator.</summary>
     /// <remarks>
+    /// <para>
     /// These parameters are for the global network simulator, which applies to all traffic going
     /// through a <see cref="NetworkDriver" /> (including control traffic). For the parameters of
     /// <see cref="SimulatorPipelineStage" />, refer to <see cref="SimulatorUtility.Parameters" />.
-    ///
+    /// </para>
+    /// <para>
     /// We recommend using <see cref="SimulatorPipelineStage" /> to simulate network conditions as
     /// it has more features than the global one (which is only intended for specialized use cases).
+    /// </para>
     /// </remarks>
     public struct NetworkSimulatorParameter : INetworkParameter
     {
         /// <summary>Percentage of received packets to drop (0-100).</summary>
+        /// <value>Packet loss percentage.</value>
         public float ReceivePacketLossPercent;
+
         /// <summary>Percentage of sent packets to drop (0-100).</summary>
+        /// <value>Packet loss percentage.</value>
         public float SendPacketLossPercent;
 
-        /// <summary>Validate the network simulator parameters.</summary>
+        /// <inheritdoc/>
         public bool Validate()
         {
             if (ReceivePacketLossPercent < 0.0f || ReceivePacketLossPercent > 100.0f)
@@ -116,15 +122,16 @@ namespace Unity.Networking.Transport
         }
     }
 
+    /// <summary>Extensions for <see cref="NetworkSimulatorParameter"/>.</summary>
     public static class NetworkSimulatorParameterExtensions
     {
-        /// <summary>Set the global network simulator parameters.</summary>
-        /// <remarks>
-        /// This is not the recommended way of configuring simulated network conditions. See
-        /// <see cref="NetworkSimulatorParameter" /> for details.
-        /// </remarks>
+        /// <summary>
+        /// Sets the <see cref="NetworkSimulatorParameter"/> in the settings.
+        /// </summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="receivePacketLossPercent">Percentage of received packets to drop.</param>
         /// <param name="sendPacketLossPercent">Percentage of sent packets to drop.</param>
+        /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithNetworkSimulatorParameters(
             ref this NetworkSettings settings,
             float receivePacketLossPercent = 0.0f,
@@ -145,6 +152,7 @@ namespace Unity.Networking.Transport
         //      it with a proper general mechanism to modify settings at runtime (see MTT-4161).
 
         /// <summary>Modify the parameters of the global network simulator.</summary>
+        /// <param name="driver">Driver to modify.</param>
         /// <param name="newParams">New parameters for the simulator.</param>
         public static void ModifyNetworkSimulatorParameters(this NetworkDriver driver, NetworkSimulatorParameter newParams)
         {

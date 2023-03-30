@@ -9,7 +9,7 @@ using BurstRuntime = Unity.Burst.BurstRuntime;
 namespace Unity.Networking.Transport
 {
     /// <summary>
-    /// A list of the parameters that describe the network configuration.
+    /// An aggregate of the different parameter structures that describe a network configuration.
     /// </summary>
     public struct NetworkSettings : IDisposable
     {
@@ -27,6 +27,7 @@ namespace Unity.Networking.Transport
         private byte m_ReadOnly;
 
         /// <summary>If the settings have been created (e.g. not disposed).</summary>
+        /// <value>True if created, false otherwise.</value>
         public bool IsCreated => m_Initialized == 0 || m_Parameters.IsCreated;
 
         private bool EnsureInitializedOrError()
@@ -51,13 +52,10 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Creates a new NetworkSettings object using the provided allocator.
-        /// If no Allocator is provided, Allocator.Temp will be used.
+        /// Creates a new settings object using the provided allocator. If no allocator is
+        /// provided, <c>Allocator.Temp</c> will be used.
         /// </summary>
-        /// <param name="allocator">
-        /// The allocator used for the parameters list.
-        /// When Allocator.Temp is used, the settings are valid to use only during one frame.
-        /// </param>
+        /// <param name="allocator">Allocator to use to create the object.</param>
         public NetworkSettings(Allocator allocator)
         {
             m_Initialized = 1;
@@ -109,11 +107,17 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Adds a new parameter to the list. There must be only one instance per parameter type.
+        /// Add a new parameter structure to the list. Only one instance of any parameter type is
+        /// stored at a time. Adding a new instance of an existing parameter structure will
+        /// overwrite the one that is already stored.
         /// </summary>
-        /// <typeparam name="T">The type of INetworkParameter to add.</typeparam>
-        /// <param name="parameter">The parameter to add.</param>
-        /// <exception cref="ArgumentException">Throws an argument exception if the paramter type is already in the list or if it contains invalid values.</exception>
+        /// <typeparam name="T">Type of <see cref="INetworkParameter"/> to add.</typeparam>
+        /// <param name="parameter">Parameter structure to add.</param>
+        /// <exception cref="ArgumentException">
+        /// If the parameters contain invalid values. Note that this exception is only thrown when
+        /// collections checks are enabled (i.e. in the editor). Otherwise an error is logged and
+        /// the parameters are added anyway.
+        /// </exception>
         public unsafe void AddRawParameterStruct<T>(ref T parameter) where T : unmanaged, INetworkParameter
         {
             if (!EnsureInitializedOrError())
@@ -147,12 +151,10 @@ namespace Unity.Networking.Transport
             *valuePtr = parameter;
         }
 
-        /// <summary>
-        /// Try to get the parameter values for the specified type.
-        /// </summary>
-        /// <typeparam name="T">The type of the parameters to get.</typeparam>
-        /// <param name="parameter">The stored parameter values.</param>
-        /// <returns>Returns true if the parameter is in the paramaters list.</returns>
+        /// <summary>Try to get the parameter structure for the specified type.</summary>
+        /// <typeparam name="T">Type of the parameter structure to get.</typeparam>
+        /// <param name="parameter">Stored parameter structure (if true is returned).</param>
+        /// <returns>True if the parameter structure is in the settings.</returns>
         public unsafe bool TryGet<T>(out T parameter) where T : unmanaged, INetworkParameter
         {
             parameter = default;

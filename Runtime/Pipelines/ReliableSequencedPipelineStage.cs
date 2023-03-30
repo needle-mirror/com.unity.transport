@@ -7,6 +7,29 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// <para>
+    /// This pipeline stage can be used to ensure that packets sent through it will be delivered,
+    /// and will be delivered in order. This is done by sending acknowledgements for received
+    /// packets, and resending packets that have not been acknowledged in a while.
+    /// </para>
+    /// <para>
+    /// Note that a consequence of these guarantees is that if a packet is lost, subsequent packets
+    /// will not be delivered until the lost packet has been resent and delivered. This is called
+    /// <see href="https://en.wikipedia.org/wiki/Head-of-line_blocking">head-of-line blocking</see>
+    /// and can add significant latency to delivered packets when it occurs. For this reason, only
+    /// send through this pipeline traffic which must absolutely be delivered in order (e.g. RPCs
+    /// or player actions). State updates that will be resent later anyway (e.g. snapshots) should
+    /// not be sent through this pipeline stage.
+    /// </para>
+    /// <para>
+    /// Another reason to limit the amount of traffic sent through this pipeline is because it has
+    /// limited bandwidth. Because of the need to keep packets around in case they need to be
+    /// resent, only a limited number of packets can be in-flight at a time. This limit, called the
+    /// window size, is 32 by default and can be increased to 64. See the documentation on pipelines
+    /// for further details.
+    /// </para>
+    /// </summary>
     [BurstCompile]
     public unsafe struct ReliableSequencedPipelineStage : INetworkPipelineStage
     {
@@ -14,6 +37,7 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
+        /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             ReliableUtility.Parameters param = settings.GetReliableStageParameters();
@@ -29,6 +53,7 @@ namespace Unity.Networking.Transport
             );
         }
 
+        /// <inheritdoc/>
         public int StaticSize => UnsafeUtility.SizeOf<ReliableUtility.Parameters>();
 
         [BurstCompile(DisableDirectCall = true)]

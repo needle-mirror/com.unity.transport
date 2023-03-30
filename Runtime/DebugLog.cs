@@ -299,15 +299,6 @@ namespace Unity.Networking.Transport.Logging
 #endif
         }
 
-        public static void ErrorReliableWindowSize(int windowSize)
-        {
-#if USE_UNITY_LOGGING
-            Unity.Logging.Log.Error("WindowSize value ({WindowSize}) must be greater than 0 and smaller or equal to 32", windowSize);
-#else
-            UnityEngine.Debug.LogError($"WindowSize value ({windowSize}) must be greater than 0 and smaller or equal to 32");
-#endif
-        }
-
         public static void SimulatorIncomingTooLarge(int incomingSize, int maxPacketSize)
         {
 #if USE_UNITY_LOGGING

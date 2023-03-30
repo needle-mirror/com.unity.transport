@@ -7,22 +7,29 @@ namespace Unity.Networking.Transport
     namespace Error
     {
         /// <summary>
-        /// DisconnectReason enumerates all disconnect reasons.
+        /// Reasons for a <see cref="NetworkEvent.Type.Disconnect"/> event. This can be obtained by
+        /// reading a single byte off the <see cref="DataStreamReader"/> obtained when calling
+        /// <see cref="NetworkDriver.PopEvent"/> when the popped event is for a disconnection.
         /// </summary>
         public enum DisconnectReason : byte
         {
             // This enum is matched by NetworkStreamDisconnectReason in Netcode for Entities, so any
             // change to it should be discussed and properly synchronized with them first.
 
-            /// <summary>Indicates a normal disconnection as a result of calling Disconnect on the connection.</summary>
-            Default, // don't assign explicit values
-            /// <summary>Indicates the connection timed out.</summary>
+            /// <summary>Internal value. Do not use.</summary>
+            Default,
+
+            /// <summary>Indicates the connection timed out due to inactivity.</summary>
             Timeout,
-            /// <summary>Indicates the connection failed to establish a connection after <see cref="NetworkConfigParameter.maxConnectAttempts"/>.</summary>
+
+            /// <summary>Indicates the connection failed to be established.</summary>
             MaxConnectionAttempts,
-            /// <summary>Indicates the connection was closed remotely.</summary>
+
+            /// <summary>Indicates the connection was manually closed by the remote peer.</summary>
             ClosedByRemote,
-            /// <summary>Used only for count. Keep last and don't assign explicit values</summary>
+
+            /// <summary>Internal value. Do not use.</summary>
+            [EditorBrowsable(EditorBrowsableState.Never)]
             Count
         }
 
@@ -37,12 +44,16 @@ namespace Unity.Networking.Transport
             /// <summary>Connection is invalid.</summary>
             NetworkIdMismatch             = -1,
 
-            /// <summary>Connection is invalid.</summary>
-            /// <remarks>Usually caused by an attempt to use a closed connection.</remarks>
+            /// <summary>
+            /// Connection is invalid. This is usually caused by an attempt to use a connection
+            /// that has been already closed.
+            /// </summary>
             NetworkVersionMismatch        = -2,
 
-            /// <summary>State of the connection is invalid for the operation requested.</summary>
-            /// <remarks>Usually caused by an attempt to send on a connecting/closed connection.</remarks>
+            /// <summary>
+            /// State of the connection is invalid for the operation requested. This is usually
+            /// caused by an attempt to send on a connecting/closed connection.
+            /// </summary>
             NetworkStateMismatch          = -3,
 
             /// <summary>Packet is too large for the supported capacity.</summary>
@@ -65,8 +76,10 @@ namespace Unity.Networking.Transport
             [Obsolete("Return code is not in use anymore and nothing will return it.")]
             NetworkArgumentMismatch       = -9,
 
-            /// <summary>A message couldn't be received because the receive queue is full.</summary>
-            /// <remarks>Can only be returned through <see cref="NetworkDriver.ReceiveErrorCode"/>.</remarks>
+            /// <summary>
+            /// A message couldn't be received because the receive queue is full. This can only be
+            /// returned through <see cref="NetworkDriver.ReceiveErrorCode"/>.
+            /// </summary>
             NetworkReceiveQueueFull       = -10,
 
             /// <summary>There was an error from the underlying low-level socket.</summary>
@@ -75,8 +88,9 @@ namespace Unity.Networking.Transport
     }
 
     /// <summary>
-    /// The NetworkConnection is a struct that hold all information needed by the driver to link it with a virtual
-    /// connection. The NetworkConnection is a public representation of a connection.
+    /// Public representation of a connection. This is obtained by calling
+    /// <see cref="NetworkDriver.Accept"/> (on servers) or <see cref="NetworkDriver.Connect"/> (on
+    /// clients) and acts as a handle to the communication session with a remote peer.
     /// </summary>
     public struct NetworkConnection : IEquatable<NetworkConnection>
     {
@@ -85,25 +99,32 @@ namespace Unity.Networking.Transport
 
         internal ConnectionId ConnectionId => new ConnectionId { Id = InternalId, Version = Version };
 
-        /// <summary>
-        /// ConnectionState enumerates available connection states a connection can have.
-        /// </summary>
+        /// <summary>Different states in which a <see cref="NetworkConnection"/> can be.</summary>
         public enum State
         {
-            /// <summary>Indicates the connection is disconnected</summary>
+            /// <summary>
+            /// Connection is closed. No data may be sent on it, and no further event will be
+            /// received for the connection.
+            /// </summary>
             Disconnected,
 
             /// <summary>
-            /// Indicates the connection is in the process of being disconnected.
-            /// This is an internal state and it is mapped to Disconnected at the
-            /// NetworkDriver level.
+            /// Indicates the connection is in the process of being disconnected. This is an
+            /// internal state, and will be mapped to <see cref="Disconnected"/> when calling
+            /// <see cref="NetworkDriver.GetConnectionState"/>.
             /// </summary>
-            [EditorBrowsable(EditorBrowsableState.Never)] Disconnecting,
+            [EditorBrowsable(EditorBrowsableState.Never)]
+            Disconnecting,
 
-            /// <summary>Indicates the connection is trying to connect.</summary>
+            /// <summary>
+            /// Connection is in the process of being established. No data may be sent on it and the
+            /// next event will be either <see cref="NetworkEvent.Type.Connect"/> if the connection
+            /// was successfully established, or <see cref="NetworkEvent.Type.Disconnect"/> if it
+            /// failed to reach the server.
+            /// </summary>
             Connecting,
 
-            /// <summary>Indicates the connection is connected.. </summary>
+            /// <summary>Connection is open. Can send and receive data on it.</summary>
             Connected,
         }
 
@@ -113,52 +134,71 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Disconnects a virtual connection and marks it for deletion. This connection will be removed on next the next frame.
+        /// Close an active connection. Strictly identical to <see cref="Close"/>.
         /// </summary>
-        /// <param name="driver">The driver that owns the virtual connection.</param>
+        /// <param name="driver">Driver on which to perform the operation.</param>
+        /// <returns>0 on success, a negative error code otherwise.</returns>
         public int Disconnect(NetworkDriver driver)
         {
             return driver.Disconnect(this);
         }
 
-        /// <summary>
-        /// Receive an event for this specific connection. Should be called until it returns <see cref="NetworkEvent.Type.Empty"/>, even if the socket is disconnected.
-        /// </summary>
-        /// <param name="driver">The driver that owns the virtual connection.</param>
-        /// <param name="strm">A DataStreamReader, that will only be populated if a <see cref="NetworkEvent.Type.Data"/>
-        /// event was received.
+        /// <summary>Pop the next available event on the connection.</summary>
+        /// <param name="driver">Driver from which to get the event.</param>
+        /// <param name="stream">
+        /// Reader into the data associated to the event. Only populated if the returned event is
+        /// <see cref="NetworkEvent.Type.Data"/> or <see cref="NetworkEvent.Type.Disconnect"/>,
+        /// where respectively the data will be either the received payload, or the disconnection
+        /// reason (as a single byte).
         /// </param>
+        /// <returns>
+        /// Type of the popped event. <see cref="NetworkEvent.Type.Empty"/> if nothing to pop.
+        /// </returns>
         public NetworkEvent.Type PopEvent(NetworkDriver driver, out DataStreamReader stream)
         {
             return driver.PopEventForConnection(this, out stream);
         }
 
+        /// <summary>Pop the next available event on the connection.</summary>
+        /// <param name="driver">Driver from which to get the event.</param>
+        /// <param name="stream">
+        /// Reader into the data associated to the event. Only populated if the returned event is
+        /// <see cref="NetworkEvent.Type.Data"/> or <see cref="NetworkEvent.Type.Disconnect"/>,
+        /// where respectively the data will be either the received payload, or the disconnection
+        /// reason (as a single byte).
+        /// </param>
+        /// <param name="pipeline">Pipeline on which the data was received.</param>
+        /// <returns>
+        /// Type of the popped event. <see cref="NetworkEvent.Type.Empty"/> if nothing to pop.
+        /// </returns>
         public NetworkEvent.Type PopEvent(NetworkDriver driver, out DataStreamReader stream, out NetworkPipeline pipeline)
         {
             return driver.PopEventForConnection(this, out stream, out pipeline);
         }
 
         /// <summary>
-        /// Close an active NetworkConnection, similar to <see cref="Disconnect{T}"/>.
+        /// Close an active connection. Strictly identical to <see cref="Disconnect"/>.
         /// </summary>
-        /// <param name="driver">The driver that owns the virtual connection.</param>
+        /// <param name="driver">Driver on which to perform the operation.</param>
+        /// <returns>0 on success, a negative error code otherwise.</returns>
         public int Close(NetworkDriver driver)
         {
-            if (m_ConnectionId.Id >= 0)
-                return driver.Disconnect(this);
-            return -1;
+            return driver.Disconnect(this);
         }
 
         /// <summary>
-        /// Check to see if a NetworkConnection is Created.
+        /// Whether the connection was correctly obtained from a call to
+        /// <see cref="NetworkDriver.Accept"/> or <see cref="NetworkDriver.Connect"/>.
         /// </summary>
-        /// <returns>`true` if the NetworkConnection has been correctly created by a call to
-        /// <see cref="NetworkDriver.Accept"/> or <see cref="NetworkDriver.Connect"/></returns>
+        /// <value>True if created correctly, false otherwise.</value>
         public bool IsCreated
         {
             get { return m_ConnectionId.Version != 0; }
         }
 
+        /// <summary>Get the current state of a connection.</summary>
+        /// <param name="driver">Driver to get the state from.</param>
+        /// <returns>Current state of the connection.</returns>
         public State GetState(NetworkDriver driver)
         {
             return driver.GetConnectionState(this);
@@ -194,7 +234,10 @@ namespace Unity.Networking.Transport
             return $"NetworkConnection[id{InternalId},v{Version}]";
         }
 
-        /// <summary>Return a fixed string representation of the connection.</summary>
+        /// <summary>
+        /// Return a fixed string representation of the connection. For use in contexts where
+        /// <see cref="ToString"/> can't be used (e.g. Burst-compiled code).
+        /// </summary>
         /// <returns>Fixed string representation of the connection.</returns>
         public FixedString128Bytes ToFixedString()
         {

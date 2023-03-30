@@ -8,6 +8,11 @@ using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// This pipeline stage can be used to add artificial network conditions (packet loss, latency,
+    /// etc.) to the traffic going through it. This is useful to test a game under conditions closer
+    /// to what can be observed in real networks.
+    /// </summary>
     [BurstCompile]
     public unsafe struct SimulatorPipelineStage : INetworkPipelineStage
     {
@@ -15,6 +20,7 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
+        /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             SimulatorUtility.Parameters param = settings.GetSimulatorStageParameters();
@@ -88,7 +94,6 @@ namespace Unity.Networking.Transport
 
                 if (SimulatorUtility.ShouldDropPacket(context, param, timestamp))
                 {
-                    context->PacketDropCount++;
                     inboundBuffer = default;
                     return (int)Error.StatusCode.Success;
                 }
@@ -103,7 +108,6 @@ namespace Unity.Networking.Transport
                     if (SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref inboundBuffer, ref requests, timestamp))
                     {
                         context->PacketCount++;
-                        context->PacketDuplicatedCount++;
                     }
                 }
 
@@ -149,7 +153,6 @@ namespace Unity.Networking.Transport
 
                 if (SimulatorUtility.ShouldDropPacket(context, param, timestamp))
                 {
-                    context->PacketDropCount++;
                     inboundBuffer = default;
                     return;
                 }
@@ -167,7 +170,6 @@ namespace Unity.Networking.Transport
                     if (SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref bufferVec, ref requests, timestamp))
                     {
                         context->PacketCount++;
-                        context->PacketDuplicatedCount++;
                     }
                 }
 
@@ -188,11 +190,16 @@ namespace Unity.Networking.Transport
             inboundBuffer = default;
         }
 
+        /// <inheritdoc/>
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 
+    /// <summary>
+    /// Obsolete. Use <see cref="SimulatorPipelineStage"/> with an <see cref="ApplyMode"/>
+    /// configured for sending instead.
+    /// </summary>
     [BurstCompile]
-    [Obsolete("SimulatorPipelineStage now supports handling both sending and receiving via ApplyMode.AllPackets. You can safely remove this stage from your pipelines. (RemovedAfter 2022-03-01)")]
+    [Obsolete("Use SimulatorPipelineStage with an ApplyMode set for sending instead.")]
     public unsafe struct SimulatorPipelineStageInSend : INetworkPipelineStage
     {
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
@@ -279,7 +286,6 @@ namespace Unity.Networking.Transport
 
                 if (SimulatorUtility.ShouldDropPacket(context, param, timestamp))
                 {
-                    context->PacketDropCount++;
                     inboundBuffer = default;
                     return (int)Error.StatusCode.Success;
                 }
@@ -294,7 +300,6 @@ namespace Unity.Networking.Transport
                     if (SimulatorUtility.TryDelayPacket(ref ctx, ref param, ref inboundBuffer, ref requests, timestamp))
                     {
                         context->PacketCount++;
-                        context->PacketDuplicatedCount++;
                     }
                 }
 

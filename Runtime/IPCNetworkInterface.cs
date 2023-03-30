@@ -9,13 +9,50 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// <para>
+    /// The IPC network interface implements the functionality of a network interface over an
+    /// in-memory buffer. Operations will be instantenous, but can only be used to communicate with
+    /// other <see cref="NetworkDriver"/> instances inside the same process (so IPC really means
+    /// intra-process and not inter-process here). Useful for testing, or to implement a single
+    /// player mode in a multiplayer game.
+    /// </para>
+    /// <para>
+    /// Note that the interface expects loopback addresses when binding/connecting. It is
+    /// recommended to only use <see cref="NetworkEndpoint.LoopbackIpv4"/> when dealing with the IPC
+    /// network interface, and to use different port for different drivers (see example).
+    /// </para>
+    /// </summary>
+    /// <example>
+    /// This example code establishes an in-process communication channel between two drivers:
+    /// <code>
+    ///     var driver1 = NetworkDriver.Create(new IPCNetworkInterface());
+    ///     driver1.Bind(NetworkEndpoint.LoopbackIpv4.WithPort(1));
+    ///     driver1.Listen();
+    ///
+    ///     var driver2 = NetworkDriver.Create(new IPCNetworkInterface());
+    ///     driver2.Bind(NetworkEndpoint.LoopbackIpv4.WithPort(2));
+    ///
+    ///     var connection2to1 = driver2.Connect(NetworkEndpoint.LoopbackIpv4.WithPort(1));
+    ///
+    ///     // Need to schedule updates for driver2 to send the connection request, and for
+    ///     // driver1 to then process it. Since this all happens in-memory, one update is
+    ///     // sufficient to accomplish this (no network latency involved).
+    ///     driver2.ScheduleUpdate().Complete();
+    ///     driver1.ScheduleUpdate().Complete();
+    ///
+    ///     var connection1to2 = driver1.Accept();
+    /// </code>
+    /// </example>
     [BurstCompile]
     public struct IPCNetworkInterface : INetworkInterface
     {
         [ReadOnly] private NativeArray<NetworkEndpoint> m_LocalEndpoint;
 
+        /// <inheritdoc/>
         public NetworkEndpoint LocalEndpoint => m_LocalEndpoint[0];
 
+        /// <inheritdoc/>
         public int Initialize(ref NetworkSettings settings, ref int packetPadding)
         {
             IPCManager.Instance.AddRef();
@@ -87,6 +124,7 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dep)
         {
             var job = new ReceiveJob
@@ -101,6 +139,7 @@ namespace Unity.Networking.Transport
             return dep;
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dep)
         {
             var sendJob = new SendUpdate {ipcManager = IPCManager.Instance, SendQueue = arguments.SendQueue, localEndPoint = m_LocalEndpoint[0]};
@@ -109,6 +148,7 @@ namespace Unity.Networking.Transport
             return dep;
         }
 
+        /// <inheritdoc/>
         public unsafe int Bind(NetworkEndpoint endpoint)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -120,6 +160,7 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
+        /// <inheritdoc/>
         public int Listen()
         {
             return 0;

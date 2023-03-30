@@ -27,6 +27,7 @@ namespace Unity.Networking.Transport
         }
     }
 
+    /// <summary>Obsolete. Set the receive/send queue capacities with <see cref="NetworkConfigParameter"/> instead.</summary>
     [Obsolete("To set receiveQueueCapacity and sendQueueCapacity parameters use NetworkConfigParameter", false)]
     public struct BaselibNetworkParameter : INetworkParameter
     {
@@ -53,13 +54,11 @@ namespace Unity.Networking.Transport
         }
     }
 
+    /// <summary>Obsolete. Use <see cref="UDPNetworkInterface"/> instead.</summary>
     [Obsolete("BaselibNetworkInterface has been deprecated. Use UDPNetworkInterface instead (UnityUpgradable) -> UDPNetworkInterface")]
     public struct BaselibNetworkInterface : INetworkInterface
     {
         public NetworkEndpoint LocalEndpoint
-            => throw new System.NotImplementedException();
-
-        public bool IsCreated
             => throw new System.NotImplementedException();
 
         public int Initialize(ref NetworkSettings settings, ref int packetPadding)

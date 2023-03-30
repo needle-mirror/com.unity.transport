@@ -6,6 +6,12 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Pipeline stage that can be used to ensure the ordering of packets sent through it. Note that
+    /// it only guarantees the ordering, it does not make any reliability guarantees. This pipeline
+    /// stage basically just drops any packet that arrives out-of-order. For reliability guarantees,
+    /// use the <see cref="ReliableSequencedPipelineStage"/>.
+    /// </summary>
     [BurstCompile]
     public unsafe struct UnreliableSequencedPipelineStage : INetworkPipelineStage
     {
@@ -13,6 +19,7 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
+        /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
@@ -26,6 +33,7 @@ namespace Unity.Networking.Transport
             );
         }
 
+        /// <inheritdoc/>
         public int StaticSize => 0;
 
         [BurstCompile(DisableDirectCall = true)]

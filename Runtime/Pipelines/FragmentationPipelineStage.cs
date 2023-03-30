@@ -9,6 +9,10 @@ using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Pipeline stage that can be used to fragment large packets into MTU-sized chunks. Use this
+    /// stage when defining pipelines that need to send packets larger than ~1400 bytes.
+    /// </summary>
     [BurstCompile]
     public unsafe struct FragmentationPipelineStage : INetworkPipelineStage
     {
@@ -206,6 +210,7 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
+        /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             FragmentationUtility.Parameters param = settings.GetFragmentationStageParameters();
@@ -224,6 +229,7 @@ namespace Unity.Networking.Transport
             );
         }
 
+        /// <inheritdoc/>
         public int StaticSize => UnsafeUtility.SizeOf<FragmentationUtility.Parameters>();
     }
 }

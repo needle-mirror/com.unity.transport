@@ -4,8 +4,16 @@ using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport.Relay
 {
+    /// <summary>Extensions for <see cref="RelayNetworkParameter"/>.</summary>
     public static class RelayParameterExtensions
     {
+        /// <summary>
+        /// Sets the <see cref="RelayNetworkParameter"/> in the settings.
+        /// </summary>
+        /// <param name="settings">Settings to modify.</param>
+        /// <param name="serverData"><inheritdoc cref="RelayNetworkParameter.ServerData" path="/summary"/></param>
+        /// <param name="relayConnectionTimeMS"><inheritdoc cref="RelayNetworkParameter.RelayConnectionTimeMS" path="/summary"/></param>
+        /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithRelayParameters(
             ref this NetworkSettings settings,
             ref RelayServerData serverData,
@@ -23,6 +31,11 @@ namespace Unity.Networking.Transport.Relay
             return ref settings;
         }
 
+        /// <summary>
+        /// Gets the <see cref="RelayNetworkParameter"/> in the settings.
+        /// </summary>
+        /// <param name="settings">Settings to get parameters from.</param>
+        /// <returns>Structure containing the relay parameters.</returns>
         public static RelayNetworkParameter GetRelayParameters(ref this NetworkSettings settings)
         {
             if (!settings.TryGet<RelayNetworkParameter>(out var parameters))
@@ -34,13 +47,24 @@ namespace Unity.Networking.Transport.Relay
         }
     }
 
+    /// <summary>Parameters for the Unity Relay connection.</summary>
     public struct RelayNetworkParameter : INetworkParameter
     {
         internal const int k_DefaultConnectionTimeMS = 3000;
 
+        /// <summary>Connection information about the relay server.</summary>
+        /// <value>Server data structure.</value>
         public RelayServerData ServerData;
+
+        /// <summary>
+        /// Frequency at which the relay server will be pinged to maintain the connection alive.
+        /// Should be set to less than 10 seconds (default is 3 seconds) since that's the time
+        /// after which the relay server will sever the connection if there is no activity.
+        /// </summary>
+        /// <value>Frequency in milliseconds.</value>
         public int RelayConnectionTimeMS;
 
+        /// <inheritdoc/>
         public unsafe bool Validate()
         {
             var valid = true;

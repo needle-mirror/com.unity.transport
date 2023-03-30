@@ -5,7 +5,10 @@ using Unity.Networking.Transport.Logging;
 namespace Unity.Networking.Transport
 {
     /// <summary>
-    /// Stores the result of a NetworkDriver operation.
+    /// Stores the result of a network operation. This is normally used when a job needs to return
+    /// a result to its caller. For example the <see cref="ReceiveJobArguments"/> structure contains
+    /// one which is used to report the result of receive operations on network interfaces, which
+    /// is then reported through <see cref="NetworkDriver.ReceiveErrorCode"/>.
     /// </summary>
     public struct OperationResult : IDisposable
     {
@@ -19,9 +22,10 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Allows to get and set the error code for the operation.
+        /// Get and set the error code for the operation. Setting a non-zero value will result in
+        /// the error also being logged to the console.
         /// </summary>
-        /// <remarks>Setting an error code different to zero will log it.</remarks>
+        /// <value>Numerical error code (0 is success, anything else is an error).</value>
         public int ErrorCode
         {
             get => m_ErrorCode.Value;

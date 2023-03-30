@@ -8,20 +8,25 @@ using Random = Unity.Mathematics.Random;
 
 namespace Unity.Networking.Transport.Utilities
 {
+    /// <summary>Extensions for <see cref="SimulatorUtility.Parameters"/>.</summary>
     public static class SimulatorStageParameterExtensions
     {
-        /// <summary>Set the parameters of the simulator pipeline stage.</summary>
-        /// <param name="maxPacketCount"><inheritdoc cref="SimulatorUtility.Parameters.MaxPacketCount"/></param>
-        /// <param name="maxPacketSize">See <see cref="SimulatorUtility.Parameters.MaxPacketSize"/> for details. Defaults to MTU.</param>
+        /// <summary>
+        /// Sets the <see cref="SimulatorUtility.Parameters"/> in the settings.
+        /// </summary>
+        /// <param name="settings">Settings to modify.</param>
+        /// <param name="maxPacketCount"><inheritdoc cref="SimulatorUtility.Parameters.MaxPacketCount" path="/summary"/></param>
+        /// <param name="maxPacketSize">See <see cref="SimulatorUtility.Parameters.MaxPacketSize" path="/summary"/> for details. Defaults to MTU.</param>
         /// <param name="mode">Whether to apply simulation to received or sent packets (defaults to both).</param>
-        /// <param name="packetDelayMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketDelayMs"/></param>
-        /// <param name="packetJitterMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketJitterMs"/></param>
-        /// <param name="packetDropInterval"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropInterval"/></param>
-        /// <param name="packetDropPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropPercentage"/></param>
-        /// <param name="packetDuplicationPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDuplicationPercentage"/></param>
-        /// <param name="fuzzFactor"><inheritdoc cref="SimulatorUtility.Parameters.FuzzFactor"/></param>
-        /// <param name="fuzzOffset"><inheritdoc cref="SimulatorUtility.Parameters.FuzzOffset"/></param>
-        /// <param name="randomSeed"><inheritdoc cref="SimulatorUtility.Parameters.RandomSeed"/></param>
+        /// <param name="packetDelayMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketDelayMs" path="/summary"/></param>
+        /// <param name="packetJitterMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketJitterMs" path="/summary"/></param>
+        /// <param name="packetDropInterval"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropInterval" path="/summary"/></param>
+        /// <param name="packetDropPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropPercentage" path="/summary"/></param>
+        /// <param name="packetDuplicationPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDuplicationPercentage" path="/summary"/></param>
+        /// <param name="fuzzFactor"><inheritdoc cref="SimulatorUtility.Parameters.FuzzFactor" path="/summary"/></param>
+        /// <param name="fuzzOffset"><inheritdoc cref="SimulatorUtility.Parameters.FuzzOffset" path="/summary"/></param>
+        /// <param name="randomSeed"><inheritdoc cref="SimulatorUtility.Parameters.RandomSeed" path="/summary"/></param>
+        /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithSimulatorStageParameters(
             ref this NetworkSettings settings,
             int maxPacketCount,
@@ -57,10 +62,13 @@ namespace Unity.Networking.Transport.Utilities
             return ref settings;
         }
 
+        /// <summary>
+        /// Gets the <see cref="SimulatorUtility.Parameters"/> in the settings.
+        /// </summary>
+        /// <param name="settings">Settings to get parameters from.</param>
+        /// <returns>Structure containing the simulator parameters.</returns>
         public static SimulatorUtility.Parameters GetSimulatorStageParameters(ref this NetworkSettings settings)
         {
-            // TODO: Pipelines need to store always all possible pipeline parameters, even when they are not used.
-            // That means that we always need to provide a parameter for every pipeline.
             settings.TryGet<SimulatorUtility.Parameters>(out var parameters);
             return parameters;
         }
@@ -72,9 +80,10 @@ namespace Unity.Networking.Transport.Utilities
         /// <summary>Modify the parameters of the simulator pipeline stage.</summary>
         /// <remarks>
         /// Some parameters (e.g. max packet count and size) are not modifiable. These need to be
-        /// passed unmodified to this function (can't just leave them at 0 for example). The current
-        /// parameters can be obtained using <see cref="NetworkDriver.CurrentSettings" />.
+        /// passed unmodified to this function (can't just leave them at 0). The current parameters
+        /// can be obtained using <see cref="NetworkDriver.CurrentSettings" />.
         /// </remarks>
+        /// <param name="driver">Driver to modify.</param>
         /// <param name="newParams">New parameters for the simulator stage.</param>
         public static unsafe void ModifySimulatorStageParameters(this NetworkDriver driver, SimulatorUtility.Parameters newParams)
         {
@@ -99,21 +108,23 @@ namespace Unity.Networking.Transport.Utilities
     }
 
     /// <summary>
-    /// Denotes whether or not the <see cref="SimulatorPipelineStage"> should apply to sent or received packets (or both).
+    /// Denotes whether or not the <see cref="SimulatorPipelineStage"/> should apply to sent or
+    /// received packets (or both).
     /// </summary>
     public enum ApplyMode : byte
     {
         // We put received packets first so that the default value will match old behavior.
-        /// <summary>Only apply simulation to received packets.</summary>
+        /// <summary>Only apply simulator pipeline to received packets.</summary>
         ReceivedPacketsOnly,
-        /// <summary>Only apply simulation to sent packets.</summary>
+        /// <summary>Only apply simulator pipeline to sent packets.</summary>
         SentPacketsOnly,
-        /// <summary>Apply simulation to both sent and received packets.</summary>
+        /// <summary>Apply simulator pipeline to both sent and received packets.</summary>
         AllPackets,
-        /// <summary>For runtime toggling.</summary>
+        /// <summary>Don't apply the simulator pipeline. Used for runtime toggling.</summary>
         Off,
     }
 
+    /// <summary>Utility types for the <see cref="SimulatorPipelineStage"/>.</summary>
     public static class SimulatorUtility
     {
         /// <summary>
@@ -127,79 +138,91 @@ namespace Unity.Networking.Transport.Utilities
             /// packet is delayed, the packet is stored in the pipeline processing buffer and can
             /// be later brought back.
             /// </summary>
+            /// <value>Number of packets.</value>
             public int MaxPacketCount;
 
             /// <summary>
-            /// The maximum size of a packet which the simulator stores. If a packet exceeds this size it will
-            /// bypass the simulator.
+            /// The maximum size of a packet which the simulator stores. If a packet exceeds this
+            /// size it will bypass the simulator.
             /// </summary>
+            /// <value>Packet size in bytes.</value>
             public int MaxPacketSize;
 
             /// <summary>
             /// Value to use to seed the random number generator. For non-deterministic behavior, use a
-            /// dynamic value here (e.g. the result of a call to Stopwatch.GetTimestamp).
+            /// dynamic value here (e.g. the result of a call to <c>Stopwatch.GetTimestamp</c>).
             /// </summary>
+            /// <value>Seed for the RNG.</value>
             public uint RandomSeed;
 
             /// <inheritdoc cref="ApplyMode"/>
             public ApplyMode Mode;
 
-            /// <summary>
-            /// Fixed delay to apply to all packets which pass through.
-            /// </summary>
+            /// <summary>Fixed delay to apply to all packets which pass through.</summary>
+            /// <value>Delay in milliseconds.</value>
             public int PacketDelayMs;
+
             /// <summary>
-            /// Variable delay to apply to all packets which pass through, adds or subtracts amount from fixed delay.
+            /// Variance of the delay that gets added to all packets that pass through. For example,
+            /// setting this value to 5 will result in the delay being a random value within 5
+            /// milliseconds of the value set with <see cref="PacketDelayMs"/>.
             /// </summary>
+            /// <value>Jitter in milliseconds.</value>
             public int PacketJitterMs;
+
             /// <summary>
             /// Fixed interval to drop packets on. This is most suitable for tests where predictable
-            /// behaviour is desired, every Xth packet will be dropped. If PacketDropInterval is 5
-            /// every 5th packet is dropped.
+            /// behaviour is desired, as every X-th packet will be dropped. For example, if the
+            /// value is 5 every fifth packet is dropped.
             /// </summary>
+            /// <value>Interval in number of packets.</value>
             public int PacketDropInterval;
-            /// <summary>
-            /// 0 - 100, denotes the percentage of packets that will be dropped (i.e. deleted unprocessed).
-            /// E.g. "5" means approximately every 20th packet will be dropped.
-            /// <see cref="RandomSeed"/> to change random seed values.
-            /// </summary>
+
+            /// <summary>Percentage of packets that will be dropped.</summary>
+            /// <value>Percentage (0-100).</value>
             public int PacketDropPercentage;
+
             /// <summary>
-            /// 0 - 100, denotes the percentage of packets that will be duplicated once.
-            /// E.g. "5" means approximately every 20th packet will be duplicated once.
-            /// <see cref="RandomSeed"/> to change random seed values.
-            /// Note: Skipped if the packet is dropped.
+            /// Percentage of packets that will be duplicated. Packets are duplicated at most once
+            /// and will not be duplicated if they were first deemed to be dropped.
             /// </summary>
+            /// <value>Percentage (0-100).</value>
             public int PacketDuplicationPercentage;
+
             /// <summary>
-            /// Use the fuzz factor when you want to fuzz a packet. For every packet
-            /// a random number generator is used to determine if the packet should have the internal bits flipped.
-            /// A percentage of 5 means approximately every 20th packet will be fuzzed, and that each bit in the packet
-            /// has a 5 percent chance to get flipped.
+            /// The fuzz factor is a percentage that represents both the proportion of packets that
+            /// should be fuzzed, and the probability of any bit being flipped in the packet. For
+            /// example, a value of 5 means about 5% of packets will be modified, and for each
+            /// packet modified, each bit has a 5% chance of being flipped.
             /// </summary>
+            /// <remarks>
+            /// The presence of this parameter in the simulator pipeline stage should not be
+            /// understood as this being a condition that should be tested against when doing
+            /// network simulations. In real networks, corrupted packets basically never make it all
+            /// the way to the user (they'll get dropped before that). This parameter is mostly
+            /// useful to test a netcode solution against maliciously-crafted packets.
+            /// </remarks>
+            /// <value>Percentage (0-100).</value>
             public int FuzzFactor;
+
             /// <summary>
-            /// Use the fuzz offset in conjunction with the fuzz factor, the fuzz offset will offset where we start
-            /// flipping bits. This is useful if you want to only fuzz a part of the packet.
+            /// To be used along the fuzz factor. The offset is the offset inside the packet where
+            /// fuzzing should start. Useful to avoid fuzzing headers for example.
             /// </summary>
+            /// <value>Offset in bytes.</value>
             public int FuzzOffset;
 
+            /// <inheritdoc/>
             public bool Validate() => true;
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct Context
+        internal struct Context
         {
             public Random Random;
-
-            // Statistics
             public int PacketCount;
-            public int PacketDropCount;
-            public int PacketDuplicatedCount;
             public int ReadyPackets;
             public int WaitingPackets;
-            public long NextPacketTime;
-            public long StatsTime;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -215,7 +238,6 @@ namespace Unity.Networking.Transport.Utilities
         {
             // Store parameters in the shared buffer space
             Context* ctx = (Context*)sharedProcessBuffer;
-            ctx->PacketDropCount = 0;
             ctx->Random = new Random();
             if (param.RandomSeed > 0)
                 ctx->Random.InitState(param.RandomSeed);
@@ -275,10 +297,7 @@ namespace Unity.Networking.Transport.Utilities
                 oldestTime = packet->delayUntil;
             }
 
-            simCtx->ReadyPackets = readyPackets;
             simCtx->WaitingPackets = packetsInQueue;
-            simCtx->NextPacketTime = oldestTime;
-            simCtx->StatsTime = currentTimestamp;
 
             // If more than one item has expired timer we need to resume this pipeline stage
             if (readyPackets > 1)

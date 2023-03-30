@@ -35,40 +35,31 @@ namespace Unity.Networking.Transport
         JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dependency);
     }
 
-    /// <summary>
-    /// Arguments required by the ScheduleSend jobs.
-    /// </summary>
+    /// <summary>Arguments used by send jobs.</summary>
     public struct SendJobArguments
     {
-        /// <summary>
-        /// A queue containing all the packets to be sent.
-        /// </summary>
+        /// <summary>A queue containing all the packets to be sent.</summary>
+        /// <value>Queue of packets.</value>
         public PacketsQueue SendQueue;
 
-        /// <summary>
-        /// The current update time value.
-        /// </summary>
+        /// <summary>The current update time value.</summary>
+        /// <value>Timestamp in milliseconds.</value>
         public long Time;
     }
 
-    /// <summary>
-    /// Arguments required by the ScheduleReceive jobs.
-    /// </summary>
+    /// <summary>Arguments used by receive jobs.</summary>
     public struct ReceiveJobArguments
     {
-        /// <summary>
-        /// A queue containing all the packets to be received.
-        /// </summary>
+        /// <summary>A queue containing all the packets to be received.</summary>
+        /// <value>Queue of packets.</value>
         public PacketsQueue ReceiveQueue;
 
-        /// <summary>
-        /// The result of the receive operation.
-        /// </summary>
+        /// <summary>The result of the receive operation.</summary>
+        /// <value>Result of the receive operation.</value>
         public OperationResult ReceiveResult;
 
-        /// <summary>
-        /// The current update time value.
-        /// </summary>
+        /// <summary>The current update time value.</summary>
+        /// <value>Timestamp in milliseconds.</value>
         public long Time;
 
         internal NetworkDriverReceiver DriverReceiver;

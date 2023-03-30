@@ -4,6 +4,10 @@ using Unity.Burst;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Convenience wrapper around a Burst function pointer. Should only be used when defining
+    /// functions for custom <see cref="INetworkPipelineStage"/> implementations.
+    /// </summary>
     public struct TransportFunctionPointer<T> where T : Delegate
     {
         public TransportFunctionPointer(T executeDelegate)

@@ -5,6 +5,15 @@ using Unity.Jobs;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>Interface used to establish WebSocket connections.</summary>
+    /// <example>
+    /// This code creates a <see cref="NetworkDriver"/> that will use WebSocket connections, instead
+    /// of the default UDP-based connections:
+    /// <code>
+    ///     var driver = NetworkDriver.Create(new WebSocketNetworkInterface());
+    ///     // Can then be used just like a UDP-based driver.
+    /// </code>
+    /// </example>
     [BurstCompile]
     public struct WebSocketNetworkInterface : INetworkInterface
     {
@@ -14,15 +23,26 @@ namespace Unity.Networking.Transport
         // is implemented by the browser.
         TCPNetworkInterface tcp;
 
+        public void Dispose() => tcp.Dispose();
+
+        /// <inheritdoc/>
         public NetworkEndpoint LocalEndpoint => tcp.LocalEndpoint;
 
         internal ConnectionList CreateConnectionList() => tcp.CreateConnectionList();
-        public int Initialize(ref NetworkSettings settings, ref int packetPadding) => tcp.Initialize(ref settings, ref packetPadding);
-        public int Bind(NetworkEndpoint endpoint) => tcp.Bind(endpoint);
-        public int Listen() => tcp.Listen();
-        public void Dispose() => tcp.Dispose();
 
+        /// <inheritdoc/>
+        public int Initialize(ref NetworkSettings settings, ref int packetPadding) => tcp.Initialize(ref settings, ref packetPadding);
+
+        /// <inheritdoc/>
+        public int Bind(NetworkEndpoint endpoint) => tcp.Bind(endpoint);
+
+        /// <inheritdoc/>
+        public int Listen() => tcp.Listen();
+
+        /// <inheritdoc/>
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dep) => tcp.ScheduleReceive(ref arguments, dep);
+
+        /// <inheritdoc/>
         public JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dep) => tcp.ScheduleSend(ref arguments, dep);
     }
 }
@@ -40,6 +60,15 @@ using Unity.Networking.Transport.Relay;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>Interface used to establish WebSocket connections.</summary>
+    /// <example>
+    /// This code creates a <see cref="NetworkDriver"/> that will use WebSocket connections, instead
+    /// of the default UDP-based connections:
+    /// <code>
+    ///     var driver = NetworkDriver.Create(new WebSocketNetworkInterface());
+    ///     // Can then be used just like a UDP-based driver.
+    /// </code>
+    /// </example>
     public struct WebSocketNetworkInterface : INetworkInterface
     {
         private const string DLL = "__Internal";
@@ -93,7 +122,8 @@ namespace Unity.Networking.Transport
             return m_ConnectionList;
         }
 
-        public unsafe NetworkEndpoint LocalEndpoint
+        /// <inheritdoc/>
+        public NetworkEndpoint LocalEndpoint
         {
             get
             {
@@ -102,8 +132,7 @@ namespace Unity.Networking.Transport
             }
         }
 
-        public bool IsCreated => m_InternalData.IsCreated;
-
+        /// <inheritdoc/>
         public unsafe int Initialize(ref NetworkSettings settings, ref int packetPadding)
         {
             var networkConfiguration = settings.GetNetworkConfigParameters();
@@ -134,17 +163,19 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
-        public unsafe int Bind(NetworkEndpoint endpoint)
+        /// <inheritdoc/>
+        public int Bind(NetworkEndpoint endpoint)
         {
             return 0;
         }
 
-        public unsafe int Listen()
+        /// <inheritdoc/>
+        public int Listen()
         {
             return 0;
         }
 
-        public unsafe void Dispose()
+        public void Dispose()
         {
             m_InternalData.Dispose();
 
@@ -157,6 +188,7 @@ namespace Unity.Networking.Transport
             m_ConnectionList.Dispose();
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dep)
         {
             return new ReceiveJob
@@ -300,6 +332,7 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dep)
         {
             return new SendJob

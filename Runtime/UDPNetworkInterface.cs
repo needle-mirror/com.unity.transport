@@ -18,6 +18,10 @@ namespace Unity.Networking.Transport
     using RegisteredNetworkEndpoint = Binding.Baselib_RegisteredNetwork_Endpoint;
     using NetworkSocket = Binding.Baselib_RegisteredNetwork_Socket_UDP;
 
+    /// <summary>
+    /// Default interface used by <see cref="NetworkDriver"/>, which will send/receive all traffic
+    /// over UDP. Not available on the WebGL platform.
+    /// </summary>
     [BurstCompile]
     public struct UDPNetworkInterface : INetworkInterface
     {
@@ -85,18 +89,10 @@ namespace Unity.Networking.Transport
 
         internal NativeReference<InternalState> m_InternalState;
 
-        /// <summary>
-        /// Returns the local endpoint.
-        /// </summary>
-        /// <value>NetworkInterfaceEndPoint</value>
+        /// <inheritdoc/>
         public unsafe NetworkEndpoint LocalEndpoint => m_InternalState.Value.LocalEndpoint;
 
-        public bool IsCreated => m_InternalState.IsCreated;
-
-        /// <summary>
-        /// Initializes a instance of the BaselibNetworkInterface struct.
-        /// </summary>
-        /// <param name="param">An array of INetworkParameter. There is currently only <see cref="BaselibNetworkParameter"/> that can be passed.</param>
+        /// <inheritdoc/>
         public unsafe int Initialize(ref NetworkSettings settings, ref int packetPadding)
         {
             var networkConfiguration = settings.GetNetworkConfigParameters();
@@ -419,7 +415,7 @@ namespace Unity.Networking.Transport
                         }
 
                         var receivedBytes = (int)results[i].bytesTransferred;
-                        if (receivedBytes <= 0)
+                        if (receivedBytes <= 0 || receivedBytes > NetworkParameterConstants.MTU)
                             continue;
 
                         if (!ReceiveQueue.EnqueuePacket(bufferIndex, out var packetProcessor))
@@ -473,6 +469,7 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dep)
         {
             // TODO: Move this inside the receive job (requires MTT-3703).
@@ -496,6 +493,7 @@ namespace Unity.Networking.Transport
             }.Schedule(dep);
         }
 
+        /// <inheritdoc/>
         public JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dep)
         {
             if (m_InternalState.Value.SocketStatus != SocketStatus.SocketNormal)
@@ -512,11 +510,7 @@ namespace Unity.Networking.Transport
             }.Schedule(dep);
         }
 
-        /// <summary>
-        /// Binds the BaselibNetworkInterface to the endpoint passed.
-        /// </summary>
-        /// <param name="endpoint">A valid ipv4 or ipv6 address</param>
-        /// <value>int</value>
+        /// <inheritdoc/>
         public unsafe int Bind(NetworkEndpoint endpoint)
         {
             var state = m_InternalState.Value;
@@ -551,6 +545,7 @@ namespace Unity.Networking.Transport
             return result;
         }
 
+        /// <inheritdoc/>
         public int Listen()
         {
             return 0;

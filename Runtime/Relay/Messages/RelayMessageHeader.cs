@@ -36,7 +36,7 @@ namespace Unity.Networking.Transport.Relay
         }
     }
 
-    public enum RelayMessageType : byte
+    internal enum RelayMessageType : byte
     {
         Bind = 0,
         BindReceived = 1,

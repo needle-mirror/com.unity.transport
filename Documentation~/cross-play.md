@@ -136,3 +136,19 @@ multiDriver.EndSend(writer);
 ```
 
 **Note**: Pipelines in all drivers added to a `MultiNetworkDriver` are expected to have symmetric functions. That is, if the first pipeline is a reliable one, then it must be so for _all_ drivers in the `MultiNetworkDriver`. This is why we create a "dummy" pipeline for the WebSocket driver in the example above. We still need _some_ pipeline to act as the reliable one, even if this pipeline does nothing.
+
+### Sharing code between server and client
+
+You may have noticed that all examples above use `MultiNetworkDriver` in a server role. While this is indeed its main intended usage, using it only as a server can be problematic if you have code shared between your server and client builds. For example, if you had common networking code that used `NetworkDriver`, porting it to `MultiNetworkDriver` could be difficult since that code would then need to use a `MultiNetworkDriver` on the server, and a `NetworkDriver` on clients.
+
+To address this problem, `MultiNetworkDriver` can also act as a container for client drivers. A non-listening driver can be added to a `MultiNetworkDriver` and connected to a server in the manner below:
+
+```csharp
+var clientDriver = NetworkDriver.Create();
+var multiDriver = MultiNetworkDriver.Create();
+
+var driverId = multiDriver.AddDriver(clientDriver);
+var connection = multiDriver.Connect(driverId, serverEndpoint);
+```
+
+There is no real performance penalty from using a `MultiNetworkDriver` that contains a single `NetworkDriver`. So having both server and client builds rely on `MultiNetworkDriver` is a good way of writing code that can be shared between them. In a way, `MultiNetworkDriver` then serves the purpose of an hypothetical `INetworkDriver` interface for the functionality common between `NetworkDriver` and `MultiNetworkDriver` (the transport package does not actually provide such an interface because it would be impractical to use in Burst-compiled code).
