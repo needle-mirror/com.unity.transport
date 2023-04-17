@@ -1,29 +1,29 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.0.0-pre.8",
+  "version": "2.0.1",
   "unity": "2022.2",
   "unityRelease": "0a18",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
-    "com.unity.collections": "2.1.0-pre.6",
-    "com.unity.burst": "1.8.3",
+    "com.unity.collections": "2.1.1",
+    "com.unity.burst": "1.8.4",
     "com.unity.mathematics": "1.2.6"
   },
   "relatedPackages": {
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### New features\n* `MultiNetworkDriver` can then be used for client drivers too. The restriction on it accepting only listening drivers has been lifted, and it now offers a new `Connect` method to connect client drivers. This makes it easier to write networking code that can be shared between server and client.\n* Added a new `ReliableUtility.SetMaximumResendTime` static method, allowing to modify the maximum resend time of the reliable pipeline at runtime (there's already a similar method for the minimum resend time). Increasing this value can improve bandwidth usage for poor connections (RTT greater than 200ms).\n* Added the possibility of setting the minimum and maximum resend times of the reliable pipeline through `NetworkSettings` (with `WithReliableStageParameters`).\n\n### Changes\n* `NetworkEndpoint.TryParse` will now return false and log an error when attempting to parse an IPv6 address on platforms where IPv6 is not supported. The previous behavior was to throw an exception, but only in the editor. On the devices themselves, the address would be successfully parsed silently, which would lead to confusing socket errors down the line.\n* The `SimulatorUtility.Context` structure has been made internal. It contained only implementation details, or values that appeared useful but were actually either misleading or broken.\n* The `RelayMessageType` enum has been made internal. The only purpose of this type was to list the different messages of the Relay protocol, which is an implementation detail that should not be relevant to users.\n\n### Fixes\n* Fixed an issue where calling `ScheduleFlushSend` before the socket was bound would still result in socket system calls being made, resulting in errors being logged.\n* No warning will be printed when attempting to send on a WebSocket connection that has been closed by the remote peer (would only happen if calling `ScheduleFlushSend`)."
+    "changelog": "### Changes\n* Updated Collections dependency to 2.1.1."
   },
   "upmCi": {
-    "footprint": "5f6e0a8c8727135d9a9d705f763707a98d2e0a4e"
+    "footprint": "1ccf20ae93e34c2254559619d32d560089e6f675"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.0/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "9466e5ce5be3bce43c0968e901a1610a2d382f49"
+    "revision": "f7c618013b165797b9f23a38cd9dd1c219422030"
   },
   "samples": [
     {

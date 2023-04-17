@@ -10,7 +10,12 @@ namespace Unity.Networking.Transport.Utilities
         /// Sets the <see cref="FragmentationUtility.Parameters"/> in the settings.
         /// </summary>
         /// <param name="settings">Settings to modify.</param>
-        /// <param name="payloadCapacity"><inheritdoc cref="FragmentationUtility.Parameters.PayloadCapacity" path="/summary"/></param>
+        /// <param name="payloadCapacity">
+        /// Maximum size that can be fragmented by the <see cref="FragmentationPipelineStage"/>.
+        /// Attempting to send a message larger than that will result in the send operation
+        /// returning <see cref="Error.StatusCode.NetworkPacketOverflow"/>. Maximum value is
+        /// ~20MB for unreliable packets, and ~88KB for reliable ones.
+        /// </param>
         /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithFragmentationStageParameters(
             ref this NetworkSettings settings,

@@ -370,6 +370,7 @@ namespace Unity.Networking.Transport
                     var clientState = Binding.unitytls_client_get_state(clientPtr);
                     if (clientState == Binding.UnityTLSClientState_Init || clientState == Binding.UnityTLSClientState_Handshake)
                     {
+                        UnityTLSCallbackContext->ReceivedPacket = default;
                         UnityTLSCallbackContext->NewPacketsEndpoint = endpoint;
                         UnityTLSCallbackContext->NewPacketsConnection = underlyingId;
                         AdvanceHandshake(clientPtr);

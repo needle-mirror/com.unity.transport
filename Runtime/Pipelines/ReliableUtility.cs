@@ -16,9 +16,20 @@ namespace Unity.Networking.Transport.Utilities
         /// Sets the <see cref="ReliableUtility.Parameters"/> in the settings.
         /// </summary>
         /// <param name="settings">Settings to modify.</param>
-        /// <param name="windowSize"><inheritdoc cref="ReliableUtility.Parameters.WindowSize"/></param>
-        /// <param name="minimumResendTime"><inheritdoc cref="ReliableUtility.Parameters.MinimumResendTime"/></param>
-        /// <param name="maximumResendTime"><inheritdoc cref="ReliableUtility.Parameters.MaximumResendTime"/></param>
+        /// <param name="windowSize">
+        /// Maximum number in-flight packets per pipeline/connection combination. Default value
+        /// is 32 but can be increased to 64 at the cost of slightly larger packet headers.
+        /// </param>
+        /// <param name="minimumResendTime">
+        /// Minimum amount of time to wait before a reliable packet is resent if it's not been
+        /// acknowledged. Default value is 64ms, which should be set lower if all connections
+        /// are expected to be very good (RTT of 25ms or less).
+        /// </param>
+        /// <param name="maximumResendTime">
+        /// Maximum amount of time to wait before a reliable packet is resent if it's not been
+        /// acknowledged. Default value is 200ms, which should be set higher if all connections
+        /// are expected to have a higher latency than that.
+        /// </param>
         /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithReliableStageParameters(
             ref this NetworkSettings settings,

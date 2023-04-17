@@ -1,5 +1,20 @@
 # Change log
 
+## [2.0.1] - 2023-04-17
+
+### Changes
+* Updated Collections dependency to 2.1.1.
+
+## [2.0.0] - 2023-04-14
+
+### Changes
+* `NetworkEndpoint.ToString` and its fixed string variant now return "invalid" for invalid endpoints instead of an empty string.
+* Updated Burst dependency to 1.8.4.
+* Updated Collections dependency to 2.1.0.
+
+### Fixes
+* Fixed an issue where the TLS handshake of a new secure WebSocket connection could possibly fail if there were already other active connections on the same server.
+
 ## [2.0.0-pre.8] - 2023-03-30
 
 ### New features

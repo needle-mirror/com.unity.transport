@@ -20,7 +20,7 @@ namespace Unity.Networking.Transport
     /// <para>
     /// Note that the interface expects loopback addresses when binding/connecting. It is
     /// recommended to only use <see cref="NetworkEndpoint.LoopbackIpv4"/> when dealing with the IPC
-    /// network interface, and to use different port for different drivers (see example).
+    /// network interface, and to use different ports for different drivers (see example).
     /// </para>
     /// </summary>
     /// <example>

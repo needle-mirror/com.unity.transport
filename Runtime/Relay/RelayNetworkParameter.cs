@@ -11,8 +11,12 @@ namespace Unity.Networking.Transport.Relay
         /// Sets the <see cref="RelayNetworkParameter"/> in the settings.
         /// </summary>
         /// <param name="settings">Settings to modify.</param>
-        /// <param name="serverData"><inheritdoc cref="RelayNetworkParameter.ServerData" path="/summary"/></param>
-        /// <param name="relayConnectionTimeMS"><inheritdoc cref="RelayNetworkParameter.RelayConnectionTimeMS" path="/summary"/></param>
+        /// <param name="serverData">Connection information about the relay server.</param>
+        /// <param name="relayConnectionTimeMS">
+        /// Frequency at which the relay server will be pinged to maintain the connection alive.
+        /// Should be set to less than 10 seconds (default is 3 seconds) since that's the time
+        /// after which the relay server will sever the connection if there is no activity.
+        /// </param>
         /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithRelayParameters(
             ref this NetworkSettings settings,

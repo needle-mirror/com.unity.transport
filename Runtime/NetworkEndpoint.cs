@@ -393,7 +393,7 @@ namespace Unity.Networking.Transport
                     str.Append((ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8)));
                     break;
                 default:
-                    break;
+                    return "invalid";
             }
             return str;
         }

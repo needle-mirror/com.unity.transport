@@ -309,6 +309,7 @@ namespace Unity.Networking.Transport
 
                         // No matter if the connection is newly-connected or not, try to make
                         // progress on the handshake (e.g. with Client Hello resends).
+                        UnityTLSCallbackContext->ReceivedPacket = default;
                         UnityTLSCallbackContext->NewPacketsEndpoint = connectionEndpoint;
                         AdvanceHandshake(ConnectionsData[connection].UnityTLSClientPtr);
 

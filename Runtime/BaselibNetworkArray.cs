@@ -100,6 +100,8 @@ namespace Unity.Networking.Transport
                 Binding.Baselib_Memory_ReleasePages(pageAllocation, &error);
                 UnsafeUtility.Free(buffer, Allocator.Persistent);
             }
+
+            m_BufferPool.Dispose();
         }
 
         /// <summary>

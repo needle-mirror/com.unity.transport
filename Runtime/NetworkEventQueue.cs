@@ -10,13 +10,35 @@ namespace Unity.Networking.Transport
     public struct NetworkEvent
     {
         /// <summary>
-        /// NetworkEvent.Type enumerates available network events for this driver.
+        /// Types of network events that can be returned by <see cref="NetworkDriver.PopEvent"/>.
         /// </summary>
         public enum Type : short
         {
+            /// <summary>No event. Returned when there are no more events to pop.</summary>
             Empty = 0,
+
+            /// <summary>
+            /// A message was received on the connection. The contents of the message can be read
+            /// from the <see cref="DataStreamReader"/> that was returned along with the event.
+            /// Furthermore, the pipeline on which the message was received will also be returned
+            /// (for the variants of <c>PopEvent</c> that return it).
+            /// </summary>
             Data,
+
+            /// <summary>
+            /// Connection has been successfully established. From this point on it's okay to send
+            /// data on the connection. Returned after calling <see cref="NetworkDriver.Connect"/>
+            /// when the connection was successful. Note that servers do not get this event (new
+            /// connections are notified through the <see cref="NetworkDriver.Accept"/> call).
+            /// </summary>
             Connect,
+
+            /// <summary>
+            /// Connection has been closed, or has failed to be established. The reason for the
+            /// disconnection can be read as a single byte off the <see cref="DataStreamReader"/>
+            /// obtained along with the event. That single byte will represent a value from the
+            /// <see cref="Error.DisconnectReason"/> enum.
+            /// </summary>
             Disconnect
         }
 

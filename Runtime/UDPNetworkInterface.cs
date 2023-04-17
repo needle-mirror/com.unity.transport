@@ -20,7 +20,7 @@ namespace Unity.Networking.Transport
 
     /// <summary>
     /// Default interface used by <see cref="NetworkDriver"/>, which will send/receive all traffic
-    /// over UDP. Not available on the WebGL platform.
+    /// over UDP. Not available on WebGL.
     /// </summary>
     [BurstCompile]
     public struct UDPNetworkInterface : INetworkInterface
@@ -230,19 +230,27 @@ namespace Unity.Networking.Transport
                     request.payload.data += packetProcessor.Offset;
                     request.payload.size = (uint)packetProcessor.Length;
 
-                    // TODO: This line is not burst compatible due to baselib api.
-                    // It's temporarily moved to a separated not burst compiled job.
-                    // if (!ConvertEndpointBufferToRegisteredNetwork(request.remoteEndpoint.slice))
-                    //     continue;
-
-                    pendingSendCount += (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleSend(socket, &request, 1u, &error);
-
+                    var count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleSend(socket, &request, 1u, &error);
                     if (error.code != ErrorCode.Success)
                     {
                         DebugLog.ErrorBaselib("Schedule Send", error);
                         MarkSocketAsNeedingRecreate(ref InternalState);
                         return;
                     }
+                    else if (count != 1)
+                    {
+                        // Count not being correct but not getting an error state means the send
+                        // request couldn't be enqueued in baselib's send queue. Normally, this
+                        // can't happen since the free list in our send queue ensures we never
+                        // enqueue more packets than baselib's queue capacity. But if for some
+                        // reason it were to happen, then without the line below we'd be leaking
+                        // the send handle (we'd consider it enqueued but it would never ever be
+                        // dequeued by baselib).
+                        packetProcessor.Drop();
+                        continue;
+                    }
+
+                    pendingSendCount += count;
 
                     // Remove the packet from the send queue, but don't release it's buffer. It will be released
                     // when processing completed send requests.

@@ -15,17 +15,47 @@ namespace Unity.Networking.Transport.Utilities
         /// Sets the <see cref="SimulatorUtility.Parameters"/> in the settings.
         /// </summary>
         /// <param name="settings">Settings to modify.</param>
-        /// <param name="maxPacketCount"><inheritdoc cref="SimulatorUtility.Parameters.MaxPacketCount" path="/summary"/></param>
-        /// <param name="maxPacketSize">See <see cref="SimulatorUtility.Parameters.MaxPacketSize" path="/summary"/> for details. Defaults to MTU.</param>
-        /// <param name="mode">Whether to apply simulation to received or sent packets (defaults to both).</param>
-        /// <param name="packetDelayMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketDelayMs" path="/summary"/></param>
-        /// <param name="packetJitterMs"><inheritdoc cref="SimulatorUtility.Parameters.PacketJitterMs" path="/summary"/></param>
-        /// <param name="packetDropInterval"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropInterval" path="/summary"/></param>
-        /// <param name="packetDropPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDropPercentage" path="/summary"/></param>
-        /// <param name="packetDuplicationPercentage"><inheritdoc cref="SimulatorUtility.Parameters.PacketDuplicationPercentage" path="/summary"/></param>
-        /// <param name="fuzzFactor"><inheritdoc cref="SimulatorUtility.Parameters.FuzzFactor" path="/summary"/></param>
-        /// <param name="fuzzOffset"><inheritdoc cref="SimulatorUtility.Parameters.FuzzOffset" path="/summary"/></param>
-        /// <param name="randomSeed"><inheritdoc cref="SimulatorUtility.Parameters.RandomSeed" path="/summary"/></param>
+        /// <param name="maxPacketCount">
+        /// The maximum amount of packets the pipeline can keep track of. This used when a
+        /// packet is delayed, the packet is stored in the pipeline processing buffer and can
+        /// be later brought back.
+        /// </param>
+        /// <param name="maxPacketSize">
+        /// The maximum size of a packet which the simulator stores. If a packet exceeds this
+        /// size it will bypass the simulator.
+        /// </param>
+        /// <param name="mode">
+        /// Whether to apply simulation to received or sent packets (defaults to both).
+        /// </param>
+        /// <param name="packetDelayMs">
+        /// Fixed delay in milliseconds to apply to all packets which pass through.
+        /// </param>
+        /// <param name="packetJitterMs">
+        /// Variance of the delay that gets added to all packets that pass through. For example,
+        /// setting this value to 5 will result in the delay being a random value within 5
+        /// milliseconds of the value set with <c>PacketDelayMs</c>.
+        /// </param>
+        /// <param name="packetDropInterval">
+        /// Fixed interval to drop packets on. This is most suitable for tests where predictable
+        /// behaviour is desired, as every X-th packet will be dropped. For example, if the
+        /// value is 5 every fifth packet is dropped.
+        /// </param>
+        /// <param name="packetDropPercentage">Percentage of packets that will be dropped.</param>
+        /// <param name="packetDuplicationPercentage">
+        /// Percentage of packets that will be duplicated. Packets are duplicated at most once
+        /// and will not be duplicated if they were first deemed to be dropped.
+        /// </param>
+        /// <param name="fuzzFactor">
+        /// See <see cref="SimulatorUtility.Parameters.FuzzFactor"/> for details.
+        /// </param>
+        /// <param name="fuzzOffset">
+        /// To be used along the fuzz factor. The offset is the offset inside the packet where
+        /// fuzzing should start. Useful to avoid fuzzing headers for example.
+        /// </param>
+        /// <param name="randomSeed">
+        /// Value to use to seed the random number generator. For non-deterministic behavior, use a
+        /// dynamic value here (e.g. the result of a call to <c>Stopwatch.GetTimestamp</c>).
+        /// </param>
         /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithSimulatorStageParameters(
             ref this NetworkSettings settings,

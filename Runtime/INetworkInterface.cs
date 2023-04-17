@@ -54,13 +54,13 @@ namespace Unity.Networking.Transport
     /// Network interfaces are the lowest level of the Unity Transport library. They are responsible
     /// for sending and receiving packets directly to/from the network. Conceptually, they act like
     /// sockets. Users can provide their own network interfaces by implementing this interface and
-    /// passing a new instance of it to <see cref="NetworkDriver.Create"/>.
+    /// passing a new instance of it to <see cref="NetworkDriver.Create{N}(N)"/>.
     /// </para>
     /// <para>
     /// Note that network interfaces are expected to be unmanaged types compatible with Burst.
     /// However, it is possible to write them using managed types and code. Simply wrap them with
     /// <see cref="ManagedNetworkInterfaceExtensions.WrapToUnmanaged"/> before passing them to
-    /// <see cref="NetworkDriver.Create"/>. This comes at a small performance cost, but allows
+    /// <see cref="NetworkDriver.Create{N}(N)"/>. This comes at a small performance cost, but allows
     /// writing network interfaces that interact with managed C# libraries.
     /// </para>
     /// </summary>
@@ -79,7 +79,7 @@ namespace Unity.Networking.Transport
         /// <param name="settings">Configuration settings provided to the driver.</param>
         /// <param name="packetPadding">
         /// Return value parameter for how much padding the interface adds to packets. Note that
-        /// this parameter is only concerned that padding that would be added directly in the
+        /// this parameter is only concerned about padding that would be added directly in the
         /// packets stored in the send and receive queues, not to padding that would be added by
         /// lower levels of the network stack (e.g. IP headers).
         /// </param>

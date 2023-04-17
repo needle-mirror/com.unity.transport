@@ -19,8 +19,26 @@ Cherry on top, *pipelines* offer additional optional functionalities like reliab
 
 ## Requirements
 
-* Unity Editor 2022.2 and later.
-* For runtime builds, this package supports all platforms supported by the Unity Engine (with WebGL only supporting WebSocket connections in client mode).
+Unity Transport supports all platforms supported by the Unity Engine. For WebGL, only WebSocket connections in client mode are supported (it is however still possible to host games if using [Unity Relay](https://unity.com/products/relay)).
+
+### Editor compatibility matrix
+
+The page you are reading is the documentation for Unity Transport 2.X, which is only compatible with Unity Editor 2022.2 and later. Older editor versions are supported by Transport 1.X. Here is the compatibility matrix:
+
+| Editor Version | 2020 LTS | 2021 LTS | 2022.2 and LTS | 2023.1 and later |
+|:--------------:|:--------:|:--------:|:--------------:|:----------------:|
+| Transport 1.X  | **Yes**  | **Yes**  | **Yes**        | No               |
+| Transport 2.X  | No       | No       | **Yes**        | **Yes**          |
+
+### Which version should I use?
+
+If you are using Unity Transport on its own, we recommend using version 2.X if your editor version supports it. If you are using Unity Transport as part of one of Unity's Netcode solutions, refer to the table below for the _minimum_ supported version for each solution:
+
+| Editor Version                    | 2020 LTS      | 2021 LTS      | 2022.2 and LTS | 2023.1 and later |
+|:---------------------------------:|:-------------:|:-------------:|:--------------:|:----------------:|
+| Netcode for GameObjects (1.2.0+)  | Transport 1.X | Transport 1.X | Transport 1.X  | Transport 2.X    |
+| Netcode for Entities (1.0.0+)     | N/A           | N/A           | Transport 2.X  | Transport 2.X    |
+| Recommended for custom solutions  | Transport 1.X | Transport 1.X | Transport 2.X  | Transport 2.X    |
 
 ## Note
 This package should not be confused with the `NetworkTransport` abstraction in Netcode for GameObjects. Please see the [transports section of its documentation](https://docs-multiplayer.unity3d.com/netcode/current/advanced-topics/transports) for more information.

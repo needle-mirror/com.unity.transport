@@ -227,15 +227,58 @@ namespace Unity.Networking.Transport
         /// Sets the <see cref="NetworkConfigParameter"/> in the settings.
         /// </summary>
         /// <param name="settings">Settings to modify.</param>
-        /// <param name="connectTimeoutMS"><inheritdoc cref="NetworkConfigParameter.connectTimeoutMS" path="/summary"/></param>
-        /// <param name="maxConnectAttempts"><inheritdoc cref="NetworkConfigParameter.maxConnectAttempts" path="/summary"/></param>
-        /// <param name="disconnectTimeoutMS"><inheritdoc cref="NetworkConfigParameter.disconnectTimeoutMS" path="/summary"/></param>
-        /// <param name="heartbeatTimeoutMS"><inheritdoc cref="NetworkConfigParameter.heartbeatTimeoutMS" path="/summary"/></param>
-        /// <param name="reconnectionTimeoutMS"><inheritdoc cref="NetworkConfigParameter.reconnectionTimeoutMS" path="/summary"/></param>
-        /// <param name="maxFrameTimeMS"><inheritdoc cref="NetworkConfigParameter.maxFrameTimeMS" path="/summary"/></param>
-        /// <param name="fixedFrameTimeMS"><inheritdoc cref="NetworkConfigParameter.fixedFrameTimeMS" path="/summary"/></param>
-        /// <param name="receiveQueueCapacity"><inheritdoc cref="NetworkConfigParameter.receiveQueueCapacity" path="/summary"/></param>
-        /// <param name="sendQueueCapacity"><inheritdoc cref="NetworkConfigParameter.sendQueueCapacity" path="/summary"/></param>
+        /// <param name="connectTimeoutMS">Time between connection attempts.</param>
+        /// <param name="maxConnectAttempts">
+        /// Maximum number of connection attempts to try. If no answer is received from the server
+        /// after this number of attempts, a <see cref="NetworkEvent.Type.Disconnect"/> event is
+        /// generated for the connection.
+        /// </param>
+        /// <param name="disconnectTimeoutMS">
+        /// Inactivity timeout for a connection. If nothing is received on a connection for this
+        /// amount of time, it is disconnected (a <see cref="NetworkEvent.Type.Disconnect"/> event
+        /// will be generated). To prevent this from happenning when the game session is simply
+        /// quiet, set <c>heartbeatTimeoutMS</c> to a positive non-zero value.
+        /// </param>
+        /// <param name="heartbeatTimeoutMS">
+        /// Time after which if nothing from a peer is received, a heartbeat message will be sent
+        /// to keep the connection alive. Prevents the <c>disconnectTimeoutMS</c> mechanism from
+        /// kicking when nothing happens on a connection. A value of 0 will disable heartbeats.
+        /// </param>
+        /// <param name="reconnectionTimeoutMS">
+        /// Time after which to attempt to re-establish a connection if nothing is received from the
+        /// peer. This is used to re-establish connections for example when a peer's IP address
+        /// changes (e.g. mobile roaming scenarios). To be effective, should be less than
+        /// <c>disconnectTimeoutMS</c> but greater than <c>heartbeatTimeoutMS</c>. A value of 0 will
+        /// disable this functionality.
+        /// </param>
+        /// <param name="maxFrameTimeMS">
+        /// Maximum amount of time a single frame can advance timeout values. In this scenario, a
+        /// frame is defined as the time between two <see cref="NetworkDriver.ScheduleUpdate"/>
+        /// calls. Useful when debugging to avoid connection timeouts.
+        /// </param>
+        /// <param name="fixedFrameTimeMS">
+        /// Fixes a fixed amount of time to be used each frame for the purpose of timeout
+        /// calculations. For example, setting this value to 1000 will have the driver consider
+        /// that 1 second passed between each call to <see cref="NetworkDriver.ScheduleUpdate"/>,
+        /// even if that's not actually the case. Only useful for testing scenarios, where
+        /// deterministic behavior is more important than correctness.
+        /// </param>
+        /// <param name="receiveQueueCapacity">
+        /// Capacity of the receive queue. This should be the maximum number of packets expected to
+        /// be received in a single update (each frame). The best value for this will depend heavily
+        /// on the game type, but generally should be a multiple of the maximum number of players.
+        /// The only impact of increasing this value is increased memory usage, with an expected
+        /// ~1400 bytes of memory being used per unit of capacity. The queue is shared across all
+        /// connections, so servers should set this higher than clients.
+        /// </param>
+        /// <param name="sendQueueCapacity">
+        /// Capacity of the send queue. This should be the maximum number of packets expected to be
+        /// send in a single update (each frame). The best value will depend heavily on the game
+        /// type, but generally should be a multiple of the maximum number of players. The only
+        /// impact of increasing this value is increased memory usage, with an expected ~1400 bytes
+        /// of memory being used per unity of capacity. The queue is shared across all connections,
+        /// so servers should set this higher than clients.
+        /// </param>
         /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithNetworkConfigParameters(
             ref this NetworkSettings settings,
