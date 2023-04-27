@@ -538,10 +538,9 @@ namespace Unity.Networking.Transport
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     UnityEngine.Debug.LogError("The parallel network driver needs to process a single unique connection per job, processing a single connection multiple times in a parallel for is not supported.");
-                    return (int)Error.StatusCode.NetworkDriverParallelForErr;
-#else
-                    return (int)Error.StatusCode.NetworkDriverParallelForErr;
 #endif
+                    driver.AbortSend(sendHandle);
+                    return (int)Error.StatusCode.NetworkDriverParallelForErr;
                 }
                 NativeList<UpdatePipeline> currentUpdates = new NativeList<UpdatePipeline>(128, Allocator.Temp);
 

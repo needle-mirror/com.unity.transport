@@ -294,6 +294,19 @@ namespace Unity.Networking.Transport.Tests
             ExpectPacket(disconnectPacket, null);
         }
 
+        public unsafe void SetupForOptionalPings(int clientKey)
+        {
+            var pingMessage = new byte[PingPacket.Length];
+            Array.Copy(PingPacket, pingMessage, PingPacket.Length);
+
+            fixed(byte* ptr = &pingMessage[0])
+            {
+                *(RelayAllocationId*)(ptr + 4) = GetAllocationIdForClient(clientKey);
+            }
+
+            ExpectOptionalRepeatedPacket(pingMessage);
+        }
+
         static private byte[] BindPacket => new byte[]
         {
             0xda, 0x72, 0x00, 0x00,                                                                         // Header
@@ -372,6 +385,7 @@ namespace Unity.Networking.Transport.Tests
         {
             0xda, 0x72, 0x00, 0x02,                                                                         // Header
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // From Allocation Id
+            0x01, 0x00,                                                                                     // Sequence number
         };
 
         static private byte[] ErrorNotFoundPacket => new byte[]

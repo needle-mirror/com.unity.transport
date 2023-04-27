@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
@@ -11,16 +11,16 @@
     "com.unity.mathematics": "1.2.6"
   },
   "_upm": {
-    "changelog": "### Fixes\n* Fixed an issue where calling `ScheduleFlushSend` before the socket was bound would still result in socket system calls being made, resulting in errors being logged."
+    "changelog": "### Fixes\n* Fixed an issue where the reliable pipeline stage could end up writing past the end of its internal buffer and thrashing the buffers of other connections. This could result in packet corruption, but would most likely result in erroneous -7 (`NetworkDriverParallelForErr`) errors being reported when calling `EndSend`.\n* Fixed an issue where upon returning -7 (`NetworkDriverParallelForErr`), `EndSend` would leak the send handle. Over time, this would result in less send handles being available, resulting in more -5 (`NetworkSendQueueFull`) errors.\n* If nothing is received from a Unity Relay server for a while, the transport will now attempt to rebind to it. This should improve the accuracy of `GetRelayConnectionStatus` in scenarios where the Relay allocation times out while communications with the server are out."
   },
   "upmCi": {
-    "footprint": "45bfeaef19c4c8984cb161a101b0d5d39c3e154d"
+    "footprint": "77cfea86fd01638c603a80494dac4e1a07173d8d"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@1.3/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "705fec881f66f56109ff57cc62cf2fba6b87e73d"
+    "revision": "5e7f04b9ae40d63aeda6d97eab9d86e86fa40d3b"
   },
   "samples": [
     {

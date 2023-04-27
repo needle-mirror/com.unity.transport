@@ -150,6 +150,7 @@ namespace Unity.Networking.Transport.Relay
             public SessionIdToken ConnectionReceiveToken;
             public long LastConnectAttempt;
             public long LastUpdateTime;
+            public long LastReceiveTime;
             public long LastSentTime;
             public int ConnectTimeoutMS;
             public int RelayConnectionTimeMS;
@@ -426,6 +427,8 @@ namespace Unity.Networking.Transport.Relay
                 SecureNetworkProtocol.SetSecureUserData(stream, size, ref endpoint, ref sendInterface, ref queueHandle, secureUserData);
             }
 #endif
+            protocolData->LastReceiveTime = protocolData->LastUpdateTime;
+
             switch (header.Type)
             {
                 case RelayMessageType.BindReceived:
@@ -973,7 +976,7 @@ namespace Unity.Networking.Transport.Relay
 
                             if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, requirePayloadSize) != 0)
                             {
-                                UnityEngine.Debug.LogError("Failed to send a ConnectionRequest packet");
+                                UnityEngine.Debug.LogError("Failed to send Bind message to relay.");
                                 return;
                             }
 
@@ -995,6 +998,7 @@ namespace Unity.Networking.Transport.Relay
                     case RelayConnectionState.Bound:
                     case RelayConnectionState.Connected:
                     {
+                        // Send a ping if we haven't sent anything in a while.
                         if (updateTime - protocolData->LastSentTime >= protocolData->RelayConnectionTimeMS)
                         {
                             if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessagePing.Length) != 0)
@@ -1018,6 +1022,37 @@ namespace Unity.Networking.Transport.Relay
                             }
 
                             protocolData->LastSentTime = updateTime;
+                        }
+
+                        // If we haven't received anything for a while, try to rebind with the Relay
+                        // server. We need to do this because the server will not answer pings or
+                        // regular messages with errors if the allocation has timed out. The only
+                        // way to know about this condition is to attempt to rebind to the server.
+                        var rebindTimeout = protocolData->RelayConnectionTimeMS * 3;
+                        if (protocolData->LastReceiveTime > 0 && updateTime - protocolData->LastReceiveTime >= rebindTimeout)
+                        {
+                            if (sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, RelayMessagePing.Length) != 0)
+                            {
+                                UnityEngine.Debug.LogError("Failed to send Bind message to relay.");
+                                return;
+                            }
+
+                            var writeResult = WriteBindMessage(ref protocolData->ServerEndpoint, ref sendHandle, ref queueHandle, userData);
+
+                            if (!writeResult)
+                            {
+                                sendInterface.AbortSendMessage.Ptr.Invoke(ref sendHandle, sendInterface.UserData);
+                                return;
+                            }
+
+                            if (SendMessage(protocolData, ref sendInterface, ref sendHandle, ref queueHandle) < 0)
+                            {
+                                Debug.LogError("Failed to send Bind message to relay.");
+                                return;
+                            }
+
+                            // Update the last receive time so we don't immediately rebind after.
+                            protocolData->LastReceiveTime = updateTime;
                         }
                     }
                     break;

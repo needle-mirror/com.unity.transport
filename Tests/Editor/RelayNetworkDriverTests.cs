@@ -334,7 +334,7 @@ namespace Unity.Networking.Transport.Tests
 
         [Test]
         [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
-        public void RelayNetworkDriver_AllocationTimeOut()
+        public void RelayNetworkDriver_OnConnectionTimeout_ConnectionStatusChanges()
         {
             using var server = new RelayServerMock("127.0.0.1", m_port++);
 
@@ -370,6 +370,39 @@ namespace Unity.Networking.Transport.Tests
                 LogAssert.Expect(LogType.Error,
                     "Relay allocation is invalid. See NetworkDriver.GetRelayConnectionStatus and " +
                     "RelayConnectionStatus.AllocationInvalid for details on how to handle this situation.");
+            }
+        }
+
+        [Test]
+        [UnityPlatform(exclude = new[] { RuntimePlatform.OSXEditor, RuntimePlatform.OSXPlayer })] // MTT-3864
+        public void RelayNetworkDriver_AfterNoReceive_Rebinds()
+        {
+            const int HeartbeatTimeout = 50;
+
+            using var server = new RelayServerMock("127.0.0.1", m_port++);
+
+            var serverData = server.GetRelayConnectionData(0);
+            var settings = new NetworkSettings();
+            settings.WithRelayParameters(ref serverData, HeartbeatTimeout);
+
+            using (var driver = new NetworkDriver(new BaselibNetworkInterface(), new RelayNetworkProtocol(), settings))
+            {
+                server.SetupForOptionalPings(0);
+
+                Assert.True(server.CompleteBind(driver, 0));
+
+                // Make sure we've received the bind received message.
+                RelayServerMock.WaitForCondition(() =>
+                {
+                    driver.ScheduleUpdate().Complete();
+                    return driver.GetRelayConnectionStatus() == RelayConnectionStatus.Established;
+                });
+
+                Thread.Sleep(HeartbeatTimeout * 3 + 1);
+
+                server.SetupForOptionalPings(0);
+                server.SetupForBind(0);
+                driver.ScheduleUpdate().Complete();
             }
         }
     }

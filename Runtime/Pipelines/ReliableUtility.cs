@@ -430,7 +430,7 @@ namespace Unity.Networking.Transport.Utilities
 
             ReliablePacket* packet = GetReliablePacket(self, sequence);
             packet->Header = header;
-            var offset = (ctx->DataPtrOffset + (index * ctx->DataStride)) + UnsafeUtility.SizeOf<ReliableHeader>();
+            var offset = (ctx->DataPtrOffset + (index * ctx->DataStride));
             void* dataPtr = (self + offset);
 
             if (data.bufferLength > 0)
@@ -693,7 +693,7 @@ namespace Unity.Networking.Transport.Utilities
             header.AckedSequenceId = (ushort)reliable->ReceivedPackets.Sequence;
             header.AckedMask = reliable->ReceivedPackets.AckedMask;
 
-            var offset = (ctx->DataPtrOffset + ((sequence % ctx->Capacity) * ctx->DataStride)) + UnsafeUtility.SizeOf<ReliableHeader>();
+            var offset = (ctx->DataPtrOffset + ((sequence % ctx->Capacity) * ctx->DataStride));
 
             var inbound = default(InboundSendBuffer);
             inbound.bufferWithHeaders = context.internalProcessBuffer + offset;

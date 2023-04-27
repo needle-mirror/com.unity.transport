@@ -144,11 +144,12 @@ namespace Unity.Networking.Transport.Tests
             var ep2SendBuffer = new NativeArray<byte>(processCapacity, Allocator.Persistent);
             var ep2RecvBuffer = new NativeArray<byte>(processCapacity, Allocator.Persistent);
 
+            var headerSize = ReliableUtility.PacketHeaderWireSize(parameters.WindowSize);
+            var header = new DataStreamWriter(headerSize, Allocator.Temp);
+
             // packet
             var packet = new NativeArray<byte>(UnsafeUtility.SizeOf<ReliableUtility.ReliablePacket>(), Allocator.Persistent);
-            packet[0] = 100;
-
-            var header = new DataStreamWriter(ReliableUtility.PacketHeaderWireSize(parameters.WindowSize), Allocator.Temp);
+            packet[headerSize] = 100;
 
             ReliableSequencedPipelineStage ep1Owner = new ReliableSequencedPipelineStage();
             ReliableSequencedPipelineStage ep2Owner = new ReliableSequencedPipelineStage();
@@ -179,10 +180,11 @@ namespace Unity.Networking.Transport.Tests
             var currentId = 0;
 
             var inboundSend = default(InboundSendBuffer);
-            inboundSend.buffer = (byte*)packet.GetUnsafePtr();
-            inboundSend.bufferLength = packet.Length;
+            inboundSend.buffer = (byte*)packet.GetUnsafePtr() + headerSize;
+            inboundSend.bufferLength = packet.Length - headerSize;
             inboundSend.bufferWithHeaders = (byte*)packet.GetUnsafePtr();
             inboundSend.bufferWithHeadersLength = packet.Length;
+            inboundSend.headerPadding = headerSize;
 
             NetworkPipelineStage.Requests stageRequest = NetworkPipelineStage.Requests.None;
             var slice = default(InboundRecvBuffer);
@@ -200,7 +202,7 @@ namespace Unity.Networking.Transport.Tests
                 };
                 output = inboundSend;
                 ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest, 0);
-                Assert.True(output.buffer[0] == packet[0]);
+                Assert.True(output.buffer[0] == packet[headerSize]);
                 Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
             }
             {
@@ -223,7 +225,7 @@ namespace Unity.Networking.Transport.Tests
                 ep2.Receive.Ptr.Invoke(ref ctx, ref slice, ref stageRequest, 0);
 
                 if (slice.bufferLength > 0)
-                    Assert.True(slice.buffer[0] == packet[0]);
+                    Assert.True(slice.buffer[0] == packet[headerSize]);
             }
             Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
             Assert.True(ep2recvContext->Delivered == currentId);
@@ -233,7 +235,7 @@ namespace Unity.Networking.Transport.Tests
             // Start by "sending" 1, 2, 3;
             for (int seq = currentId + 1; seq < 4; seq++)
             {
-                packet[0] = (byte)(100 + seq);
+                packet[headerSize] = (byte)(100 + seq);
 
                 header.Clear();
                 var ctx = new NetworkPipelineContext
@@ -250,7 +252,7 @@ namespace Unity.Networking.Transport.Tests
                 ep1.Send.Ptr.Invoke(ref ctx, ref output, ref stageRequest, 0);
 
                 Assert.True((stageRequest& NetworkPipelineStage.Requests.Resume) == 0);
-                Assert.True(output.buffer[0] == packet[0]);
+                Assert.True(output.buffer[0] == packet[headerSize]);
             }
 
             for (int seq = currentId + 1; seq < 4; seq++)
