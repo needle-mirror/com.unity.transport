@@ -241,22 +241,19 @@ namespace Unity.Networking.Transport
                 {
                     var underlyingConnectionId = disconnectionList[i].Connection;
                     var connectionId = UnderlyingConnectionMap[underlyingConnectionId];
-                    if (connectionId.IsCreated)
+                    if (ConnectionList.ConnectionAt(connectionId.Id) == connectionId)
                     {
-                        var connectionState = ConnectionList.GetConnectionState(connectionId);
-                        var connectionData = ConnectionMap[connectionId];
-
-                        // At this point if the web socket was closed-and-flushed the disconnection reason applies
-                        // (we just got ahead of ourselves); otherwise it must have been a connection reset by peer.
-                        var reason = connectionData.WebSocketState == WebSocket.State.ClosedAndFlushed || disconnectionList[i].Reason == Error.DisconnectReason.MaxConnectionAttempts
-                            ? disconnectionList[i].Reason
-                            : Error.DisconnectReason.ClosedByRemote;
-
-                        if (connectionState != NetworkConnection.State.Disconnecting)
+                        // We only want to initiate and finish the disconnection if we're not
+                        // already disconnecting, since that would indicate that the disconnection
+                        // is coming from the layer below. If we are already disconnecting then it
+                        // means we (or a layer above) initiated the disconnection and this will be
+                        // handled elsewhere.
+                        var state = ConnectionList.GetConnectionState(connectionId);
+                        if (state != NetworkConnection.State.Disconnecting && state != NetworkConnection.State.Disconnected)
+                        {
                             ConnectionList.StartDisconnecting(ref connectionId);
-                        ConnectionList.FinishDisconnecting(ref connectionId, reason);
-                        ConnectionMap.ClearData(ref connectionId);
-                        UnderlyingConnectionMap.ClearData(ref underlyingConnectionId);
+                            ConnectionList.FinishDisconnecting(ref connectionId, disconnectionList[i].Reason);
+                        }
                     }
                 }
             }
@@ -324,12 +321,8 @@ namespace Unity.Networking.Transport
                             // schedules as the layer below is not required to disconnect immediately.
                             if (connectionData.WebSocketState == WebSocket.State.ClosedAndFlushed)
                             {
-                                if (UnderlyingConnectionList.TryDisconnect(ref connectionData.UnderlyingConnectionId))
-                                {
-                                    ConnectionList.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
-                                    UnderlyingConnectionMap.ClearData(ref connectionData.UnderlyingConnectionId);
-                                    ConnectionMap.ClearData(ref connectionId);
-                                }
+                                UnderlyingConnectionList.Disconnect(ref connectionData.UnderlyingConnectionId);
+                                ConnectionList.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
                             }
 
                             ConnectionMap[connectionId] = connectionData;
@@ -593,7 +586,7 @@ namespace Unity.Networking.Transport
 
                         // A complete header is available so figure out how big the payload is.
                         var wsPayloadSize = 0UL;
-                        if (wsPayloadSize == 127)
+                        if (payloadByte == 127)
                         {
                             wsPayloadSize = ((ulong)data[6] << 56) + ((ulong)data[7] << 48) +
                                 ((ulong)data[6] << 40) + ((ulong)data[7] << 32) +
@@ -736,19 +729,15 @@ namespace Unity.Networking.Transport
                             if (connectionData.WebSocketState == WebSocket.State.Closing)
                             {
                                 connectionData.WebSocketState = WebSocket.State.ClosedAndFlushed;
-                                if (UnderlyingConnectionList.TryDisconnect(ref connectionData.UnderlyingConnectionId))
-                                {
-                                    ConnectionList.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
-                                    UnderlyingConnectionMap.ClearData(ref connectionData.UnderlyingConnectionId);
-                                    ConnectionMap.ClearData(ref connectionId);
-                                }
+                                UnderlyingConnectionList.Disconnect(ref connectionData.UnderlyingConnectionId);
+                                ConnectionList.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
                             }
                             else
                             {
                                 // Spec recommends echoing the status code of the CLOSE received which comes encoded
                                 // in big endian.
                                 var status = payloadSize > 1 ? (WebSocket.StatusCode)((data[0] << 8) + data[1]) : WebSocket.StatusCode.Normal;
-                                Abort(ref connectionId, ref connectionData, status, isClient, Error.DisconnectReason.ClosedByRemote);
+                                Abort(ref connectionId, ref connectionData, status, isClient);
                             }
                             return;
                         }
@@ -791,7 +780,7 @@ namespace Unity.Networking.Transport
                 connectionData.RecvBuffer.Length = pending;
             }
 
-            void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData, WebSocket.StatusCode status, bool isClient, Error.DisconnectReason disconnectReason = default)
+            void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData, WebSocket.StatusCode status, bool isClient)
             {
                 if (connectionData.WebSocketState != WebSocket.State.Closing)
                 {
@@ -804,7 +793,9 @@ namespace Unity.Networking.Transport
                 if (state != NetworkConnection.State.Disconnected && state != NetworkConnection.State.Disconnecting)
                     ConnectionList.StartDisconnecting(ref connectionId);
                 connectionData.WebSocketState = WebSocket.State.Closed;
-                connectionData.DisconnectReason = disconnectReason;
+
+                // TODO Replace with a better reason once we have one.
+                connectionData.DisconnectReason = Error.DisconnectReason.ClosedByRemote;
             }
 
             public void Execute()

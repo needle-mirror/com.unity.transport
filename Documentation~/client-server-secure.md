@@ -2,8 +2,6 @@
 
 The Unity Transport package can be configure to encrypt the connection between the server and the client while ensuring the server's/client's authenticity.
 
-Secure connections are available with editor versions 2020.3 (starting at 2020.3.34), 2021.3, and 2022.1 and above.
-
 ## Server authentication
 
 **Warning:** This example uses hardcoded certificates to make understanding the process easier, but in a real deployment the server certificates should be kept separate from client builds. One way to achieve this is to put them on a separate assembly, or load them from a file on the server.

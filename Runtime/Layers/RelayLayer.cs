@@ -16,6 +16,7 @@ namespace Unity.Networking.Transport
             public RelayServerData ServerData;
             public ConnectionId UnderlyingConnection;
             public long LastSentTime;
+            public long LastReceiveTime;
             public long ConnectStartTime;
             public int ConnectAttemptTimeout;
             public int MaxConnectTime;
@@ -329,6 +330,8 @@ namespace Unity.Networking.Transport
                             packetProcessor.Drop();
                             break;
                     }
+
+                    protocolData.LastReceiveTime = Time;
                 }
 
                 RelayProtocolData.Value = protocolData;
@@ -381,14 +384,34 @@ namespace Unity.Networking.Transport
 
                 if (protocolData.ConnectionStatus == RelayConnectionStatus.Established)
                 {
-                    if (Time - protocolData.LastSentTime >= protocolData.HeartbeatTime)
+                    var heartbeatTimeout = protocolData.HeartbeatTime;
+
+                    // If we haven't sent anything in a while, send a ping.
+                    if (heartbeatTimeout > 0 && Time - protocolData.LastSentTime >= heartbeatTimeout)
                     {
-                        // Send a Ping message
                         if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
                         {
                             RelayMessagePing.Write(ref packetProcessor, ref protocolData.ServerData.AllocationId);
                             packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
                             packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
+                        }
+                    }
+
+                    // If we haven't received anything for a while, try to rebind with the Relay
+                    // server. We need to do this because the server will not answer pings or
+                    // regular messages with errors if the allocation has timed out. The only way to
+                    // know about this condition is to attempt to rebind to the server.
+                    var rebindTimeout = heartbeatTimeout * 3;
+                    if (heartbeatTimeout > 0 && protocolData.LastReceiveTime > 0 && Time - protocolData.LastReceiveTime >= rebindTimeout)
+                    {
+                        if (DeferredSendQueue.EnqueuePacket(out var packetProcessor))
+                        {
+                            RelayMessageBind.Write(ref packetProcessor, ref protocolData.ServerData);
+                            packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
+                            packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
+
+                            // Update the last receive time so we don't immediately rebind after.
+                            protocolData.LastReceiveTime = Time;
                         }
                     }
                 }

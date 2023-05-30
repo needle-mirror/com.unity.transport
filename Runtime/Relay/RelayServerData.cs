@@ -83,7 +83,12 @@ namespace Unity.Networking.Transport.Relay
             // (e.g. they provide a "tcp" endpoint which we don't support).
             var supportedConnectionTypes = new string[] { "udp", "dtls", "ws", "wss" };
             if (!supportedConnectionTypes.Contains(connectionType))
-                throw new ArgumentException($"Invalid connection type: {connectionType}. Must be udp, dtls, ws, or wss.");
+                throw new ArgumentException($"Invalid connection type: {connectionType}. Must be udp, dtls, or wss.");
+
+#if UNITY_WEBGL
+            if (connectionType == "udp" || connectionType == "dtls")
+                DebugLog.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
+#endif
 
             var serverEndpoint = allocation.ServerEndpoints.First(ep => ep.ConnectionType == connectionType);
 
@@ -103,7 +108,12 @@ namespace Unity.Networking.Transport.Relay
             // (e.g. they provide a "tcp" endpoint which we don't support).
             var supportedConnectionTypes = new string[] { "udp", "dtls", "ws", "wss" };
             if (!supportedConnectionTypes.Contains(connectionType))
-                throw new ArgumentException($"Invalid connection type: {connectionType}. Must be udp, dtls, ws, or wss.");
+                throw new ArgumentException($"Invalid connection type: {connectionType}. Must be udp, dtls, or wss.");
+
+#if UNITY_WEBGL
+            if (connectionType == "udp" || connectionType == "dtls")
+                DebugLog.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
+#endif
 
             var serverEndpoint = allocation.ServerEndpoints.First(ep => ep.ConnectionType == connectionType);
 

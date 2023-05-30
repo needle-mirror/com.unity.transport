@@ -15,6 +15,7 @@ using UnityEngine;
 namespace Unity.Networking.Transport
 {
     using NetworkRequest = Binding.Baselib_RegisteredNetwork_Request;
+    using CompletionResult = Binding.Baselib_RegisteredNetwork_CompletionResult;
     using RegisteredNetworkEndpoint = Binding.Baselib_RegisteredNetwork_Endpoint;
     using NetworkSocket = Binding.Baselib_RegisteredNetwork_Socket_UDP;
 
@@ -74,7 +75,7 @@ namespace Unity.Networking.Transport
         {
             public NetworkSocket Socket;
             public SocketStatus SocketStatus;
-            public NetworkEndpoint LocalEndpoint;
+            public NetworkEndpoint BindEndpoint;
             public int ReceiveQueueCapacity;
             public int SendQueueCapacity;
             public long LastUpdateTime;
@@ -90,7 +91,24 @@ namespace Unity.Networking.Transport
         internal NativeReference<InternalState> m_InternalState;
 
         /// <inheritdoc/>
-        public unsafe NetworkEndpoint LocalEndpoint => m_InternalState.Value.LocalEndpoint;
+        public unsafe NetworkEndpoint LocalEndpoint
+        {
+            get
+            {
+                var socket = m_InternalState.Value.Socket;
+                var error = default(ErrorState);
+                var endpoint = default(NetworkEndpoint);
+
+                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(socket, &endpoint.rawNetworkAddress, &error);
+                if (error.code != ErrorCode.Success)
+                {
+                    // Bind endpoint is better than nothing if we can't get the effective one.
+                    return m_InternalState.Value.BindEndpoint;
+                }
+
+                return endpoint;
+            }
+        }
 
         /// <inheritdoc/>
         public unsafe int Initialize(ref NetworkSettings settings, ref int packetPadding)
@@ -202,145 +220,129 @@ namespace Unity.Networking.Transport
             public NativeReference<InternalState> InternalState;
             public UnsafeBaselibNetworkArray SendBuffers;
             public PacketBufferLayout PacketBufferLayout;
-            public byte WaitForCompletedSends;
 
             public unsafe void Execute()
             {
+                ScheduleSendRequests();
+                ProcessSendRequests();
+                ProcessSendResults();
+            }
+
+            private unsafe void ScheduleSendRequests()
+            {
                 var error = default(ErrorState);
+                var count = SendQueue.Count;
 
-                var socket = InternalState.Value.Socket;
+                var requests = new NativeList<NetworkRequest>(count, Allocator.Temp);
+                var requestsPtr = (NetworkRequest*)requests.GetUnsafePtr();
+                var queueIndices = new NativeList<int>(count, Allocator.Temp);
 
-                // Register new packets coming from the send queue
-                var pendingSendCount = 0;
-                var metadataSize = (uint)UnsafeUtility.SizeOf<PacketMetadata>();
-                var endpointSize = (uint)UnsafeUtility.SizeOf<NetworkEndpoint>();
-                for (int i = 0; i < SendQueue.Count; i++)
+                // Prepare all send requests.
+                for (int i = 0; i < count; i++)
                 {
                     var packetProcessor = SendQueue[i];
-
-                    if (packetProcessor.Length <= 0)
+                    if (packetProcessor.Length == 0)
                         continue;
 
                     var request = GetRequest(packetProcessor.m_BufferIndex, ref SendBuffers, ref PacketBufferLayout);
-
-                    if (!ConvertEndpointBufferToRegisteredNetwork(request.remoteEndpoint.slice))
-                        packetProcessor.Drop();
 
                     request.payload.offset += (uint)packetProcessor.Offset;
                     request.payload.data += packetProcessor.Offset;
                     request.payload.size = (uint)packetProcessor.Length;
 
-                    var count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleSend(socket, &request, 1u, &error);
+                    // Convert endpoint to baselib format.
+                    var endpoint = *(Binding.Baselib_NetworkAddress*)request.remoteEndpoint.slice.data;
+                    Binding.Baselib_RegisteredNetwork_Endpoint_Create(&endpoint, request.remoteEndpoint.slice, &error);
                     if (error.code != ErrorCode.Success)
                     {
-                        DebugLog.ErrorBaselib("Schedule Send", error);
-                        MarkSocketAsNeedingRecreate(ref InternalState);
-                        return;
-                    }
-                    else if (count != 1)
-                    {
-                        // Count not being correct but not getting an error state means the send
-                        // request couldn't be enqueued in baselib's send queue. Normally, this
-                        // can't happen since the free list in our send queue ensures we never
-                        // enqueue more packets than baselib's queue capacity. But if for some
-                        // reason it were to happen, then without the line below we'd be leaking
-                        // the send handle (we'd consider it enqueued but it would never ever be
-                        // dequeued by baselib).
+                        DebugLog.ErrorBaselib("Unexpected endpoint format.", error);
                         packetProcessor.Drop();
                         continue;
                     }
 
-                    pendingSendCount += count;
-
-                    // Remove the packet from the send queue, but don't release it's buffer. It will be released
-                    // when processing completed send requests.
-                    SendQueue.DequeuePacketNoRelease(i);
+                    requests.Add(request);
+                    queueIndices.Add(i);
                 }
 
-                do
+                // Schedule all the send requests.
+                var scheduledCount = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleSend(
+                    InternalState.Value.Socket, requestsPtr, (uint)requests.Length, &error);
+                if (error.code != ErrorCode.Success)
                 {
-                    // We ensure we never process more than the actual capacity to prevent unexpected deadlocks
-                    for (var sendCount = 0; sendCount < SendQueue.Capacity; sendCount++)
-                    {
-                        var status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(socket, &error);
-                        if (error.code != ErrorCode.Success)
-                        {
-                            DebugLog.ErrorBaselib("Processing Send", error);
-                            MarkSocketAsNeedingRecreate(ref InternalState);
-                            return;
-                        }
-
-                        if (status != Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
-                            break;
-                    }
-
-                    if (WaitForCompletedSends != 0)
-                    {
-                        // Yielding gives a change to the OS of actually sending the packets.
-                        Binding.Baselib_Thread_YieldExecution();
-
-                        // Wait for the sends to complete (timeout is arbitrary, and even if not
-                        // everything is sent we'll still come back here in the loop).
-                        Binding.Baselib_RegisteredNetwork_Socket_UDP_WaitForCompletedSend(socket, 10, &error);
-
-                        // We don't check the error code because if no sends were completed, this is
-                        // flagged as an error by baselib (but we want to keep going in that case).
-                    }
-
-                    pendingSendCount -= DequeueSendRequests();
+                    DebugLog.ErrorBaselib("Couldn't schedule send requests.", error);
+                    MarkSocketAsNeedingRecreate(ref InternalState);
+                    return;
                 }
-                while (WaitForCompletedSends != 0 && pendingSendCount > 0);
+
+                // Dequeue packets that were sent. Normally that should be all packets since we
+                // ensure we never schedule more sends than what baselib can accomodate. Still, if
+                // not all packets were scheduled, we can't dequeue them in this manner here because
+                // these sends will never be completed and we'll never release their buffers.
+                for (int i = 0; i < scheduledCount; i++)
+                {
+                    SendQueue.DequeuePacketNoRelease(queueIndices[i]);
+                }
             }
 
-            private unsafe int DequeueSendRequests()
+            private unsafe void ProcessSendRequests()
             {
-                var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[(int)k_RequestsBatchSize];
-                var resultBatchesCount = SendQueue.Capacity / k_RequestsBatchSize + 1;
-
-                var totalDequeued = 0;
-
                 var error = default(ErrorState);
-                var count = 0;
-                while ((count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(InternalState.Value.Socket, results, k_RequestsBatchSize, &error)) > 0)
+                var socket = InternalState.Value.Socket;
+                var count = SendQueue.Capacity;
+
+                // Logically we'd just loop indefinitely until the status is not pending. But to
+                // avoid any risk of deadlock, limit the number of calls to the queue capacity.
+                for (int i = 0; i < count; i++)
                 {
+                    var status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(socket, &error);
                     if (error.code != ErrorCode.Success)
                     {
-                        DebugLog.ErrorBaselib("Dequeue Send", error);
+                        DebugLog.ErrorBaselib("Couldn't process scheduled send request.", error);
                         MarkSocketAsNeedingRecreate(ref InternalState);
-                        return totalDequeued;
+                        return;
                     }
 
-                    totalDequeued += count;
-
-                    // Once a send has completed, re-enqueue its packet. This way if there's any
-                    // other layer below it will have an opportunity to process it.
-                    for (var i = 0; i < count; ++i)
-                        SendQueue.EnqueuePacket(results[i].requestUserdata.ToInt32() - 1, out _);
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    var failedCount = 0;
-                    for (var i = 0; i < count; ++i)
-                    {
-                        if (results[i].status == Binding.Baselib_RegisteredNetwork_CompletionStatus.Failed)
-                            failedCount++;
-                    }
-
-                    if (failedCount > 0)
-                        DebugLog.BaselibFailedToSendPackets(failedCount);
-#endif
-
-                    if (resultBatchesCount-- < 0) // Deadlock guard, this should never happen
-                    {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        throw new Exception("Trying to dequeue more packets than the actual sent count in baselib.");
-#else
-                        DebugLog.LogError("Trying to dequeue more packets than the actual sent count in baselib.");
+                    if (status != Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
                         break;
-#endif
-                    }
+                }
+            }
+
+            private unsafe void ProcessSendResults()
+            {
+                var results = new NativeArray<CompletionResult>(SendQueue.Capacity, Allocator.Temp);
+                var resultsPtr = (CompletionResult*)results.GetUnsafePtr();
+
+                var error = default(ErrorState);
+                var count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueSend(
+                    InternalState.Value.Socket, resultsPtr, (uint)results.Length, &error);
+                if (error.code != ErrorCode.Success)
+                {
+                    DebugLog.ErrorBaselib("Couldn't dequeue send results.", error);
+                    MarkSocketAsNeedingRecreate(ref InternalState);
+                    return;
                 }
 
-                return totalDequeued;
+                // Re-enqueue all completed sends. This way if there's any other layer below, it
+                // will have an opportunity to process it (e.g. the bottom layer can release the
+                // buffer when it clears the send queue).
+                for (int i = 0; i < count; i++)
+                {
+                    var bufferIndex = results[i].requestUserdata.ToInt32() - 1;
+                    SendQueue.EnqueuePacket(bufferIndex, out _);
+                }
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                // Check for any failed sends.
+                var failedCount = 0;
+                for (int i = 0; i < count; i++)
+                {
+                    if (results[i].status == Binding.Baselib_RegisteredNetwork_CompletionStatus.Failed)
+                        failedCount++;
+                }
+
+                if (failedCount > 0)
+                    DebugLog.BaselibFailedToSendPackets(failedCount);
+#endif
             }
         }
 
@@ -393,7 +395,7 @@ namespace Unity.Networking.Transport
                 }
 #endif
 
-                var results = stackalloc Binding.Baselib_RegisteredNetwork_CompletionResult[(int)k_RequestsBatchSize];
+                var results = stackalloc CompletionResult[(int)k_RequestsBatchSize];
 
                 var dequeueAgain = true;
                 var totalCount = 0;
@@ -513,8 +515,6 @@ namespace Unity.Networking.Transport
                 SendQueue = arguments.SendQueue,
                 SendBuffers = m_SendBuffers,
                 PacketBufferLayout = m_PacketBufferLayout,
-                // TODO Find a way to expose this to users.
-                WaitForCompletedSends = (byte)0,
             }.Schedule(dep);
         }
 
@@ -530,17 +530,12 @@ namespace Unity.Networking.Transport
             {
                 state.Socket = newSocket;
                 state.SocketStatus = SocketStatus.SocketNormal;
+                state.BindEndpoint = endpoint;
 
                 // Need to release acquisition status of all packet buffers since we closed their socket.
                 ResetReceiveQueue(ref m_ReceiveQueue);
 
                 result = ScheduleAllReceives(newSocket, ref m_ReceiveQueue, ref m_ReceiveBuffers, ref m_PacketBufferLayout);
-
-                // Store the local endpoint in the internal state.
-                var error = default(ErrorState);
-                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(newSocket, &state.LocalEndpoint.rawNetworkAddress, &error);
-                if (error.code != ErrorCode.Success)
-                    state.LocalEndpoint = endpoint;
             }
             else
             {
@@ -611,7 +606,7 @@ namespace Unity.Networking.Transport
                 state.NumSocketRecreate++;
 
                 CloseSocket(state.Socket);
-                var result = CreateSocket(state.SendQueueCapacity, state.ReceiveQueueCapacity, state.LocalEndpoint, out var newSocket);
+                var result = CreateSocket(state.SendQueueCapacity, state.ReceiveQueueCapacity, state.BindEndpoint, out var newSocket);
                 if (result == 0)
                 {
                     state.Socket = newSocket;
@@ -636,26 +631,6 @@ namespace Unity.Networking.Transport
                 receiveQueue.Clear();
                 receiveQueue.UnsafeResetAcquisitionState();
             }
-        }
-
-        private static unsafe bool ConvertEndpointBufferToRegisteredNetwork(Binding.Baselib_RegisteredNetwork_BufferSlice endpointSlice)
-        {
-            var endpoint = *(Binding.Baselib_NetworkAddress*)endpointSlice.data;
-            var error = default(ErrorState);
-
-            Binding.Baselib_RegisteredNetwork_Endpoint_Create(
-                &endpoint,
-                endpointSlice,
-                &error
-            );
-
-            if (error.code != (int)ErrorCode.Success)
-            {
-                DebugLog.ErrorBaselib("Create Registered Endpoint", error);
-                return false;
-            }
-
-            return true;
         }
 
         private static unsafe bool ConvertEndpointBufferToGeneric(Binding.Baselib_RegisteredNetwork_BufferSlice endpointSlice)
@@ -712,7 +687,7 @@ namespace Unity.Networking.Transport
 #endif
             var error = default(ErrorState);
 
-            var requests = stackalloc Binding.Baselib_RegisteredNetwork_Request[(int)k_RequestsBatchSize];
+            var requests = stackalloc NetworkRequest[(int)k_RequestsBatchSize];
             var count = 0;
 
             do

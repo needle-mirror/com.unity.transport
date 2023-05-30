@@ -9,6 +9,7 @@ using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Networking.Transport.Error;
 using Unity.Networking.Transport.Logging;
+using Unity.Networking.Transport.Relay;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
@@ -1024,11 +1025,19 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Get the remote endpoint of a connection (the endpoint used to reach the remote peer on the connection).
         /// </summary>
+        /// <remarks>
+        /// The returned value should not be assumed to be constant for a given connection, as it is
+        /// possible for remote peers to change address during the course of a session (e.g. if a
+        /// mobile client changes IP address because they're hopping between cell towers).
+        /// </remarks>
         /// <param name="connection">Connection to get the endpoint of.</param>
         /// <returns>The remote endpoint of the connection.</returns>
         public NetworkEndpoint GetRemoteEndpoint(NetworkConnection connection)
         {
-            return m_NetworkStack.Connections.GetConnectionEndpoint(connection.ConnectionId);
+            if (m_NetworkSettings.TryGet<RelayNetworkParameter>(out var relayParams))
+                return relayParams.ServerData.Endpoint;
+            else
+                return m_NetworkStack.Connections.GetConnectionEndpoint(connection.ConnectionId);
         }
 
         /// <summary>Obsolete. Use <see cref="GetLocalEndpoint"/> instead.</summary>
@@ -1041,6 +1050,11 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Get the local endpoint used by the driver (the endpoint remote peers will use to reach this driver).
         /// </summary>
+        /// <remarks>
+        /// The returned value should not be assumed to be constant for a given connection, as it is
+        /// possible for remote peers to change address during the course of a session (e.g. if a
+        /// mobile client changes IP address because they're hopping between cell towers).
+        /// </remarks>
         /// <returns>The local endpoint of the driver.</returns>
         public NetworkEndpoint GetLocalEndpoint()
         {

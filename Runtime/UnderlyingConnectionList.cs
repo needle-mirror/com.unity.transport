@@ -17,11 +17,10 @@ namespace Unity.Networking.Transport
         bool TryConnect(ref NetworkEndpoint endpoint, ref ConnectionId underlyingConnection);
 
         /// <summary>
-        /// Tries to disconnect a connection in the underlying layer.
+        /// Disconnect a connection in the underlying layer.
         /// </summary>
-        /// <param name="connectionId">The connection to disconnect to.</param>
-        /// <returns>Returns true if the connection has been fully disconnected.</returns>
-        bool TryDisconnect(ref ConnectionId connectionId);
+        /// <param name="connectionId">The connection to disconnect.</param>
+        void Disconnect(ref ConnectionId connectionId);
 
         /// <summary>
         /// Gets the list of disconnections in the underlying layer for the current update.
@@ -39,7 +38,7 @@ namespace Unity.Networking.Transport
             return true;
         }
 
-        public bool TryDisconnect(ref ConnectionId connectionId) => true;
+        public void Disconnect(ref ConnectionId connectionId) {}
 
         public NativeArray<ConnectionList.CompletedDisconnection> QueryFinishedDisconnections(Allocator allocator) => default;
     }
@@ -67,18 +66,13 @@ namespace Unity.Networking.Transport
             return false;
         }
 
-        public bool TryDisconnect(ref ConnectionId connectionId)
+        public void Disconnect(ref ConnectionId connectionId)
         {
             var state = Connections.GetConnectionState(connectionId);
-            if (state == NetworkConnection.State.Disconnected)
-                return true;
-
-            if (state != NetworkConnection.State.Disconnecting)
+            if (state != NetworkConnection.State.Disconnecting && state != NetworkConnection.State.Disconnected)
             {
                 Connections.StartDisconnecting(ref connectionId);
             }
-
-            return false;
         }
 
         public NativeArray<ConnectionList.CompletedDisconnection> QueryFinishedDisconnections(Allocator allocator)

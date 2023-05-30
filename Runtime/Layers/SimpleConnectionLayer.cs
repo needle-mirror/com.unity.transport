@@ -325,9 +325,12 @@ namespace Unity.Networking.Transport
                 for (int i = 0; i < count; i++)
                 {
                     var disconnection = underlyingDisconnections[i];
-                    var connectionId = FindConnectionByUnderlyingConnection(ref disconnection.Connection);
-                    var connectionState = Connections.GetConnectionState(connectionId);
 
+                    var connectionId = FindConnectionByUnderlyingConnection(ref disconnection.Connection);
+                    if (!connectionId.IsCreated)
+                        continue;
+
+                    var connectionState = Connections.GetConnectionState(connectionId);
                     if (connectionState == NetworkConnection.State.Disconnected ||
                         connectionState == NetworkConnection.State.Disconnecting)
                     {
@@ -351,7 +354,6 @@ namespace Unity.Networking.Transport
                     switch (connectionState)
                     {
                         case NetworkConnection.State.Disconnecting:
-                            SendDisconnectMessageIfRequired(ref connectionId);
                             ProcessDisconnecting(ref connectionId);
                             break;
                         case NetworkConnection.State.Connecting:
@@ -364,30 +366,23 @@ namespace Unity.Networking.Transport
                 }
             }
 
-            private void SendDisconnectMessageIfRequired(ref ConnectionId connectionId)
-            {
-                var connectionData = ConnectionsData[connectionId];
-
-                if (connectionData.State == ConnectionState.Established && connectionData.DisconnectReason != Error.DisconnectReason.ClosedByRemote)
-                {
-                    // The disconnection was requested but no disconnection message has been sent yet.
-                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Disconnect, ref connectionData.Token));
-
-                    connectionData.State = ConnectionState.DisconnectionSent;
-                    ConnectionsData[connectionId] = connectionData;
-                }
-            }
-
             private void ProcessDisconnecting(ref ConnectionId connectionId)
             {
                 var connectionData = ConnectionsData[connectionId];
 
-                // If the underlying connection can be disconnected then we can clean the connection data
-                // at this protocol level so it can be then completed in the connection list.
-                if (UnderlyingConnections.TryDisconnect(ref connectionData.UnderlyingConnection))
+                // If we still need to send a disconnect, don't disconnect and queue up the message.
+                var needToSendDisconnect = connectionData.State == ConnectionState.Established &&
+                    connectionData.DisconnectReason != Error.DisconnectReason.ClosedByRemote;
+                if (needToSendDisconnect)
                 {
+                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Disconnect, ref connectionData.Token));
+                    connectionData.State = ConnectionState.DisconnectionSent;
+                    ConnectionsData[connectionId] = connectionData;
+                }
+                else
+                {
+                    UnderlyingConnections.Disconnect(ref connectionData.UnderlyingConnection);
                     Connections.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
-
                     TokensHashMap.Remove(connectionData.Token);
                 }
             }
@@ -457,8 +452,6 @@ namespace Unity.Networking.Transport
                     Connections.StartDisconnecting(ref connectionId);
                     connectionData.DisconnectReason = Error.DisconnectReason.Timeout;
                     ConnectionsData[connectionId] = connectionData;
-
-                    SendDisconnectMessageIfRequired(ref connectionId);
                     ProcessDisconnecting(ref connectionId);
                 }
 

@@ -282,8 +282,7 @@ namespace Unity.Networking.Transport
                 {
                     var underlyingConnectionId = disconnects[i].Connection;
 
-                    // Shouldn't really happen. If it does, it means we didn't even know about the
-                    // underlying connection, so the best thing to do is just ignore it.
+                    // Happens if we initiated the disconnection.
                     if (!UnderlyingIdToCurrentId.TryGetValue(underlyingConnectionId, out var connectionId))
                         continue;
 
@@ -381,16 +380,8 @@ namespace Unity.Networking.Transport
             private void HandleDisconnectingState(ConnectionId connection)
             {
                 var underlyingId = ConnectionsData[connection].UnderlyingConnection;
-                var underlyingState = UnderlyingConnections.GetConnectionState(underlyingId);
-
-                if (underlyingState == NetworkConnection.State.Disconnected)
-                {
-                    Disconnect(connection, ConnectionsData[connection].DisconnectReason);
-                }
-                else if (underlyingState != NetworkConnection.State.Disconnecting)
-                {
-                    UnderlyingConnections.StartDisconnecting(ref underlyingId);
-                }
+                UnderlyingConnections.StartDisconnecting(ref underlyingId);
+                Disconnect(connection, ConnectionsData[connection].DisconnectReason);
             }
 
             private void CheckForFailedClient(ConnectionId connection)

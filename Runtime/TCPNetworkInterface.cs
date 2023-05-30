@@ -487,21 +487,21 @@ namespace Unity.Networking.Transport
 
                             connectionData.LastConnectAttempt++;
                             connectionData.LastConnectAttemptTime = Time;
+                        }
 
-                            if (IsValid(connectionData.Socket))
+                        if (IsValid(connectionData.Socket))
+                        {
+                            if (TCPSocket.IsConnectionReady(connectionData.Socket, out var readyError))
                             {
-                                if (TCPSocket.IsConnectionReady(connectionData.Socket, out var readyError))
-                                {
-                                    ConnectionList.FinishConnectingFromLocal(ref connectionId);
-                                }
-                                else if (readyError.code != ErrorCode.Success)
-                                {
-                                    // If something went wrong trying to complete the connection just close this socket
-                                    // and in the next attempt we'll create a new one.
-                                    TCPSocket.Close(connectionData.Socket);
-                                    AllSocketsDeferredRemove(connectionData.Socket);
-                                    connectionData.Socket = InvalidSocket;
-                                }
+                                ConnectionList.FinishConnectingFromLocal(ref connectionId);
+                            }
+                            else if (readyError.code != ErrorCode.Success)
+                            {
+                                // If something went wrong trying to complete the connection just close this socket
+                                // and in the next attempt we'll create a new one.
+                                TCPSocket.Close(connectionData.Socket);
+                                AllSocketsDeferredRemove(connectionData.Socket);
+                                connectionData.Socket = InvalidSocket;
                             }
                         }
 
