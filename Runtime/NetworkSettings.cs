@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Reflection;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -207,31 +208,17 @@ namespace Unity.Networking.Transport
                 }
 #endif
 
+                var method = typeof(NetworkSettings).GetMethod(nameof(NetworkSettings.AddRawParameterStruct));
+                var generic = method.MakeGenericMethod(type);
+
                 try
                 {
-                    ValidateParameterOrError(ref parameter);
+                    generic.Invoke(networkParameters, new object[] { parameter });
                 }
-                catch (Exception e)
+                catch (TargetInvocationException e)
                 {
-                    networkParameters.Dispose();
-                    throw e;
+                    throw e.InnerException;
                 }
-
-                var typeHash = BurstRuntime.GetHashCode64(type);
-                var parameterSlice = new ParameterSlice
-                {
-                    Offset = networkParameters.m_Parameters.Length,
-                    Size = UnsafeUtility.SizeOf(type),
-                };
-
-                networkParameters.m_ParameterOffsets.Add(typeHash, parameterSlice);
-                networkParameters.m_Parameters.Resize(networkParameters.m_Parameters.Length + parameterSlice.Size, NativeArrayOptions.UninitializedMemory);
-
-                var valuePtr = ((byte*)networkParameters.m_Parameters.GetUnsafePtr<byte>() + parameterSlice.Offset);
-                var parameterPtr = (byte*)UnsafeUtility.PinGCObjectAndGetAddress(parameter, out var gcHandle) + ObjectHeaderOffset;
-
-                UnsafeUtility.MemCpy(valuePtr, parameterPtr, parameterSlice.Size);
-                UnsafeUtility.ReleaseGCObject(gcHandle);
             }
 
             return networkParameters;
@@ -244,35 +231,13 @@ namespace Unity.Networking.Transport
             if (!m_Parameters.IsCreated)
                 return false;
 
-            var typeHash = BurstRuntime.GetHashCode64(parameterType);
+            var method = typeof(NetworkSettings).GetMethod(nameof(NetworkSettings.TryGet));
+            var generic = method.MakeGenericMethod(parameterType);
+            var parameters = new object[] { null };
+            var result = generic.Invoke(this, parameters);
 
-            if (m_ParameterOffsets.TryGetValue(typeHash, out var parameterSlice))
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (UnsafeUtility.SizeOf(parameterType) != parameterSlice.Size)
-                    throw new ArgumentException($"The size of the parameter type {parameterType} ({UnsafeUtility.SizeOf(parameterType)}) is different to the stored size ({parameterSlice.Size})");
-
-                if (m_Parameters.Length < parameterSlice.Offset + parameterSlice.Size)
-                    throw new OverflowException($"The registered parameter slice is out of bounds of the parameters buffer");
-#endif
-                parameter = Activator.CreateInstance(parameterType) as INetworkParameter;
-                var parameterPtr = (byte*)UnsafeUtility.PinGCObjectAndGetAddress(parameter, out var gcHandle) + ObjectHeaderOffset;
-                UnsafeUtility.MemCpy(parameterPtr, (byte*)m_Parameters.GetUnsafeReadOnlyPtr<byte>() + parameterSlice.Offset, parameterSlice.Size);
-                UnsafeUtility.ReleaseGCObject(gcHandle);
-                return true;
-            }
-
-            return false;
-        }
-
-        internal static int ObjectHeaderOffset => UnsafeUtility.SizeOf<ObjectOffsetType>();
-
-        private unsafe struct ObjectOffsetType
-        {
-            void* v0;
-        #if !ENABLE_CORECLR
-            void* v1;
-        #endif
+            parameter = (INetworkParameter)parameters[0];
+            return (bool)result;
         }
 #endif // !UNITY_DOTSRUNTIME
 

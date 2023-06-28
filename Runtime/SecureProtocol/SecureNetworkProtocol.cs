@@ -622,10 +622,10 @@ namespace Unity.Networking.Transport.TLS
                 }
                 else if (clientState == Binding.UnityTLSClientState_Messaging)
                 {
-                    var buffer = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Temp);
+                    var buffer = new NativeArray<byte>(NetworkParameterConstants.MaxPacketBufferSize, Allocator.Temp);
                     var bytesRead = new UIntPtr();
                     var result = Binding.unitytls_client_read_data(secureClient.ClientPtr,
-                        (byte*)buffer.GetUnsafePtr(), new UIntPtr(NetworkParameterConstants.MTU),
+                        (byte*)buffer.GetUnsafePtr(), new UIntPtr(NetworkParameterConstants.MaxPacketBufferSize),
                         &bytesRead);
 
                     if (result != Binding.UNITYTLS_SUCCESS)

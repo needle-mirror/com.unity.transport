@@ -73,7 +73,7 @@ namespace Unity.Networking.Transport.Tests
             using (var server = CreateServer(secureMode))
             using (var client = CreateClient(secureMode))
             {
-                var messageLength = NetworkParameterConstants.MTU - client.MaxHeaderSize(NetworkPipeline.Null);
+                var messageLength = NetworkParameterConstants.MaxMessageSize - UdpCHeader.Length;
 
                 var sendBuffer = new NativeArray<byte>(messageLength, Allocator.Temp);
                 var receiveBuffer = new NativeArray<byte>(messageLength, Allocator.Temp);
@@ -153,8 +153,8 @@ namespace Unity.Networking.Transport.Tests
 
                 ConnectServerAndClient(NetworkEndPoint.LoopbackIpv4, server, client, out _, out var connection);
 
-                const int MinSize = NetworkParameterConstants.MTU - 100;
-                const int MaxSize = NetworkParameterConstants.MTU + 100;
+                const int MinSize = NetworkParameterConstants.MaxMessageSize - 100;
+                const int MaxSize = NetworkParameterConstants.MaxMessageSize + 100;
 
                 for (int size = MinSize; size <= MaxSize; size++)
                 {
@@ -217,7 +217,7 @@ namespace Unity.Networking.Transport.Tests
 
                 ConnectServerAndClient(NetworkEndPoint.LoopbackIpv4, server, client, out _, out var connection);
 
-                using (var buffer = new NativeArray<byte>(NetworkParameterConstants.MTU + 100, Allocator.Temp))
+                using (var buffer = new NativeArray<byte>(NetworkParameterConstants.MaxMessageSize + 100, Allocator.Temp))
                 {
                     client.BeginSend(pipe, connection, out var writer);
                     writer.WriteBytes(buffer);
@@ -296,7 +296,7 @@ namespace Unity.Networking.Transport.Tests
                 var settings = new NetworkSettings();
                 settings.WithSimulatorStageParameters(
                     maxPacketCount: 1000,
-                    maxPacketSize: NetworkParameterConstants.MTU,
+                    maxPacketSize: NetworkParameterConstants.MaxPacketBufferSize,
                     packetDelayMs: 0,
                     packetJitterMs: 5,
                     packetDropPercentage: 5,
@@ -384,6 +384,65 @@ namespace Unity.Networking.Transport.Tests
 
                         return numServerDataEvents == TotalPackets && numClientDataEvents == TotalPackets;
                     }, "Timed out waiting for all reliable packets.", 10000);
+                }
+            }
+        }
+
+        [Test]
+        public void SendMessage_ModifiedMaxMessageSize(
+            [ValueSource("s_EndpointParameters")] NetworkEndPoint endpoint,
+            [ValueSource("s_SecureModeParameters")] SecureProtocolMode secureMode)
+        {
+            var messageSizes = new int[] { 548, 1200, NetworkParameterConstants.MaxPacketBufferSize };
+            foreach (var size in messageSizes)
+            {
+                var settings = new NetworkSettings();
+                settings.WithNetworkConfigParameters(maxMessageSize: size);
+
+                using (var server = CreateServer(secureMode, settings))
+                using (var client = CreateClient(secureMode, settings))
+                {
+                    var messageLength = size - UdpCHeader.Length;
+
+                    var sendBuffer = new NativeArray<byte>(messageLength, Allocator.Temp);
+                    var receiveBuffer = new NativeArray<byte>(messageLength, Allocator.Temp);
+
+                    for (int i = 0; i < messageLength; i++)
+                        sendBuffer[i] = (byte)i;
+
+                    ConnectServerAndClient(endpoint, server, client, out var s2cConnection, out var c2sConnection);
+
+                    // Client to server.
+
+                    client.BeginSend(c2sConnection, out var writer);
+                    Assert.AreEqual(writer.Capacity, messageLength);
+                    writer.WriteBytes(sendBuffer);
+                    client.EndSend(writer);
+
+                    client.ScheduleUpdate().Complete();
+
+                    WaitForDataEvent(server, out var reader);
+
+                    reader.ReadBytes(receiveBuffer);
+                    Assert.AreEqual(messageLength, receiveBuffer.Length);
+                    for (int i = 0; i < messageLength; i++)
+                        Assert.AreEqual((byte)i, receiveBuffer[i]);
+
+                    // Server to client.
+
+                    server.BeginSend(s2cConnection, out writer);
+                    Assert.AreEqual(writer.Capacity, messageLength);
+                    writer.WriteBytes(sendBuffer);
+                    server.EndSend(writer);
+
+                    server.ScheduleUpdate().Complete();
+
+                    WaitForDataEvent(client, out reader);
+
+                    reader.ReadBytes(receiveBuffer);
+                    Assert.AreEqual(messageLength, receiveBuffer.Length);
+                    for (int i = 0; i < messageLength; i++)
+                        Assert.AreEqual((byte)i, receiveBuffer[i]);
                 }
             }
         }

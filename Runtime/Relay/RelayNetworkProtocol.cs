@@ -377,10 +377,10 @@ namespace Unity.Networking.Transport.Relay
 
                     SecureNetworkProtocol.SetSecureUserData(stream, size, ref endpoint, ref sendInterface, ref queueHandle, secureUserData);
 
-                    var buffer = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Temp);
+                    var buffer = new NativeArray<byte>(NetworkParameterConstants.MaxPacketBufferSize, Allocator.Temp);
                     var bytesRead = new UIntPtr();
                     var result = Binding.unitytls_client_read_data(protocolData->SecureClientState.ClientPtr,
-                        (byte*)buffer.GetUnsafePtr(), new UIntPtr(NetworkParameterConstants.MTU),
+                        (byte*)buffer.GetUnsafePtr(), new UIntPtr(NetworkParameterConstants.MaxPacketBufferSize),
                         &bytesRead);
 
                     if (result == Binding.UNITYTLS_SUCCESS)

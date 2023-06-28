@@ -57,10 +57,10 @@ namespace Unity.Networking.Transport.Utilities
             {
                 var valid = true;
 
-                if (PayloadCapacity <= NetworkParameterConstants.MTU)
+                if (PayloadCapacity <= 0)
                 {
                     valid = false;
-                    UnityEngine.Debug.LogError($"{nameof(PayloadCapacity)} value ({PayloadCapacity}) must be greater than MTU ({NetworkParameterConstants.MTU})");
+                    UnityEngine.Debug.LogError($"{nameof(PayloadCapacity)} value ({PayloadCapacity}) must be greater than 0");
                 }
 
                 return valid;

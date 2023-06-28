@@ -3,48 +3,79 @@ using System;
 namespace Unity.Networking.Transport
 {
     /// <summary>
-    /// The interface for NetworkParameters
+    /// Interface used to implement custom values for use with <see cref="NetworkSettings"/>. This
+    /// is only useful to provide configuration settings for custom <see cref="INetworkInterface"/>
+    /// or <see cref="INetworkPipelineStage"/> implementations.
     /// </summary>
     public interface INetworkParameter
     {
         /// <summary>
-        /// Checks if the values for all fields are valid.
-        /// This method will be automatically called when adding a paramter to the NetworkSettings.
+        /// Checks if the values for all fields are valid. This method will be automatically called
+        /// when adding parameters to the <see cref="NetworkSettings"/>.
         /// </summary>
         /// <returns>Returns true if the parameter is valid.</returns>
         bool Validate();
     }
 
     /// <summary>
-    /// Default NetworkParameter Constants.
+    /// Default values used for the different network parameters. These parameters (except the MTU)
+    /// can be set with <see cref="CommonNetworkParametersExtensions.WithNetworkConfigParameters"/>.
     /// </summary>
     public struct NetworkParameterConstants
     {
-        /// <summary>The default size of the event queue.</summary>
+        /// <summary>The default initial size of the event queue.</summary>
         public const int InitialEventQueueSize = 100;
 
-        /// <summary>
-        /// The invalid connection id
-        /// </summary>
+        /// <summary>Unused.</summary>
         public const int InvalidConnectionId = -1;
 
-        /// <summary>
-        /// The default size of the DataStreamWriter. This value can be overridden using the <see cref="NetworkConfigParameter"/>.
-        /// </summary>
+        /// <summary>Default size of the internal buffer for received payloads.</summary>
         public const int DriverDataStreamSize = 64 * 1024;
-        /// <summary>The default connection timeout value. This value can be overridden using the <see cref="NetworkConfigParameter"/></summary>
+
+        /// <summary>Default time between connection attempts.</summary>
+        /// <value>Timeout in milliseconds.</value>
         public const int ConnectTimeoutMS = 1000;
-        /// <summary>The default max connection attempts value. This value can be overridden using the <see cref="NetworkConfigParameter"/></summary>
+
+        /// <summary>
+        /// Default maximum number of connection attempts to try. If no answer is received from the
+        /// server after this number of attempts, a <see cref="NetworkEvent.Type.Disconnect"/> event
+        /// is generated for the connection.
+        /// </summary>
+        /// <value>Number of attempts.</value>
         public const int MaxConnectAttempts = 60;
-        /// <summary>The default disconnect timeout attempts value. This value can be overridden using the <see cref="NetworkConfigParameter"/></summary>
+
+        /// <summary>
+        /// Default inactivity timeout for a connection. If nothing is received on a connection for
+        /// this amount of time, it is disconnected (a <see cref="NetworkEvent.Type.Disconnect"/>
+        /// event will be generated).
+        /// </summary>
+        /// <value>Timeout in milliseconds.</value>
         public const int DisconnectTimeoutMS = 30 * 1000;
-        /// <summary>The default inactivity timeout after which a heartbeat is sent. This This value can be overridden using the <see cref="NetworkConfigParameter"/></summary>
+
+        /// <summary>
+        /// Default amount of time after which if nothing from a peer is received, a heartbeat
+        /// message will be sent to keep the connection alive.
+        /// </summary>
+        /// <value>Timeout in milliseconds.</value>
         public const int HeartbeatTimeoutMS = 500;
 
         /// <summary>
-        /// The max size of any packet that can be sent
+        /// Default maximum size of a packet that can be sent by the transport. Note that this size
+        /// includes any headers that could be added by the transport (e.g. headers for DTLS or
+        /// pipelines), which means the actual maximum message size that can be sent by a user is
+        /// slightly less than this value. To find out what the size of these headers is, use
+        /// <see cref="NetworkDriver.MaxHeaderSize"/>. It is possible to send messages larger than
+        /// that by sending them through a pipeline with a <see cref="FragmentationPipelineStage"/>.
+        /// These headers do not include those added by the OS network stack (like UDP or IP).
         /// </summary>
+        // <value>Size in bytes.</value>
+        public const int MaxMessageSize = 1400;
+
+        /// <summary>Same as <see cref="MaxMessageSize"/>.</summary>
+        /// <value>Size in bytes.</value>
         public const int MTU = 1400;
+
+        internal const int MaxPacketBufferSize = 1500 - 20 - 8; // Ethernet MTU minus IPv4 and UDP headers.
     }
 
     /// <summary>
@@ -79,26 +110,64 @@ namespace Unity.Networking.Transport
     /// </summary>
     public struct NetworkConfigParameter : INetworkParameter
     {
-        /// <summary>A timeout in milliseconds indicating how long we will wait until we send a new connection attempt.</summary>
+        /// <summary>Time between connection attempts.</summary>
+        /// <value>Timeout in milliseconds.</value>
         public int connectTimeoutMS;
-        /// <summary>The maximum amount of connection attempts we will try before disconnecting.</summary>
+
+        /// <summary>
+        /// Maximum number of connection attempts to try. If no answer is received from the server
+        /// after this number of attempts, a <see cref="NetworkEvent.Type.Disconnect"/> event is
+        /// generated for the connection.
+        /// </summary>
+        /// <value>Number of attempts.</value>
         public int maxConnectAttempts;
-        /// <summary>A timeout in milliseconds indicating how long we will wait for a connection event, before we disconnect it.</summary>
-        /// <remarks>
-        /// The connection needs to receive data from the connected endpoint within this timeout.
-        /// Note that with heartbeats enabled (<see cref="heartbeatTimeoutMS"/> > 0), simply not
-        /// sending any data will not be enough to trigger this timeout (since heartbeats count as
-        /// connection events).
-        /// </remarks>
+
+        /// <summary>
+        /// Inactivity timeout for a connection. If nothing is received on a connection for this
+        /// amount of time, it is disconnected (a <see cref="NetworkEvent.Type.Disconnect"/> event
+        /// will be generated). To prevent this from happenning when the game session is simply
+        /// quiet, set <see cref="heartbeatTimeoutMS"/> to a positive non-zero value.
+        /// </summary>
+        /// <value>Timeout in milliseconds.</value>
         public int disconnectTimeoutMS;
-        /// <summary>A timeout in milliseconds after which a heartbeat is sent if there is no activity.</summary>
+
+        /// <summary>
+        /// Time after which if nothing from a peer is received, a heartbeat message will be sent
+        /// to keep the connection alive. Prevents the <see cref="disconnectTimeoutMS"/> mechanism
+        /// from kicking when nothing happens on a connection. A value of 0 will disable heartbeats.
+        /// </summary>
+        /// <value>Timeout in milliseconds.</value>
         public int heartbeatTimeoutMS;
-        /// <summary>The maximum amount of time a single frame can advance timeout values.</summary>
-        /// <remarks>The main use for this parameter is to not get disconnects at frame spikes when both endpoints lives in the same process.</remarks>
+
+        /// <summary>
+        /// Maximum amount of time a single frame can advance timeout values. In this scenario, a
+        /// frame is defined as the time between two <see cref="NetworkDriver.ScheduleUpdate"/>
+        /// calls. Useful when debugging to avoid connection timeouts.
+        /// </summary>
+        /// <value>Timeout in milliseconds.</value>
         public int maxFrameTimeMS;
-        /// <summary>A fixed amount of time to use for an interval between ScheduleUpdate. This is used instead of a clock.</summary>
-        /// <remarks>The main use for this parameter is tests where determinism is more important than correctness.</remarks>
+
+        /// <summary>
+        /// Fixes a fixed amount of time to be used each frame for the purpose of timeout
+        /// calculations. For example, setting this value to 1000 will have the driver consider
+        /// that 1 second passed between each call to <see cref="NetworkDriver.ScheduleUpdate"/>,
+        /// even if that's not actually the case. Only useful for testing scenarios, where
+        /// deterministic behavior is more important than correctness.
+        /// </summary>
+        /// <value>Timeout in milliseconds.</value>
         public int fixedFrameTimeMS;
+
+        /// <summary>
+        /// Maximum size of a packet that can be sent by the transport. Note that this size includes
+        /// any headers that could be added by the transport (e.g. headers for DTLS or pipelines),
+        /// which means the actual maximum message size that can be sent by a user is slightly less
+        /// than this value. To find out what the size of these headers is, use
+        /// <see cref="NetworkDriver.MaxHeaderSize"/>. It is possible to send messages larger than
+        /// that by sending them through a pipeline with a <see cref="FragmentationPipelineStage"/>.
+        /// These headers do not include those added by the OS network stack (like UDP or IP).
+        /// </summary>
+        // <value>Size in bytes.</value>
+        public int maxMessageSize;
 
         /// <summary>Validate the settings.</summary>
         /// <returns>True if the settings are valid, false otherwise.</returns>
@@ -135,6 +204,20 @@ namespace Unity.Networking.Transport
             {
                 valid = false;
                 UnityEngine.Debug.LogError($"{nameof(fixedFrameTimeMS)} value ({fixedFrameTimeMS}) must be greater or equal to 0");
+            }
+            if (maxMessageSize <= 0 || maxMessageSize > NetworkParameterConstants.MaxPacketBufferSize)
+            {
+                valid = false;
+                UnityEngine.Debug.LogError($"{nameof(maxMessageSize)} value ({maxMessageSize}) must be greater than 0 and less than or equal to {NetworkParameterConstants.MaxPacketBufferSize}");
+            }
+
+            // Warn if the value is set ridiculously low. Packets 576 bytes long or less are always
+            // safe with IPv4 and should be handled correctly by any networking equipment so there's
+            // no point in setting a maximum message size that's lower than this. (We test against
+            // 548 instead of 576 to account for IP and UDP headers).
+            if (valid && maxMessageSize < 548)
+            {
+                UnityEngine.Debug.LogWarning($"{nameof(maxMessageSize)} value ({maxMessageSize}) is unnecessarily low. 548 should be safe in all circumstances.");
             }
 
             return valid;
@@ -176,16 +259,45 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Sets the <see cref="NetworkConfigParameter"/> values for the <see cref="NetworkSettings"/>
+        /// Sets the <see cref="NetworkConfigParameter"/> in the settings.
         /// </summary>
-        /// <param name="settings"><see cref="NetworkSettings"/> to modify.</param>
-        /// <param name="connectTimeoutMS"><seealso cref="NetworkConfigParameter.connectTimeoutMS"/></param>
-        /// <param name="maxConnectAttempts"><seealso cref="NetworkConfigParameter.maxConnectAttempts"/></param>
-        /// <param name="disconnectTimeoutMS"><seealso cref="NetworkConfigParameter.disconnectTimeoutMS"/></param>
-        /// <param name="heartbeatTimeoutMS"><seealso cref="NetworkConfigParameter.heartbeatTimeoutMS"/></param>
-        /// <param name="maxFrameTimeMS"><seealso cref="NetworkConfigParameter.maxFrameTimeMS"/></param>
-        /// <param name="fixedFrameTimeMS"><seealso cref="NetworkConfigParameter.fixedFrameTimeMS"/></param>
-        /// <returns>Modified <see cref="NetworkSettings"/>.</returns>
+        /// <param name="settings">Settings to modify.</param>
+        /// <param name="connectTimeoutMS">Time between connection attempts.</param>
+        /// <param name="maxConnectAttempts">
+        /// Maximum number of connection attempts to try. If no answer is received from the server
+        /// after this number of attempts, a <see cref="NetworkEvent.Type.Disconnect"/> event is
+        /// generated for the connection.
+        /// </param>
+        /// <param name="disconnectTimeoutMS">
+        /// Inactivity timeout for a connection. If nothing is received on a connection for this
+        /// amount of time, it is disconnected (a <see cref="NetworkEvent.Type.Disconnect"/> event
+        /// will be generated). To prevent this from happenning when the game session is simply
+        /// quiet, set <c>heartbeatTimeoutMS</c> to a positive non-zero value.
+        /// </param>
+        /// <param name="heartbeatTimeoutMS">
+        /// Time after which if nothing from a peer is received, a heartbeat message will be sent
+        /// to keep the connection alive. Prevents the <c>disconnectTimeoutMS</c> mechanism from
+        /// kicking when nothing happens on a connection. A value of 0 will disable heartbeats.
+        /// </param>
+        /// <param name="maxFrameTimeMS">
+        /// Maximum amount of time a single frame can advance timeout values. In this scenario, a
+        /// frame is defined as the time between two <see cref="NetworkDriver.ScheduleUpdate"/>
+        /// calls. Useful when debugging to avoid connection timeouts.
+        /// </param>
+        /// <param name="fixedFrameTimeMS">
+        /// Fixes a fixed amount of time to be used each frame for the purpose of timeout
+        /// calculations. For example, setting this value to 1000 will have the driver consider
+        /// that 1 second passed between each call to <see cref="NetworkDriver.ScheduleUpdate"/>,
+        /// even if that's not actually the case. Only useful for testing scenarios, where
+        /// deterministic behavior is more important than correctness.
+        /// </param>
+        /// <param name="maxMessageSize">
+        /// Maximum size of a packet that can be sent by the transport. Note that this size includes
+        /// any headers that could be added by the transport (e.g. headers for DTLS or pipelines),
+        /// which means the actual maximum message size that can be sent by a user is slightly less
+        /// than this value.
+        /// <param>
+        /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithNetworkConfigParameters(
             ref this NetworkSettings settings,
             int connectTimeoutMS        = NetworkParameterConstants.ConnectTimeoutMS,
@@ -193,7 +305,8 @@ namespace Unity.Networking.Transport
             int disconnectTimeoutMS     = NetworkParameterConstants.DisconnectTimeoutMS,
             int heartbeatTimeoutMS      = NetworkParameterConstants.HeartbeatTimeoutMS,
             int maxFrameTimeMS          = 0,
-            int fixedFrameTimeMS        = 0
+            int fixedFrameTimeMS        = 0,
+            int maxMessageSize          = NetworkParameterConstants.MaxMessageSize
         )
         {
             var parameter = new NetworkConfigParameter
@@ -204,6 +317,35 @@ namespace Unity.Networking.Transport
                 heartbeatTimeoutMS = heartbeatTimeoutMS,
                 maxFrameTimeMS = maxFrameTimeMS,
                 fixedFrameTimeMS = fixedFrameTimeMS,
+                maxMessageSize = maxMessageSize,
+            };
+
+            settings.AddRawParameterStruct(ref parameter);
+
+            return ref settings;
+        }
+
+        // Needed to preserve compatibility with the version without maxMessageSize...
+        /// <inheritdoc cref="WithNetworkConfigParameters(ref NetworkSettings, int, int, int, int, int, int, int)"/> 
+        public static ref NetworkSettings WithNetworkConfigParameters(
+            ref this NetworkSettings settings,
+            int connectTimeoutMS,
+            int maxConnectAttempts,
+            int disconnectTimeoutMS,
+            int heartbeatTimeoutMS,
+            int maxFrameTimeMS,
+            int fixedFrameTimeMS
+        )
+        {
+            var parameter = new NetworkConfigParameter
+            {
+                connectTimeoutMS = connectTimeoutMS,
+                maxConnectAttempts = maxConnectAttempts,
+                disconnectTimeoutMS = disconnectTimeoutMS,
+                heartbeatTimeoutMS = heartbeatTimeoutMS,
+                maxFrameTimeMS = maxFrameTimeMS,
+                fixedFrameTimeMS = fixedFrameTimeMS,
+                maxMessageSize = NetworkParameterConstants.MaxMessageSize,
             };
 
             settings.AddRawParameterStruct(ref parameter);
@@ -212,10 +354,10 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Gets the <see cref="NetworkConfigParameter"/>
+        /// Gets the <see cref="NetworkConfigParameter"/> in the settings.
         /// </summary>
-        /// <param name="settings"><see cref="NetworkSettings"/> to get parameters from.</param>
-        /// <returns>Returns the <see cref="NetworkConfigParameter"/> values for the <see cref="NetworkSettings"/></returns>
+        /// <param name="settings">Settings to get parameters from.</param>
+        /// <returns>Structure containing the network parameters.</returns>
         public static NetworkConfigParameter GetNetworkConfigParameters(ref this NetworkSettings settings)
         {
             if (!settings.TryGet<NetworkConfigParameter>(out var parameters))
@@ -226,6 +368,7 @@ namespace Unity.Networking.Transport
                 parameters.heartbeatTimeoutMS   = NetworkParameterConstants.HeartbeatTimeoutMS;
                 parameters.maxFrameTimeMS       = 0;
                 parameters.fixedFrameTimeMS     = 0;
+                parameters.maxMessageSize       = NetworkParameterConstants.MaxMessageSize;
             }
 
             return parameters;

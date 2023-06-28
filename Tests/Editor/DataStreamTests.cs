@@ -463,6 +463,20 @@ namespace Unity.Networking.Transport.Tests
             }
         }
 
+        [Test]
+        public void GetStreamReaderUnsafePtr()
+        {
+            var a = new NativeArray<byte>(1, Allocator.Temp);
+            a[0] = (byte)42;
+            var reader = new DataStreamReader(a);
+
+            unsafe
+            {
+                var ptr = (byte*)reader.GetUnsafeReadOnlyPtr();
+                Assert.AreEqual((byte)42, *ptr);
+            }
+        }
+
         private struct ReaderTestJob : IJob
         {
             public DataStreamReader Reader;

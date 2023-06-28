@@ -32,7 +32,7 @@ namespace Unity.Networking.Transport.Tests
 
                 for (int i = 0; i < settings.GetBaselibNetworkInterfaceParameters().sendQueueCapacity; i++)
                 {
-                    sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, NetworkParameterConstants.MTU);
+                    sendInterface.BeginSendMessage.Ptr.Invoke(out var sendHandle, sendInterface.UserData, NetworkParameterConstants.MaxPacketBufferSize);
                     sendHandle.size = sendHandle.capacity;
                     var data = (byte*)sendHandle.data;
                     for (int j = 0; j < sendHandle.size; j++)

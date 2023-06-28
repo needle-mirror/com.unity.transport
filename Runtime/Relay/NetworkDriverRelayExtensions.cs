@@ -10,18 +10,9 @@ namespace Unity.Networking.Transport.Relay
         public static RelayConnectionStatus GetRelayConnectionStatus(this NetworkDriver driver)
         {
             if (driver.NetworkProtocol is RelayNetworkProtocol)
-            {
                 return (RelayConnectionStatus)driver.ProtocolStatus;
-            }
             else
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Can't call GetRelayConnectionStatus when not using the Relay.");
-#else
-                Debug.LogError("Can't call GetRelayConnectionStatus when not using the Relay.");
-                return RelayConnectionStatus.NotEstablished;
-#endif
-            }
+                return RelayConnectionStatus.NotUsingRelay;
         }
 
         /// <summary>Connect to the Relay server.</summary>

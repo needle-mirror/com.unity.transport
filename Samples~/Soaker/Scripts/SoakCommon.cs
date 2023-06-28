@@ -10,7 +10,7 @@ namespace Unity.Networking.Transport.Samples
     [StructLayout(LayoutKind.Explicit)]
     public unsafe struct SoakMessage
     {
-        public const int Capacity = NetworkParameterConstants.MTU;
+        public const int Capacity = NetworkParameterConstants.MaxMessageSize;
         public const int HeaderLength = 6 * sizeof(int) + sizeof(float);
 
         [FieldOffset(0)] public fixed byte data[Capacity];

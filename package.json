@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.3.4",
+  "version": "1.4.0",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
@@ -11,16 +11,16 @@
     "com.unity.mathematics": "1.2.6"
   },
   "_upm": {
-    "changelog": "### Fixes\n* Fixed an issue where the reliable pipeline stage could end up writing past the end of its internal buffer and thrashing the buffers of other connections. This could result in packet corruption, but would most likely result in erroneous -7 (`NetworkDriverParallelForErr`) errors being reported when calling `EndSend`.\n* Fixed an issue where upon returning -7 (`NetworkDriverParallelForErr`), `EndSend` would leak the send handle. Over time, this would result in less send handles being available, resulting in more -5 (`NetworkSendQueueFull`) errors.\n* If nothing is received from a Unity Relay server for a while, the transport will now attempt to rebind to it. This should improve the accuracy of `GetRelayConnectionStatus` in scenarios where the Relay allocation times out while communications with the server are out."
+    "changelog": "### New features\n* Added a new `GetUnsafeReadOnlyPtr` method to `DataStreamReader`. This is meant as an escape hatch for use cases that require passing stream readers outside of a job (this not possible with `DataStreamReader` directly since the safety system will not allow it). As the name implies, this throws away many safety guarantees and is thus not recommended to use unless absolutely required.\n\n### Changes\n* `NetworkDriver.GetRelayConnectionStatus` will now return the new enum value `RelayConnectionStatus.NotUsingRelay` when called on a `NetworkDriver` that has not been configured to use Unity Relay. The previous behavior was to throw an exception.\n* It is now possible to configure the maximum message size that the transport will send through a new `maxMessageSize` parameter in `NetworkSettings.WithNetworkConfigParameters`. This is useful for environments where network equipment mishandles larger packets (like some mobile networks or VPNs). The value excludes IP and UDP headers, but includes headers added by the transport itself (e.g. reliability headers). The default value is 1400. Note that it is recommended that both client and server be configured to use the same value."
   },
   "upmCi": {
-    "footprint": "77cfea86fd01638c603a80494dac4e1a07173d8d"
+    "footprint": "3422cf5c7f2cac02947030d94f332733127d3eff"
   },
-  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@1.3/manual/index.html",
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@1.4/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "5e7f04b9ae40d63aeda6d97eab9d86e86fa40d3b"
+    "revision": "4a6bba09bd32ed2fa840f331651875d68e73cadc"
   },
   "samples": [
     {

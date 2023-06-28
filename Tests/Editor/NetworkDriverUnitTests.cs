@@ -40,7 +40,7 @@ namespace Unity.Networking.Transport.Tests
         public LocalDriverHelper(NetworkEndPoint endpoint, NetworkSettings settings = default)
         {
             m_LocalDriver = new NetworkDriver(new IPCNetworkInterface(), settings);
-            m_LocalData = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Persistent);
+            m_LocalData = new NativeArray<byte>(NetworkParameterConstants.MaxMessageSize, Allocator.Persistent);
 
             if (endpoint.IsValid)
             {
@@ -140,7 +140,7 @@ namespace Unity.Networking.Transport.Tests
             NetworkInterfaceEndPoint remote = default;
             int headerLen = UdpCHeader.Length;
             void* packetData = (byte*)m_LocalData.GetUnsafePtr();
-            int payloadLen = NetworkParameterConstants.MTU;
+            int payloadLen = NetworkParameterConstants.MaxMessageSize;
             int dataLen = 0;
             Assert.True(EndPoint.IsLoopback || EndPoint.IsAny);
             Assert.True(from.IsLoopback || from.IsAny);
@@ -811,7 +811,7 @@ namespace Unity.Networking.Transport.Tests
             Assert.AreEqual(testByteArray, receivedBytes);
         }
 
-        //Note for the below 3 tests:
+        //Note for the below 2 tests:
         //SendAndReceiveMessage() as currently written sends 52 + sizeof(UdpCHeader) bytes.
         //If the size of UdpCHeader goes over 12 bytes in the future (currently 10 bytes at time of writing),
         //NetworkDataStreamParameter.size in these below tests will need to be increased accordingly.

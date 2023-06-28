@@ -33,6 +33,12 @@ namespace Unity.Networking.Transport
             public bool packetError;
         }
 
+        internal struct FragSharedContext
+        {
+            public int PayloadCapacity;
+            public int MaxMessageSize;
+        }
+
         [Flags]
         enum FragFlags
         {
@@ -53,13 +59,13 @@ namespace Unity.Networking.Transport
         {
             var fragContext = (FragContext*)ctx.internalProcessBuffer;
             var dataBuffer = ctx.internalProcessBuffer + sizeof(FragContext);
-            var param = (FragmentationUtility.Parameters*)ctx.staticInstanceBuffer;
+            var sharedContext = (FragSharedContext*)ctx.staticInstanceBuffer;
 
             FragFlags flags = FragFlags.First;
             int headerCapacity = ctx.header.Capacity;
 
             var systemHeaderCapacity = systemHeaderSize + 1 + SessionIdToken.k_Length;    // Extra 1 byte is for pipeline id, SessionIdToken.k_Length bytes for footer
-            var maxBlockLength = NetworkParameterConstants.MTU - systemHeaderCapacity - inboundBuffer.headerPadding;
+            var maxBlockLength = sharedContext->MaxMessageSize - systemHeaderCapacity - inboundBuffer.headerPadding;
             var maxBlockLengthFirstPacket = maxBlockLength - ctx.accumulatedHeaderCapacity; // The first packet has the headers for all pipeline stages before this one
 
             if (fragContext->endIndex > fragContext->startIndex)
@@ -90,7 +96,7 @@ namespace Unity.Networking.Transport
             }
             else if (inboundBuffer.bufferLength > maxBlockLengthFirstPacket)
             {
-                var payloadCapacity = param->PayloadCapacity;
+                var payloadCapacity = sharedContext->PayloadCapacity;
                 var excessLength = inboundBuffer.bufferLength - maxBlockLengthFirstPacket;
                 var excessStart = inboundBuffer.buffer + maxBlockLengthFirstPacket;
                 if (excessLength + inboundBuffer.headerPadding > payloadCapacity)
@@ -138,7 +144,7 @@ namespace Unity.Networking.Transport
         {
             var fragContext = (FragContext*)ctx.internalProcessBuffer;
             var dataBuffer = ctx.internalProcessBuffer + sizeof(FragContext);
-            var param = (FragmentationUtility.Parameters*)ctx.staticInstanceBuffer;
+            var sharedContext = (FragSharedContext*)ctx.staticInstanceBuffer;
 
             var inboundArray = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(inboundBuffer.buffer, inboundBuffer.bufferLength, Allocator.Invalid);
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -174,7 +180,7 @@ namespace Unity.Networking.Transport
             {
                 if (!isLast || fragContext->endIndex > 0)
                 {
-                    if (fragContext->endIndex + inboundBuffer.bufferLength > param->PayloadCapacity)
+                    if (fragContext->endIndex + inboundBuffer.bufferLength > sharedContext->PayloadCapacity)
                     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                         throw new InvalidOperationException($"Fragmentation capacity exceeded");
@@ -225,29 +231,28 @@ namespace Unity.Networking.Transport
         /// <param name="staticInstanceBuffer">The static instance buffer</param>
         /// <param name="staticInstanceBufferLength">The static instance buffer length</param>
         /// <param name="settings">The NetworkSettings</param>
-        /// <exception cref="InvalidOperationException">Please specify a FragmentationUtility.Parameters with a PayloadCapacity greater than MTU, which is {NetworkParameterConstants.MTU}</exception>
         /// <returns>The network pipeline stage</returns>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
-            FragmentationUtility.Parameters param = settings.GetFragmentationStageParameters();
-
-            UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<FragmentationUtility.Parameters>());
+            var sharedContext = (FragSharedContext*)staticInstanceBuffer;
+            sharedContext->PayloadCapacity = settings.GetFragmentationStageParameters().PayloadCapacity;
+            sharedContext->MaxMessageSize = settings.GetNetworkConfigParameters().maxMessageSize;
 
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
-                ReceiveCapacity: sizeof(FragContext) + param.PayloadCapacity,
-                SendCapacity: sizeof(FragContext) + param.PayloadCapacity,
+                ReceiveCapacity: sizeof(FragContext) + sharedContext->PayloadCapacity,
+                SendCapacity: sizeof(FragContext) + sharedContext->PayloadCapacity,
                 HeaderCapacity: FragHeaderCapacity,
                 SharedStateCapacity: 0,
-                param.PayloadCapacity
+                sharedContext->PayloadCapacity
             );
         }
 
         /// <summary>
         /// Gets the value of the static size
         /// </summary>
-        public int StaticSize => UnsafeUtility.SizeOf<FragmentationUtility.Parameters>();
+        public int StaticSize => UnsafeUtility.SizeOf<FragSharedContext>();
     }
 }

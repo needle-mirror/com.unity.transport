@@ -35,10 +35,10 @@ namespace Unity.Networking.Transport.Samples
             Pipeline = DriverHandle.CreatePipeline(typeof(ReliableSequencedPipelineStage), typeof(SimulatorPipelineStage));
             ReliableStageId = NetworkPipelineStageCollection.GetStageId(typeof(ReliableSequencedPipelineStage));
             SimulatorStageId = NetworkPipelineStageCollection.GetStageId(typeof(SimulatorPipelineStage));
-            if (packetSize > NetworkParameterConstants.MTU)
+            if (packetSize > NetworkParameterConstants.MaxMessageSize)
             {
                 Debug.LogWarning("Truncating packet size to MTU");
-                packetSize = NetworkParameterConstants.MTU;
+                packetSize = NetworkParameterConstants.MaxMessageSize;
             }
             else if (packetSize < SoakMessage.HeaderLength)
             {

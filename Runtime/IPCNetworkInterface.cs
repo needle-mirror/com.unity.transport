@@ -114,7 +114,7 @@ namespace Unity.Networking.Transport
 
                 while (true)
                 {
-                    var size = NetworkParameterConstants.MTU;
+                    var size = NetworkParameterConstants.MaxPacketBufferSize;
                     var ptr = receiver.AllocateMemory(ref size);
                     if (ptr == IntPtr.Zero)
                         return;

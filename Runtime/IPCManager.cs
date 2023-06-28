@@ -19,7 +19,7 @@ namespace Unity.Networking.Transport
         {
             [FieldOffset(0)] public int from;
             [FieldOffset(4)] public int length;
-            [FieldOffset(8)] public fixed byte data[NetworkParameterConstants.MTU];
+            [FieldOffset(8)] public fixed byte data[NetworkParameterConstants.MaxPacketBufferSize];
         }
 
         private NativeMultiQueue<IPCData> m_IPCQueue;

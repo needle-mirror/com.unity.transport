@@ -172,7 +172,7 @@ namespace Unity.Networking.Transport.Tests
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
                 ReceiveCapacity: 0,
-                SendCapacity: NetworkParameterConstants.MTU,
+                SendCapacity: NetworkParameterConstants.MaxPacketBufferSize,
                 HeaderCapacity: 0,
                 SharedStateCapacity: 0
             );
@@ -224,7 +224,7 @@ namespace Unity.Networking.Transport.Tests
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
                 ReceiveCapacity: 0,
-                SendCapacity: NetworkParameterConstants.MTU,
+                SendCapacity: NetworkParameterConstants.MaxPacketBufferSize,
                 HeaderCapacity: 0,
                 SharedStateCapacity: 0
             );

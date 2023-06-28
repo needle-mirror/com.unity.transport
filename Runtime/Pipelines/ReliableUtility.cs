@@ -243,7 +243,7 @@ namespace Unity.Networking.Transport.Utilities
         [Obsolete("Will be removed in Unity Transport 2.0.")]
         public unsafe struct Packet
         {
-            internal const int Length = NetworkParameterConstants.MTU;
+            internal const int Length = NetworkParameterConstants.MaxPacketBufferSize;
             [FieldOffset(0)] public PacketHeader Header;
             [FieldOffset(0)] public fixed byte Buffer[Length];
         }
@@ -255,7 +255,7 @@ namespace Unity.Networking.Transport.Utilities
             // Have to add an extra 4 bytes in there to account for the fact that parts of the
             // header will be unused if window size is 32 or less. We could do away with this hack
             // by correcting the offsets everywhere else in the code, but that's tricky.
-            internal const int Length = NetworkParameterConstants.MTU + sizeof(uint);
+            internal const int Length = NetworkParameterConstants.MaxPacketBufferSize + sizeof(uint);
             [FieldOffset(0)] public ReliableHeader Header;
             [FieldOffset(0)] public fixed byte Buffer[Length];
         }

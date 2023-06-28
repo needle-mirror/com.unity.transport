@@ -20,7 +20,7 @@ namespace Unity.Networking.Transport
     public unsafe struct QueuedSendMessage
     {
         /// <summary>Content of the message.</summary>
-        public fixed byte Data[NetworkParameterConstants.MTU];
+        public fixed byte Data[NetworkParameterConstants.MaxPacketBufferSize];
         /// <summary>Destination endpoint for the message.</summary>
         public NetworkInterfaceEndPoint Dest;
         /// <summary>Length of the message's content.</summary>
@@ -54,6 +54,7 @@ namespace Unity.Networking.Transport
                 m_PipelineProcessor = m_PipelineProcessor.ToConcurrent(),
                 m_DefaultHeaderFlags = m_DefaultHeaderFlags,
                 m_ConcurrentParallelSendQueue = m_ParallelSendQueue.AsParallelWriter(),
+                m_MaxMessageSize = m_NetworkParams.config.maxMessageSize,
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 m_ThreadIndex = 0,
                 m_PendingBeginSend = m_PendingBeginSend
@@ -74,6 +75,7 @@ namespace Unity.Networking.Transport
                 m_PipelineProcessor = m_PipelineProcessor.ToConcurrent(),
                 m_DefaultHeaderFlags = m_DefaultHeaderFlags,
                 m_ConcurrentParallelSendQueue = m_ParallelSendQueue.AsParallelWriter(),
+                m_MaxMessageSize = m_NetworkParams.config.maxMessageSize,
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 m_ThreadIndex = 0,
                 m_PendingBeginSend = m_PendingBeginSend
@@ -202,14 +204,14 @@ namespace Unity.Networking.Transport
                 // fragmented pipelines have an explicity capacity, and we want users to be able to
                 // rely on this configured value.
                 var payloadCapacity = pipelinePayloadCapacity == 0
-                    ? NetworkParameterConstants.MTU - protocolOverhead - pipelineHeader
+                    ? m_MaxMessageSize - protocolOverhead - pipelineHeader
                     : pipelinePayloadCapacity;
 
                 // Total capacity is the full size of the buffer we'll allocate. Without an explicit
                 // pipeline payload capacity, this is the MTU. Otherwise it's the pipeline payload
                 // capacity plus whatever overhead we need to transmit the packet.
                 var totalCapacity = pipelinePayloadCapacity == 0
-                    ? NetworkParameterConstants.MTU
+                    ? m_MaxMessageSize
                     : pipelinePayloadCapacity + protocolOverhead + pipelineHeader;
 
                 // Check if we can accomodate the user's required payload size.
@@ -227,7 +229,7 @@ namespace Unity.Networking.Transport
                 }
 
                 var sendHandle = default(NetworkInterfaceSendHandle);
-                if (totalCapacity > NetworkParameterConstants.MTU)
+                if (totalCapacity > m_MaxMessageSize)
                 {
                     sendHandle.data = (IntPtr)UnsafeUtility.Malloc(totalCapacity, 8, Allocator.Temp);
                     sendHandle.capacity = totalCapacity;
@@ -370,7 +372,7 @@ namespace Unity.Networking.Transport
                 {
                     var ret = 0;
                     NetworkInterfaceSendHandle originalHandle = sendHandle;
-                    if ((ret = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, NetworkParameterConstants.MTU)) != 0)
+                    if ((ret = m_NetworkSendInterface.BeginSendMessage.Ptr.Invoke(out sendHandle, m_NetworkSendInterface.UserData, NetworkParameterConstants.MaxPacketBufferSize)) != 0)
                     {
                         return ret;
                     }
@@ -416,6 +418,8 @@ namespace Unity.Networking.Transport
             internal NetworkPipelineProcessor.Concurrent m_PipelineProcessor;
             internal UdpCHeader.HeaderFlags m_DefaultHeaderFlags;
             internal NativeQueue<QueuedSendMessage>.ParallelWriter m_ConcurrentParallelSendQueue;
+
+            internal int m_MaxMessageSize;
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             [NativeSetThreadIndex] internal int m_ThreadIndex;

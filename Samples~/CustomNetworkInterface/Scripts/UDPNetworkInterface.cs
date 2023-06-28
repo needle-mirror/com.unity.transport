@@ -152,7 +152,7 @@ namespace Unity.Networking.Transport.Samples
 
                 while (true)
                 {
-                    var size = NetworkParameterConstants.MTU;
+                    var size = NetworkParameterConstants.MaxMessageSize;
                     var ptr = receiver.AllocateMemory(ref size);
                     if (ptr == IntPtr.Zero)
                         return;
