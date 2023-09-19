@@ -18,7 +18,7 @@ namespace Unity.Networking.Transport
         {
             [FieldOffset(0)] public ushort fromPort;
             [FieldOffset(2)] public int length;
-            [FieldOffset(6)] public fixed byte data[NetworkParameterConstants.MTU];
+            [FieldOffset(6)] public fixed byte data[NetworkParameterConstants.AbsoluteMaxMessageSize];
         }
 
         private NativeMultiQueue<IPCData> m_IPCQueue;
@@ -70,7 +70,7 @@ namespace Unity.Networking.Transport
                 }
 
                 var ipcData = new IPCData();
-                packetProcessor.CopyPayload(ipcData.data, NetworkParameterConstants.MTU);
+                packetProcessor.CopyPayload(ipcData.data, NetworkParameterConstants.AbsoluteMaxMessageSize);
                 ipcData.length = packetProcessor.Length;
                 ipcData.fromPort = local.Port;
 

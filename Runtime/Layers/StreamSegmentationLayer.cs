@@ -26,7 +26,7 @@ namespace Unity.Networking.Transport
         static void Warn(string msg) => DebugLog.LogWarning(msg);
  
         // TODO: Does this need to be configurable?
-        const int k_SegmentSize = NetworkParameterConstants.MTU / 5;
+        const int k_SegmentSize = NetworkParameterConstants.AbsoluteMaxMessageSize / 5;
       
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {

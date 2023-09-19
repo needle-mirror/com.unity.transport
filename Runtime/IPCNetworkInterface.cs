@@ -12,7 +12,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// <para>
     /// The IPC network interface implements the functionality of a network interface over an
-    /// in-memory buffer. Operations will be instantenous, but can only be used to communicate with
+    /// in-memory buffer. Operations will be instantaneous, but can only be used to communicate with
     /// other <see cref="NetworkDriver"/> instances inside the same process (so IPC really means
     /// intra-process and not inter-process here). Useful for testing, or to implement a single
     /// player mode in a multiplayer game.

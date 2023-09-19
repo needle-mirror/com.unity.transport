@@ -73,7 +73,7 @@ namespace Unity.Networking.Transport
             {
                 var error = default(ErrorState);
                 var endpoint = localEndpoint;
-                var address = &endpoint.rawNetworkAddress;
+                var address = &endpoint.BaselibAddress;
                 var socket = Binding.Baselib_Socket_Create((Binding.Baselib_NetworkAddress_Family)address->family, Binding.Baselib_Socket_Protocol.TCP, &error);
                 if (error.code == ErrorCode.Success)
                 {
@@ -106,7 +106,7 @@ namespace Unity.Networking.Transport
                 if (IsValid(acceptedSocket) && error.code == ErrorCode.Success)
                 {
                     var address = default(NetworkEndpoint);
-                    Binding.Baselib_Socket_GetAddress(acceptedSocket, &address.rawNetworkAddress, &error);
+                    Binding.Baselib_Socket_GetAddress(acceptedSocket, &address.BaselibAddress, &error);
                     localEndpoint = address;
                     if (error.code != ErrorCode.Success)
                     {
@@ -122,7 +122,7 @@ namespace Unity.Networking.Transport
             // Note that connection in baselib is async. You have to check the completion using IsConnected.
             public static unsafe NetworkSocket Connect(NetworkEndpoint remoteEndoint)
             {
-                var address = &remoteEndoint.rawNetworkAddress;
+                var address = &remoteEndoint.BaselibAddress;
                 var error = default(ErrorState);
                 var socket = Binding.Baselib_Socket_Create((Binding.Baselib_NetworkAddress_Family)address->family, Binding.Baselib_Socket_Protocol.TCP, &error);
                 if (error.code == ErrorCode.Success)
@@ -254,7 +254,7 @@ namespace Unity.Networking.Transport
                         var endpoint = default(NetworkEndpoint);
                         var error = default(ErrorState);
 
-                        Binding.Baselib_Socket_GetAddress(data.Socket, &endpoint.rawNetworkAddress, &error);
+                        Binding.Baselib_Socket_GetAddress(data.Socket, &endpoint.BaselibAddress, &error);
                         if (error.code == (int)ErrorCode.Success && endpoint.Port != 0)
                         {
                             return endpoint;
@@ -541,7 +541,7 @@ namespace Unity.Networking.Transport
                     if (error.code != ErrorCode.Success)
                     {
                         ConnectionList.StartDisconnecting(ref connectionId);
-                        Abort(ref connectionId, ref connectionData, Error.DisconnectReason.Timeout);
+                        Abort(ref connectionId, ref connectionData, Error.DisconnectReason.ProtocolError);
                         break;
                     }
 
@@ -615,7 +615,7 @@ namespace Unity.Networking.Transport
                         }
 
                         ConnectionList.StartDisconnecting(ref connectionId);
-                        ConnectionList.FinishDisconnecting(ref connectionId, Error.DisconnectReason.Timeout);
+                        ConnectionList.FinishDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
                         ConnectionMap.ClearData(ref connectionId);
                         TCPSocket.Close(connectionData.Socket);
                         AllSocketsDeferredRemove(connectionData.Socket);

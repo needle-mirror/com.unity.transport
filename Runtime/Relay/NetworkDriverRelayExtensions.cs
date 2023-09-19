@@ -14,18 +14,9 @@ namespace Unity.Networking.Transport.Relay
         public static RelayConnectionStatus GetRelayConnectionStatus(this NetworkDriver driver)
         {
             if (driver.m_NetworkStack.TryGetLayer<RelayLayer>(out var layer))
-            {
                 return layer.ConnectionStatus;
-            }
             else
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Can't call GetRelayConnectionStatus when not using the Relay.");
-#else
-                DebugLog.LogError("Can't call GetRelayConnectionStatus when not using the Relay.");
-                return RelayConnectionStatus.NotEstablished;
-#endif
-            }
+                return RelayConnectionStatus.NotUsingRelay;
         }
 
         /// <summary>Connect to the relay server without specifying an endpoint.</summary>

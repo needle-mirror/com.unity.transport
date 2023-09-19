@@ -144,13 +144,11 @@ namespace Unity.Networking.Transport
             if (settings.TryGet<RelayNetworkParameter>(out var relayParams) && relayParams.ServerData.IsSecure != 0)
                 secureHostname.CopyFrom(relayParams.ServerData.HostString);
 
-#if ENABLE_MANAGED_UNITYTLS
             // Shouldn't be required for normal use cases but is provided as an out in case the user
             // wants to override the hostname (useful if say the user ended up resolving the Relay's
             // hostname on their own instead of providing it directly in the Relay parameters).
             if (settings.TryGet<TLS.SecureNetworkProtocolParameter>(out var secureParams))
                 secureHostname.CopyFrom(secureParams.Hostname);
-#endif
 
             var state = new InternalData
             {

@@ -1,29 +1,29 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "unity": "2022.2",
   "unityRelease": "0a18",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
-    "com.unity.collections": "2.1.4",
-    "com.unity.burst": "1.8.4",
-    "com.unity.mathematics": "1.2.6"
+    "com.unity.collections": "2.2.1",
+    "com.unity.burst": "1.8.8",
+    "com.unity.mathematics": "1.3.1"
   },
   "relatedPackages": {
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### Changes\n* When using Unity Relay, `NetworkDriver.GetRemoteEndpoint` will now always return the address of the Relay server, instead of returning the address until a connection is established, and then returning the allocation ID encoded as an endpoint (appearing as an invalid endpoint). This makes the behavior the same as it was in version 1.X of the package.\n* Updated Collections dependency to 2.1.2.\n* A warning will now be emitted if passing a connection type other than \"wss\" to the `RelayServerData` constructors on WebGL (other connection types are not supported on that platform).\n\n### Fixes\n* Fixed an issue where the reliable pipeline stage could end up writing past the end of its internal buffer and thrashing the buffers of other connections. This could result in packet corruption, but would most likely result in erroneous -7 (`NetworkDriverParallelForErr`) errors being reported when calling `EndSend`.\n* Fixed an issue where upon returning -7 (`NetworkDriverParallelForErr`), `EndSend` would leak the send handle. Over time, this would result in less send handles being available, resulting in more -5 (`NetworkSendQueueFull`) errors.\n* Fixed an issue where WebSocket connections would always take at least `connectTimeoutMS` milliseconds to be reported as established, even if the connection was actually established faster than that.\n* Fixed an issue where `ArgumentOutOfRangeException` could be thrown in situations where a new WebSocket connection is established while a previous connection is in the process of being closed.\n* If nothing is received from a Unity Relay server for a while, the transport will now attempt to rebind to it. This should improve the accuracy of `GetRelayConnectionStatus` in scenarios where the Relay allocation times out while communications with the server are out.\n* Fixed an issue where `UDPNetworkInterface` (the default one) would not bind to the correct address if the local IP address change and the socket needs to be recreated (e.g. because the app was backgrounded on a mobile device).\n* Fixed an issue where `Disconnect` events would fail to be reported correctly for WebSocket connections.\n* Fixed an issue where, when using Relay, heartbeats would be sent constantly when they are disabled by setting `relayConnectionTimeMS` to 0 in the Relay parameters."
+    "changelog": "### New features\n* It is now possible to configure the maximum message size that the transport will send through a new `maxMessageSize` parameter in `NetworkSettings.WithNetworkConfigParameters`. This is useful for environments where network equipment mishandles larger packets (like some mobile networks or VPNs). The value excludes IP and UDP headers, but includes headers added by the transport itself (e.g. reliability headers). The default value is 1400. Note that it is recommended that both client and server be configured to use the same value.\n* Added new values `AuthenticationFailure` and `ProtocolError` to the `Error.DisconnectReason` enum. These values are respectively returned when a connection fails to be established because of DTLS/TLS handshake failure, and for unexpected and unrecoverable errors encountered by the transport (e.g. unexpected socket errors or malformed WebSocket frames).\n* Added a new `NetworkFamily.Custom` value and proper support for it in `NetworkEndpoint`. This value is intended for usage with custom `INetworkInterface` implementations, where endpoints are not IP addresses.\n\n### Changes\n* Updated Collections dependency to 2.2.1.\n* Updated Burst dependency to 1.8.8.\n* Updated Mathematics dependency to 1.3.1.\n* `NetworkDriver.GetRelayConnectionStatus` will now return the new enum value `RelayConnectionStatus.NotUsingRelay` when called on a `NetworkDriver` that has not been configured to use Unity Relay. The previous behavior was to throw an exception. This can be used to safely determine if a driver is using Relay, even from Burst-compiled code.\n* `RelayServerData` now exposes a `IsWebSocket` field that can be used to determine if the server data will be using a WebSocket endpoint. This value is set automatically if constructing the `RelayServerData` from an allocation object, and can be set through a new optional `isWebSocket` parameter for low-level constructors.\n* `NetworkEndpoint.RawPort` is now obsolete. There is little use for this API since it basically only converts to/from network byte order. There are standard C# APIs to do this.\n\n### Fixes\n* Fixed a possible crash when using secure WebSockets that would occur if a connection was closed suddenly with pending packets waiting to be sent.\n* Fixed an issue where empty messages would not properly be received if sent on a non-default pipeline.\n* Fixed \"Input string was not in a correct format\" log when listening on a port already in use."
   },
   "upmCi": {
-    "footprint": "7710c66ac941b52add3b21671eccd025a5899b40"
+    "footprint": "64f999ac3b1e584257d9d025c5c761c76dcc538e"
   },
-  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.0/manual/index.html",
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.1/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "db5ae79bb3752916ed2b57fcc112e0b4b052f227"
+    "revision": "6f83b98fdc9ce9f33261055e34cedb5583730039"
   },
   "samples": [
     {

@@ -62,7 +62,7 @@ namespace Unity.Networking.Transport
             };
 
             m_ProtocolData = new NativeReference<ProtocolData>(protocolData, Allocator.Persistent);
-            m_DeferredSendQueue = new PacketsQueue(k_DeferredSendQueueSize);
+            m_DeferredSendQueue = new PacketsQueue(k_DeferredSendQueueSize, netConfig.maxMessageSize);
             m_ConnectionsData = new ConnectionDataMap<ConnectionData>(1, default, Allocator.Persistent);
             m_EndpointsHashMap = new NativeParallelHashMap<NetworkEndpoint, ConnectionId>(1, Allocator.Persistent);
 
@@ -259,7 +259,7 @@ namespace Unity.Networking.Transport
                                 if (EndpointsHashmap.TryGetValue(endpoint, out var connectionId))
                                 {
                                     Connections.StartDisconnecting(ref connectionId);
-                                    Connections.FinishDisconnecting(ref connectionId, Error.DisconnectReason.ClosedByRemote);
+                                    Connections.FinishDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
                                     EndpointsHashmap.Remove(endpoint);
                                 }
                             }

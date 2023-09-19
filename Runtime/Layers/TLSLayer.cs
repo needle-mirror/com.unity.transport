@@ -1,5 +1,3 @@
-#if ENABLE_MANAGED_UNITYTLS
-
 using System;
 using Unity.Burst;
 using Unity.Collections;
@@ -32,6 +30,8 @@ namespace Unity.Networking.Transport
         //      we can reduce this value (we should normally be fine with a value of 40).
         private const int k_TLSPadding = 5 + 32 + 31;
 
+        private const int k_DecryptBufferSize = NetworkParameterConstants.AbsoluteMaxMessageSize * 2;
+
         private struct TLSConnectionData
         {
             [NativeDisableUnsafePtrRestriction]
@@ -50,7 +50,7 @@ namespace Unity.Networking.Transport
             // we decrypt everything in this buffer. What can be fitted inside the packet is then
             // copied there, and any leftovers will be copied in the next packet (which might need
             // to be a newly-enqueued one).
-            public fixed byte DecryptBuffer[NetworkParameterConstants.MTU * 2];
+            public fixed byte DecryptBuffer[k_DecryptBufferSize];
             public int DecryptBufferLength;
         }
 
@@ -68,16 +68,17 @@ namespace Unity.Networking.Transport
             if (!connectionList.IsCreated)
                 throw new InvalidOperationException("TLS layer expects to have an underlying connection list.");
 #endif
+            var netConfig = settings.GetNetworkConfigParameters();
+
             m_UnderlyingConnectionList = connectionList;
             connectionList = m_ConnectionList = ConnectionList.Create();
             m_ConnectionsData = new ConnectionDataMap<TLSConnectionData>(1, default(TLSConnectionData), Allocator.Persistent);
             m_UnderlyingIdToCurrentIdMap = new NativeParallelHashMap<ConnectionId, ConnectionId>(1, Allocator.Persistent);
             m_UnityTLSConfiguration = new UnityTLSConfiguration(ref settings, SecureTransportProtocol.TLS);
-            m_DeferredSends = new PacketsQueue(k_DeferredSendsQueueSize);
+            m_DeferredSends = new PacketsQueue(k_DeferredSendsQueueSize, netConfig.maxMessageSize);
 
             m_DeferredSends.SetDefaultDataOffset(packetPadding);
 
-            var netConfig = settings.GetNetworkConfigParameters();
             // We pick the maximum handshake timeout as our half-open disconnect timeout since after
             // that point, there is no progress possible anymore on the handshake.
             m_HalfOpenDisconnectTimeout = netConfig.maxConnectAttempts * netConfig.connectTimeoutMS;
@@ -241,7 +242,7 @@ namespace Unity.Networking.Transport
                 {
                     // Pointer and length of next available space in decryption buffer.
                     var bufferPtr = data.DecryptBuffer + data.DecryptBufferLength;
-                    var bufferLength = (NetworkParameterConstants.MTU * 2) - data.DecryptBufferLength;
+                    var bufferLength = k_DecryptBufferSize - data.DecryptBufferLength;
 
                     var decryptedLength = new UIntPtr();
                     var result = Binding.unitytls_client_read_data(
@@ -409,8 +410,7 @@ namespace Unity.Networking.Transport
                     UnderlyingConnections.StartDisconnecting(ref data.UnderlyingConnection);
                     Connections.StartDisconnecting(ref connection);
 
-                    // TODO Not the ideal disconnect reason. If we ever have a better one, use it.
-                    data.DisconnectReason = Error.DisconnectReason.ClosedByRemote;
+                    data.DisconnectReason = Error.DisconnectReason.AuthenticationFailure;
                     ConnectionsData[connection] = data;
                 }
             }
@@ -489,6 +489,7 @@ namespace Unity.Networking.Transport
         [BurstCompile]
         private struct SendJob : IJob
         {
+            public ConnectionList Connections;
             public ConnectionDataMap<TLSConnectionData> ConnectionsData;
             public PacketsQueue SendQueue;
             public PacketsQueue DeferredSends;
@@ -513,7 +514,14 @@ namespace Unity.Networking.Transport
                     var connectionId = packetProcessor.ConnectionRef;
                     packetProcessor.ConnectionRef = ConnectionsData[connectionId].UnderlyingConnection;
 
+                    var connectionState = Connections.GetConnectionState(connectionId);
                     var clientPtr = ConnectionsData[connectionId].UnityTLSClientPtr;
+                    if (connectionState != NetworkConnection.State.Connected || clientPtr == null)
+                    {
+                        packetProcessor.Drop();
+                        continue;
+                    }
+
                     var packetPtr = (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset;
                     var result = Binding.unitytls_client_send_data(clientPtr, packetPtr, new UIntPtr((uint)packetProcessor.Length));
                     if (result != Binding.UNITYTLS_SUCCESS)
@@ -551,6 +559,7 @@ namespace Unity.Networking.Transport
         {
             return new SendJob
             {
+                Connections = m_ConnectionList,
                 ConnectionsData = m_ConnectionsData,
                 SendQueue = arguments.SendQueue,
                 DeferredSends = m_DeferredSends,
@@ -559,5 +568,3 @@ namespace Unity.Networking.Transport
         }
     }
 }
-
-#endif

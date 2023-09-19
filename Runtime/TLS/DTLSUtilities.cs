@@ -1,5 +1,3 @@
-#if ENABLE_MANAGED_UNITYTLS
-
 using System.Runtime.CompilerServices;
 
 namespace Unity.Networking.Transport.TLS
@@ -44,5 +42,3 @@ namespace Unity.Networking.Transport.TLS
         }
     }
 }
-
-#endif

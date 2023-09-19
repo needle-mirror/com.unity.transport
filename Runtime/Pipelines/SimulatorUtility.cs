@@ -60,7 +60,7 @@ namespace Unity.Networking.Transport.Utilities
         public static ref NetworkSettings WithSimulatorStageParameters(
             ref this NetworkSettings settings,
             int maxPacketCount,
-            int maxPacketSize = NetworkParameterConstants.MTU,
+            int maxPacketSize = NetworkParameterConstants.AbsoluteMaxMessageSize,
             ApplyMode mode = ApplyMode.AllPackets,
             int packetDelayMs = 0,
             int packetJitterMs = 0,

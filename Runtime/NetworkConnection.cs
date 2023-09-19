@@ -17,19 +17,40 @@ namespace Unity.Networking.Transport
             // change to it should be discussed and properly synchronized with them first.
 
             /// <summary>Internal value. Do not use.</summary>
-            Default,
+            Default                       = 0,
 
             /// <summary>Indicates the connection timed out due to inactivity.</summary>
-            Timeout,
+            Timeout                       = 1,
 
-            /// <summary>Indicates the connection failed to be established.</summary>
-            MaxConnectionAttempts,
+            /// <summary>
+            /// Indicates the connection failed to be established because the server could not be
+            /// reached (see <see cref="NetworkConfigParameter.maxConnectAttempts"/>).
+            /// </summary>
+            MaxConnectionAttempts         = 2,
 
             /// <summary>Indicates the connection was manually closed by the remote peer.</summary>
-            ClosedByRemote,
+            ClosedByRemote                = 3,
 
-            /// <summary>Internal value. Do not use.</summary>
+            // Values 4 and 5 are already used by Netcode for Entites for bad protocol version and
+            // invalid RPC, respectively. So we want new values to start at 6.
+
+            /// <summary>
+            /// Indicates the connection failed to be established because the remote peer could not
+            /// be authenticated. This can only occur if using DTLS or TLS (with WebSockets).
+            /// </summary>
+            AuthenticationFailure         = 6,
+
+            /// <summary>
+            /// Indicates the connection failed because of a low-level protocol error (unexpected
+            /// socket error, malformed payload in a TCP stream, etc.). This denotes an error that
+            /// is both unexpected and that can't be recovered from. As such it should not be
+            /// returned under normal operating circumstances.
+            /// </summary>
+            ProtocolError                 = 7,
+
+            /// <summary>Obsolete. Will never be returned by the API.</summary>
             [EditorBrowsable(EditorBrowsableState.Never)]
+            [Obsolete("Value is not in use anymore and nothing will return it.")]
             Count
         }
 

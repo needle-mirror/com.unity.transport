@@ -68,9 +68,10 @@ namespace Unity.Networking.Transport
             var slice = default(InboundRecvBuffer);
             ReliableUtility.Context* reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
             ReliableUtility.SharedContext* shared = (ReliableUtility.SharedContext*)ctx.internalSharedProcessBuffer;
+
             if (reliable->Resume == ReliableUtility.NullEntry)
             {
-                if (inboundBuffer.bufferLength <= 0)
+                if (inboundBuffer.buffer == null)
                 {
                     inboundBuffer = slice;
                     return;
@@ -134,7 +135,7 @@ namespace Unity.Networking.Transport
             // Release any packets that might have been acknowledged since the last call.
             ReliableUtility.ReleaseAcknowledgedPackets(ctx);
 
-            if (inboundBuffer.bufferLength > 0)
+            if (inboundBuffer.buffer != null)
             {
                 reliable->LastSentTime = ctx.timestamp;
 

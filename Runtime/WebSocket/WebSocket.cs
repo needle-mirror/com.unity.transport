@@ -62,7 +62,7 @@ namespace Unity.Networking.Transport
             handshake.Append(end);
             FixedString128Bytes host = "Host: ";
             handshake.Append(host);
-            handshake.Append(NetworkEndpoint.AddressToString(ref remoteEndpoint.rawNetworkAddress));
+            handshake.Append(remoteEndpoint.ToFixedString());
             handshake.Append(end);
             handshake.Append(end);
 
@@ -500,7 +500,6 @@ namespace Unity.Networking.Transport
         // handshake packets up to the 512 bytes and user payloads up to MTU - MaxHeaderSize(14).
 
         public const int MaxHeaderSize = 14;
-        public const int MaxPayloadSize = NetworkParameterConstants.MTU - MaxHeaderSize;
 
         public unsafe struct Keys
         {
@@ -509,7 +508,7 @@ namespace Unity.Networking.Transport
 
         public unsafe struct Buffer
         {
-            public const int Capacity = 2 * NetworkParameterConstants.MTU;
+            public const int Capacity = 2 * NetworkParameterConstants.AbsoluteMaxMessageSize;
 
             public fixed byte Data[Capacity];
             public int Length;
@@ -518,7 +517,7 @@ namespace Unity.Networking.Transport
 
         public unsafe struct Payload
         {
-            public const int Capacity = MaxPayloadSize;
+            public const int Capacity = NetworkParameterConstants.AbsoluteMaxMessageSize - MaxHeaderSize;
 
             public fixed byte Data[Capacity];
             public int Length;

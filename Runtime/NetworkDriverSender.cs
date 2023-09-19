@@ -75,8 +75,8 @@ namespace Unity.Networking.Transport
                 sendHandle = default;
 
                 if (packetSize == 0)
-                    packetSize = NetworkParameterConstants.MTU;
-                else if (packetSize > NetworkParameterConstants.MTU)
+                    packetSize = (uint)m_SendQueue.PayloadCapacity;
+                else if (packetSize > m_SendQueue.PayloadCapacity)
                     return (int)Error.StatusCode.NetworkPacketOverflow;
 
                 if (m_SendQueue.TryAcquireBuffer(out var bufferIndex))

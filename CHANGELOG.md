@@ -1,10 +1,30 @@
 # Change log
 
+## [2.1.0] - 2023-09-19
+
+### New features
+* It is now possible to configure the maximum message size that the transport will send through a new `maxMessageSize` parameter in `NetworkSettings.WithNetworkConfigParameters`. This is useful for environments where network equipment mishandles larger packets (like some mobile networks or VPNs). The value excludes IP and UDP headers, but includes headers added by the transport itself (e.g. reliability headers). The default value is 1400. Note that it is recommended that both client and server be configured to use the same value.
+* Added new values `AuthenticationFailure` and `ProtocolError` to the `Error.DisconnectReason` enum. These values are respectively returned when a connection fails to be established because of DTLS/TLS handshake failure, and for unexpected and unrecoverable errors encountered by the transport (e.g. unexpected socket errors or malformed WebSocket frames).
+* Added a new `NetworkFamily.Custom` value and proper support for it in `NetworkEndpoint`. This value is intended for usage with custom `INetworkInterface` implementations, where endpoints are not IP addresses.
+
+### Changes
+* Updated Collections dependency to 2.2.1.
+* Updated Burst dependency to 1.8.8.
+* Updated Mathematics dependency to 1.3.1.
+* `NetworkDriver.GetRelayConnectionStatus` will now return the new enum value `RelayConnectionStatus.NotUsingRelay` when called on a `NetworkDriver` that has not been configured to use Unity Relay. The previous behavior was to throw an exception. This can be used to safely determine if a driver is using Relay, even from Burst-compiled code.
+* `RelayServerData` now exposes a `IsWebSocket` field that can be used to determine if the server data will be using a WebSocket endpoint. This value is set automatically if constructing the `RelayServerData` from an allocation object, and can be set through a new optional `isWebSocket` parameter for low-level constructors.
+* `NetworkEndpoint.RawPort` is now obsolete. There is little use for this API since it basically only converts to/from network byte order. There are standard C# APIs to do this.
+
+### Fixes
+* Fixed a possible crash when using secure WebSockets that would occur if a connection was closed suddenly with pending packets waiting to be sent.
+* Fixed an issue where empty messages would not properly be received if sent on a non-default pipeline.
+* Fixed "Input string was not in a correct format" log when listening on a port already in use.
+
 ## [2.0.2] - 2023-05-30
 
 ### Changes
 * When using Unity Relay, `NetworkDriver.GetRemoteEndpoint` will now always return the address of the Relay server, instead of returning the address until a connection is established, and then returning the allocation ID encoded as an endpoint (appearing as an invalid endpoint). This makes the behavior the same as it was in version 1.X of the package.
-* Updated Collections dependency to 2.1.2.
+* Updated Collections dependency to 2.1.4.
 * A warning will now be emitted if passing a connection type other than "wss" to the `RelayServerData` constructors on WebGL (other connection types are not supported on that platform).
 
 ### Fixes

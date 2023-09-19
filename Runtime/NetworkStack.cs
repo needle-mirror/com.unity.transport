@@ -4,9 +4,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
-#if ENABLE_MANAGED_UNITYTLS
 using Unity.Networking.Transport.TLS;
-#endif
 using BurstRuntime = Unity.Burst.BurstRuntime;
 
 namespace Unity.Networking.Transport
@@ -163,11 +161,9 @@ namespace Unity.Networking.Transport
 
             var isRelay = networkSettings.TryGet<RelayNetworkParameter>(out _);
 
-#if ENABLE_MANAGED_UNITYTLS
             var isSecure = isRelay
                 ? networkSettings.GetRelayParameters().ServerData.IsSecure == 1
                 : networkSettings.TryGet<TLS.SecureNetworkProtocolParameter>(out _);
-#endif
 
 #if !UNITY_WEBGL || UNITY_EDITOR
             if (networkInterface is TCPNetworkInterface || networkInterface is WebSocketNetworkInterface)
@@ -176,12 +172,10 @@ namespace Unity.Networking.Transport
                 if (networkSettings.TryGet<StreamSegmentationParameter>(out _))
                     stack.AddLayer(new StreamSegmentationLayer(), ref networkSettings);
 
-#if ENABLE_MANAGED_UNITYTLS
                 // If using the TCP interface or WebSocket interface (on non-WebGL platforms), we need
                 // to add the TLS layer before the simulator layer, since it expects a reliable stream.
                 if (isSecure)
                     stack.AddLayer(new TLSLayer(), ref networkSettings);
-#endif // ENABLE_MANAGED_UNITYTLS
 
                 // TCP interface requires a layer to manage the stream to datagram transition.
                 if (networkInterface is TCPNetworkInterface)
@@ -199,7 +193,7 @@ namespace Unity.Networking.Transport
 
             // Determine if we need to add a DTLS layer or not. These layers can only be added on
             // non-WebGL platforms that support UnityTLS. Hence the complicated #if condition.
-#if ENABLE_MANAGED_UNITYTLS && (!UNITY_WEBGL || UNITY_EDITOR)
+#if !UNITY_WEBGL || UNITY_EDITOR
             if (isSecure && !(networkInterface is TCPNetworkInterface || networkInterface is WebSocketNetworkInterface))
                 stack.AddLayer(new DTLSLayer(), ref networkSettings);
 #endif
@@ -278,6 +272,7 @@ namespace Unity.Networking.Transport
             var networkConfig = settings.GetNetworkConfigParameters();
             var sendQueueCapacity = networkConfig.sendQueueCapacity;
             var receiveQueueCapacity = networkConfig.receiveQueueCapacity;
+            var payloadSize = networkConfig.maxMessageSize;
 
 #if !UNITY_WEBGL || UNITY_EDITOR
             if (BurstRuntime.GetHashCode64<N>() == BurstRuntime.GetHashCode64<UDPNetworkInterface>())
@@ -285,14 +280,14 @@ namespace Unity.Networking.Transport
                 fixed(void* interfacePtr = &networkInterface)
                 {
                     ref var udpInterface = ref *(UDPNetworkInterface*)interfacePtr;
-                    udpInterface.CreateQueues(sendQueueCapacity, receiveQueueCapacity, out sendQueue, out receiveQueue);
+                    udpInterface.CreateQueues(sendQueueCapacity, receiveQueueCapacity, payloadSize, out sendQueue, out receiveQueue);
                 }
             }
             else
 #endif
             {
-                receiveQueue = new PacketsQueue(receiveQueueCapacity);
-                sendQueue = new PacketsQueue(sendQueueCapacity);
+                receiveQueue = new PacketsQueue(receiveQueueCapacity, payloadSize);
+                sendQueue = new PacketsQueue(sendQueueCapacity, payloadSize);
             }
 
             if (sendQueue.Capacity != networkConfig.sendQueueCapacity)

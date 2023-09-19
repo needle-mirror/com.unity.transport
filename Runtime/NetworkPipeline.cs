@@ -1034,7 +1034,7 @@ namespace Unity.Networking.Transport
                     if (needsSendUpdate)
                         AddSendUpdate(connection, i, pipeline, m_SendStageNeedsUpdate);
 
-                    if (inboundBuffer.bufferLength == 0)
+                    if (inboundBuffer.buffer == null)
                         break;
 
                     // Offset needs to be adjusted for the next pipeline (the one in front of this one)
@@ -1049,7 +1049,7 @@ namespace Unity.Networking.Transport
                     needsUpdate = false;
                 }
 
-                if (inboundBuffer.bufferLength != 0)
+                if (inboundBuffer.buffer != null)
                     receiver.PushDataEvent(connection, pipeline.Id, inboundBuffer.buffer, inboundBuffer.bufferLength, ref eventQueue);
 
                 if (resumeQStart >= resumeQ.Length)

@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Net;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -42,6 +41,10 @@ namespace Unity.Networking.Transport.Relay
         /// <value>True if using DTLS or WSS, false if using UDP.</value>
         public readonly byte IsSecure;
 
+        /// <summary>Whether the connection is using the WebSocket protocol.</summary>
+        /// <value>True if using WSS, false if using UDP or DTLS.</value>
+        public readonly byte IsWebSocket;
+
         // TODO Should be computed on connection binding (but not Burst compatible today).
         internal fixed byte HMAC[32];
 
@@ -62,6 +65,7 @@ namespace Unity.Networking.Transport.Relay
             // Assign temporary values to those. Chained constructors will set them.
             Endpoint = default;
             IsSecure = 0;
+            IsWebSocket = 0;
 
             HostString = default;
 
@@ -81,8 +85,7 @@ namespace Unity.Networking.Transport.Relay
             // We check against a hardcoded list of strings instead of just trying to find the
             // connection type in the endpoints since it may contains things we don't support
             // (e.g. they provide a "tcp" endpoint which we don't support).
-            var supportedConnectionTypes = new string[] { "udp", "dtls", "ws", "wss" };
-            if (!supportedConnectionTypes.Contains(connectionType))
+            if (connectionType != "udp" && connectionType != "dtls" && connectionType != "ws" && connectionType != "wss")
                 throw new ArgumentException($"Invalid connection type: {connectionType}. Must be udp, dtls, or wss.");
 
 #if UNITY_WEBGL
@@ -90,11 +93,17 @@ namespace Unity.Networking.Transport.Relay
                 DebugLog.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
 #endif
 
-            var serverEndpoint = allocation.ServerEndpoints.First(ep => ep.ConnectionType == connectionType);
+            IsWebSocket = connectionType == "ws" || connectionType == "wss" ? (byte)1 : (byte)0;
 
-            Endpoint = HostToEndpoint(serverEndpoint.Host, (ushort)serverEndpoint.Port);
-            IsSecure = serverEndpoint.Secure ? (byte)1 : (byte)0;
-            HostString = serverEndpoint.Host;
+            foreach (var endpoint in allocation.ServerEndpoints)
+            {
+                if (endpoint.ConnectionType == connectionType)
+                {
+                    Endpoint = HostToEndpoint(endpoint.Host, (ushort)endpoint.Port);
+                    IsSecure = endpoint.Secure ? (byte)1 : (byte)0;
+                    HostString = endpoint.Host;
+                }
+            }
         }
 
         /// <summary>Create a new Relay server data structure from a join allocation.</summary>
@@ -106,8 +115,7 @@ namespace Unity.Networking.Transport.Relay
             // We check against a hardcoded list of strings instead of just trying to find the
             // connection type in the endpoints since it may contains things we don't support
             // (e.g. they provide a "tcp" endpoint which we don't support).
-            var supportedConnectionTypes = new string[] { "udp", "dtls", "ws", "wss" };
-            if (!supportedConnectionTypes.Contains(connectionType))
+            if (connectionType != "udp" && connectionType != "dtls" && connectionType != "ws" && connectionType != "wss")
                 throw new ArgumentException($"Invalid connection type: {connectionType}. Must be udp, dtls, or wss.");
 
 #if UNITY_WEBGL
@@ -115,11 +123,17 @@ namespace Unity.Networking.Transport.Relay
                 DebugLog.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
 #endif
 
-            var serverEndpoint = allocation.ServerEndpoints.First(ep => ep.ConnectionType == connectionType);
+            IsWebSocket = connectionType == "ws" || connectionType == "wss" ? (byte)1 : (byte)0;
 
-            Endpoint = HostToEndpoint(serverEndpoint.Host, (ushort)serverEndpoint.Port);
-            IsSecure = serverEndpoint.Secure ? (byte)1 : (byte)0;
-            HostString = serverEndpoint.Host;
+            foreach (var endpoint in allocation.ServerEndpoints)
+            {
+                if (endpoint.ConnectionType == connectionType)
+                {
+                    Endpoint = HostToEndpoint(endpoint.Host, (ushort)endpoint.Port);
+                    IsSecure = endpoint.Secure ? (byte)1 : (byte)0;
+                    HostString = endpoint.Host;
+                }
+            }
         }
 
 #endif
@@ -139,14 +153,23 @@ namespace Unity.Networking.Transport.Relay
         /// <param name="hostConnectionData">Connection data of the host (same as previous for hosts).</param>
         /// <param name="key">HMAC signature of the allocation.</param>
         /// <param name="isSecure">Whether the Relay connection is to be secured or not.</param>
+        /// <param name="isWebSocket">Whether the Relay connection is using WebSockets or not.</param>
         public RelayServerData(string host, ushort port, byte[] allocationId, byte[] connectionData,
-                               byte[] hostConnectionData, byte[] key, bool isSecure)
+                               byte[] hostConnectionData, byte[] key, bool isSecure, bool isWebSocket)
             : this(allocationId, connectionData, hostConnectionData, key)
         {
             Endpoint = HostToEndpoint(host, port);
             IsSecure = isSecure ? (byte)1 : (byte)0;
+            IsWebSocket = isWebSocket ? (byte)1 : (byte)0;
             HostString = host;
         }
+
+        // Keeping this WebSocket-less version around to avoid breaking the API...
+        /// <inheritdoc cref="RelayServerData(string, ushort, byte[], byte[], byte[], byte[], bool, bool)"/>
+        public RelayServerData(string host, ushort port, byte[] allocationId, byte[] connectionData,
+                               byte[] hostConnectionData, byte[] key, bool isSecure)
+            : this(host, port, allocationId, connectionData, hostConnectionData, key, isSecure, false)
+        {}
 
         /// <summary>Create a new Relay server data structure (low-level constructor).</summary>
         /// <param name="endpoint">Endpoint of the Relay server.</param>
@@ -156,8 +179,10 @@ namespace Unity.Networking.Transport.Relay
         /// <param name="hostConnectionData">Connection data of the host (use default for hosts).</param>
         /// <param name="key">HMAC signature of the allocation.</param>
         /// <param name="isSecure">Whether the Relay connection is to be secured or not.</param>
+        /// <param name="isWebSocket">Whether the Relay connection is using WebSockets or not.</param>
         public RelayServerData(ref NetworkEndpoint endpoint, ushort nonce, ref RelayAllocationId allocationId,
-                               ref RelayConnectionData connectionData, ref RelayConnectionData hostConnectionData, ref RelayHMACKey key, bool isSecure)
+                               ref RelayConnectionData connectionData, ref RelayConnectionData hostConnectionData,
+                               ref RelayHMACKey key, bool isSecure, bool isWebSocket)
         {
             Endpoint = endpoint;
             Nonce = nonce;
@@ -167,6 +192,7 @@ namespace Unity.Networking.Transport.Relay
             HMACKey = key;
 
             IsSecure = isSecure ? (byte)1 : (byte)0;
+            IsWebSocket = isWebSocket ? (byte)1 : (byte)0;
 
             fixed(byte* hmacPtr = HMAC)
             {
@@ -175,6 +201,14 @@ namespace Unity.Networking.Transport.Relay
 
             HostString = endpoint.ToFixedString();
         }
+
+        // Keeping this WebSocket-less version around to avoid breaking the API...
+        /// <inheritdoc cref="RelayServerData(ref NetworkEndpont, ushort, ref RelayAllocationId, ref RelayConnectionData, ref RelayConnectionData, ref RelayHMACKey, bool, bool)"/>
+        public RelayServerData(ref NetworkEndpoint endpoint, ushort nonce, ref RelayAllocationId allocationId,
+                               ref RelayConnectionData connectionData, ref RelayConnectionData hostConnectionData,
+                               ref RelayHMACKey key, bool isSecure)
+            : this(ref endpoint, nonce, ref allocationId, ref connectionData, ref hostConnectionData, ref key, isSecure, false)
+        {}
 
         /// <summary>Increment the nonce and recompute the HMAC.</summary>
         public void IncrementNonce()

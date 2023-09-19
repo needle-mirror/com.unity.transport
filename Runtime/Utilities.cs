@@ -183,43 +183,6 @@ namespace Unity.Networking.Transport.Utilities
         }
     }
 
-    internal static class FixedStringHexExt
-    {
-        internal static FormatError AppendHex<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
-        {
-            int shamt = 12;
-            // Find the first non-zero nibble
-            while (shamt > 0)
-            {
-                if (((val >> shamt) & 0xf) != 0)
-                    break;
-                shamt -= 4;
-            }
-            var err = FormatError.None;
-            while (shamt >= 0)
-            {
-                var nibble = (val >> shamt) & 0xf;
-                if (nibble >= 10)
-                    err |= str.AppendRawByte((byte)('a' + nibble - 10));
-                else
-                    err |= str.AppendRawByte((byte)('0' + nibble));
-                shamt -= 4;
-            }
-            return err != FormatError.None ? FormatError.Overflow : FormatError.None;
-        }
-        
-        internal static FormatError AppendHex2<T>(ref this T str, ushort val) where T : unmanaged, INativeList<byte>, IUTF8Bytes
-        {
-            if (val <= 0xf)
-            {
-                if (str.Append('0') == FormatError.Overflow)
-                    return FormatError.Overflow;
-            }
-
-            return str.AppendHex(val);
-        }
-    }
-
     internal static class NativeListExt
     {
         /// <summary>
@@ -300,10 +263,6 @@ namespace Unity.Networking.Transport.Utilities
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetCurrentTimestampMS()
         {
-            // Normally we'd use Baselib_Timer_GetTicksToNanosecondsConversionRatio for more precise
-            // timestamp calculations, but it can't be used in DOTS Runtime (yet) because its
-            // bindings link directly to the version returning a struct, whereas normal bindings use
-            // the injected version that returns the struct through an out parameter.
             return (long)(Binding.Baselib_Timer_GetTimeSinceStartupInSeconds() * 1000);
         }
 

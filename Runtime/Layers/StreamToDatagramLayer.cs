@@ -27,7 +27,7 @@ namespace Unity.Networking.Transport
        
         public unsafe struct StreamToDatagramLayerPacketBuffer
         {
-            public const int Capacity = 2 * NetworkParameterConstants.MTU; 
+            public const int Capacity = 2 * NetworkParameterConstants.AbsoluteMaxMessageSize; 
 
             public fixed byte Data[Capacity];                
             public int Length;
@@ -76,7 +76,7 @@ namespace Unity.Networking.Transport
                 {
                     var packetProcessor = SendQueue[i];
                     // Don't send empty packets or packets larger than we can receive on the other side.
-                    if (packetProcessor.Length == 0 || (ushort)packetProcessor.Length > (NetworkParameterConstants.MTU - k_HeaderSize))
+                    if (packetProcessor.Length == 0 || (ushort)packetProcessor.Length > (SendQueue.PayloadCapacity - k_HeaderSize))
                     {
                         packetProcessor.Drop();
                         continue;
@@ -110,7 +110,7 @@ namespace Unity.Networking.Transport
                 for (int i = 0; i < count; i++)
                 {
                     var packetProcessor = ReceiveQueue[i];
-                    if (packetProcessor.Length == 0 || packetProcessor.Length > NetworkParameterConstants.MTU)
+                    if (packetProcessor.Length == 0 || packetProcessor.Length > ReceiveQueue.PayloadCapacity)
                     {
                         packetProcessor.Drop();
                         continue;
@@ -142,7 +142,7 @@ namespace Unity.Networking.Transport
                         total -= k_HeaderSize;
 
                         // If incoming message is too large, just ignore
-                        if (msglen > NetworkParameterConstants.MTU - k_HeaderSize)
+                        if (msglen > ReceiveQueue.PayloadCapacity - k_HeaderSize)
                         {
                             connectionData.ReceiveIgnore = Math.Max(0, msglen - total);
                             total = Math.Max(0, total - msglen);

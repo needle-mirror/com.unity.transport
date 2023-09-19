@@ -139,21 +139,15 @@ namespace Unity.Networking.Transport
 
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dependency)
         {
-            var job = new ReceiveJobWrapper
+            if (m_UnderlyingConnectionList.IsCreated)
             {
-                Connections = m_ConnectionList,
-                ConnectionsData = m_ConnectionsData,
-                UnderlyingConnections = m_UnderlyingConnectionList,
-                ReceiveQueue = arguments.ReceiveQueue,
-                ControlCommands = m_ControlCommands,
-                TokensHashMap = m_TokensHashMap,
-                Time = arguments.Time,
-                ConnectTimeout = m_ConnectTimeout,
-                MaxConnectionAttempts = m_MaxConnectionAttempts,
-                DisconnectTimeout = m_DisconnectTimeout,
-                HeartbeatTimeout = m_HeartbeatTimeout,
-            };
-            return job.Schedule(dependency);
+                var underlyingConnections = new UnderlyingConnectionList(ref m_UnderlyingConnectionList);
+                return ScheduleReceive(new ReceiveJob<UnderlyingConnectionList>(), underlyingConnections, ref arguments, dependency);
+            }
+            else
+            {
+                return ScheduleReceive(new ReceiveJob<NullUnderlyingConnectionList>(), default, ref arguments, dependency);
+            }
         }
 
         private JobHandle ScheduleReceive<T>(ReceiveJob<T> job, T underlyingConnectionList, ref ReceiveJobArguments arguments, JobHandle dependency)
@@ -238,60 +232,6 @@ namespace Unity.Networking.Transport
                     ConnectionsData[controlCommand.Connection] = connectionData;
 
                     packetProcessor.ConnectionRef = connectionData.UnderlyingConnection;
-                }
-            }
-        }
-
-        // TODO Remove wrapper once MTT-4557 is fixed.
-        [BurstCompile]
-        private struct ReceiveJobWrapper : IJob
-        {
-            public ConnectionList Connections;
-            [NativeDisableContainerSafetyRestriction]
-            public ConnectionList UnderlyingConnections;
-            public ConnectionDataMap<SimpleConnectionData> ConnectionsData;
-            public PacketsQueue ReceiveQueue;
-            public NativeList<ControlPacketCommand> ControlCommands;
-            public NativeParallelHashMap<ConnectionToken, ConnectionId> TokensHashMap;
-            public long Time;
-            public int ConnectTimeout;
-            public int DisconnectTimeout;
-            public int HeartbeatTimeout;
-            public int MaxConnectionAttempts;
-
-            public void Execute()
-            {
-                if (UnderlyingConnections.IsCreated)
-                {
-                    var job = new ReceiveJob<UnderlyingConnectionList>();
-                    job.Connections = Connections;
-                    job.ConnectionsData = ConnectionsData;
-                    job.UnderlyingConnections = new UnderlyingConnectionList(ref UnderlyingConnections);
-                    job.ReceiveQueue = ReceiveQueue;
-                    job.ControlCommands = ControlCommands;
-                    job.TokensHashMap = TokensHashMap;
-                    job.Time = Time;
-                    job.ConnectTimeout = ConnectTimeout;
-                    job.DisconnectTimeout = DisconnectTimeout;
-                    job.HeartbeatTimeout = HeartbeatTimeout;
-                    job.MaxConnectionAttempts = MaxConnectionAttempts;
-                    job.Execute();
-                }
-                else
-                {
-                    var job = new ReceiveJob<NullUnderlyingConnectionList>();
-                    job.Connections = Connections;
-                    job.ConnectionsData = ConnectionsData;
-                    job.UnderlyingConnections = default;
-                    job.ReceiveQueue = ReceiveQueue;
-                    job.ControlCommands = ControlCommands;
-                    job.TokensHashMap = TokensHashMap;
-                    job.Time = Time;
-                    job.ConnectTimeout = ConnectTimeout;
-                    job.DisconnectTimeout = DisconnectTimeout;
-                    job.HeartbeatTimeout = HeartbeatTimeout;
-                    job.MaxConnectionAttempts = MaxConnectionAttempts;
-                    job.Execute();
                 }
             }
         }

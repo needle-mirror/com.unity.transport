@@ -1,5 +1,3 @@
-#if ENABLE_MANAGED_UNITYTLS
-
 using System;
 using Unity.Burst;
 using Unity.Collections;
@@ -57,17 +55,17 @@ namespace Unity.Networking.Transport
             if (connectionList.IsCreated)
                 throw new InvalidOperationException("DTLS layer doesn't support underlying connection lists.");
 #endif
-            var mtu = (ushort)(NetworkParameterConstants.MTU - packetPadding);
+            var netConfig = settings.GetNetworkConfigParameters();
+            var mtu = (ushort)(netConfig.maxMessageSize - packetPadding);
 
             connectionList = m_ConnectionList = ConnectionList.Create();
             m_ConnectionsData = new ConnectionDataMap<DTLSConnectionData>(1, default(DTLSConnectionData), Allocator.Persistent);
             m_EndpointToConnectionMap = new NativeParallelHashMap<NetworkEndpoint, ConnectionId>(1, Allocator.Persistent);
             m_UnityTLSConfiguration = new UnityTLSConfiguration(ref settings, SecureTransportProtocol.DTLS, mtu);
-            m_DeferredSends = new PacketsQueue(k_DeferredSendsQueueSize);
+            m_DeferredSends = new PacketsQueue(k_DeferredSendsQueueSize, netConfig.maxMessageSize);
 
             m_DeferredSends.SetDefaultDataOffset(packetPadding);
 
-            var netConfig = settings.GetNetworkConfigParameters();
             // We pick a value just past the maximum handshake timeout as our half-open disconnect
             // timeout since after that point, there is no handshake progress possible anymore.
             m_HalfOpenDisconnectTimeout = (netConfig.maxConnectAttempts + 1) * netConfig.connectTimeoutMS;
@@ -219,7 +217,7 @@ namespace Unity.Networking.Transport
                 // UnityTLS is going to read the encrypted packet directly from the packet
                 // processor. Since it can't write the decrypted data in the same place, we need to
                 // create a temporary buffer to store that data.
-                var tempBuffer = new NativeArray<byte>(NetworkParameterConstants.MTU, Allocator.Temp);
+                var tempBuffer = new NativeArray<byte>(ReceiveQueue.PayloadCapacity, Allocator.Temp);
 
                 var decryptedLength = new UIntPtr();
                 var result = Binding.unitytls_client_read_data(ConnectionsData[connectionId].UnityTLSClientPtr,
@@ -341,8 +339,7 @@ namespace Unity.Networking.Transport
                     }
 
                     Connections.StartDisconnecting(ref connection);
-                    // TODO Not the ideal disconnect reason. If we ever have a better one, use it.
-                    Disconnect(connection, Error.DisconnectReason.ClosedByRemote);
+                    Disconnect(connection, Error.DisconnectReason.AuthenticationFailure);
                 }
             }
 
@@ -527,5 +524,3 @@ namespace Unity.Networking.Transport
         }
     }
 }
-
-#endif

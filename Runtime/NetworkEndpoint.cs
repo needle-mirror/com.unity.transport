@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -7,7 +8,6 @@ using Unity.Baselib;
 using Unity.Baselib.LowLevel;
 using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
-using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 
 namespace Unity.Networking.Transport
 {
@@ -30,13 +30,14 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Family for IPv6 addresses (analoguous to <c>AF_INET6</c> in traditional BSD sockets).
         /// </summary>
-        Ipv6 = 23
-    }
+        Ipv6 = 23,
 
-    /// <summary>Obsolete. Should be automatically updated to <see cref="NetworkEndpoint"/>.</summary>
-    [Obsolete("NetworkEndPoint has been renamed to NetworkEndpoint. (UnityUpgradable) -> NetworkEndpoint", true)]
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public struct NetworkEndPoint {}
+        /// <summary>
+        /// Family for custom addresses, to be used if a custom <see cref="INetworkInterface"/>
+        /// requires a <see cref="NetworkEndpoint"/> that's neither an IPv4 or IPv6 address.
+        /// </summary>
+        Custom = 255,
+    }
 
     /// <summary>
     /// Representation of an endpoint on the network. Typically, this means an IP address and a port
@@ -47,7 +48,7 @@ namespace Unity.Networking.Transport
     /// While this structure can store an IP address, it can't be used to store domain names. In
     /// general, the Unity Transport package does not handle domain names and it is the user's
     /// responsibility to resolve domain names to IP addresses. This can be done with
-    /// <c>System.Net.Dns.GetHostEntryAsync"</c>.
+    /// <c>System.Net.Dns.GetHostEntryAsync"</c> for example.
     /// </remarks>
     /// <example>
     /// The code below shows how to obtain endpoint structures for different IP addresses and port
@@ -66,20 +67,24 @@ namespace Unity.Networking.Transport
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct NetworkEndpoint : IEquatable<NetworkEndpoint>
     {
-        enum AddressType { Any = 0, Loopback = 1 }
-        private const int rawIpv4Length = 4;
-        private const int rawIpv6Length = 16;
-        private const int rawDataLength = 16;               // Maximum space needed to hold a IPv6 Address
-#if !UNITY_2021_1_OR_NEWER && !UNITY_DOTSRUNTIME
-        private const int rawLength = rawDataLength + 4;    // SizeOf<Baselib_NetworkAddress>
-#else
-        private const int rawLength = rawDataLength + 8;    // SizeOf<Baselib_NetworkAddress>
-#endif
-        private static readonly bool IsLittleEndian = true;
+        private const int k_Ipv4Length = 4;
+        private const int k_Ipv6Length = 16;
+        private const int k_CustomLength = 16;
 
-        internal Binding.Baselib_NetworkAddress rawNetworkAddress;
+        // Offset of the port inside Baselib_NetworkAddress.
+        private const int k_PortOffset = 16;
 
-        /// <summary>Length of the raw endpoint representation.</summary>
+        /// <summary>Raw <c>Baselib_NetworkAddress</c> structure.</summary>
+        internal Binding.Baselib_NetworkAddress BaselibAddress;
+
+        /// <summary>Whether the endpoint is valid or not (based on the address family).</summary>
+        /// <value>True if family is IPv4, IPv6 or custom, false otherwise.</value>
+        public bool IsValid => Family != NetworkFamily.Invalid;
+
+        /// <summary>
+        /// Length of the raw address representation. Does not include the size of the port and of
+        /// the family. Generally, there's no use for this property except for low-level code.
+        /// </summary>
         /// <value>Length in bytes.</value>
         public int Length
         {
@@ -88,32 +93,14 @@ namespace Unity.Networking.Transport
                 switch (Family)
                 {
                     case NetworkFamily.Ipv4:
-                        return rawIpv4Length;
+                        return k_Ipv4Length;
                     case NetworkFamily.Ipv6:
-                        return rawIpv6Length;
-                    case NetworkFamily.Invalid:
+                        return k_Ipv6Length;
+                    case NetworkFamily.Custom:
+                        return k_CustomLength;
                     default:
                         return 0;
                 }
-            }
-        }
-
-        static NetworkEndpoint()
-        {
-            uint test = 1;
-            byte* test_b = (byte*)&test;
-            IsLittleEndian = test_b[0] == 1;
-        }
-
-        /// <summary>Get or set the port number of the endpoint.</summary>
-        /// <value>Port number.</value>
-        public ushort Port
-        {
-            get => (ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8));
-            set
-            {
-                rawNetworkAddress.port0 = (byte)((value >> 8) & 0xff);
-                rawNetworkAddress.port1 = (byte)(value & 0xff);
             }
         }
 
@@ -121,54 +108,19 @@ namespace Unity.Networking.Transport
         /// <value>Address family of the endpoint.</value>
         public NetworkFamily Family
         {
-            get => FromBaselibFamily((Binding.Baselib_NetworkAddress_Family)rawNetworkAddress.family);
-            set => rawNetworkAddress.family = (byte)ToBaselibFamily(value);
+            get => FromBaselibFamily((Binding.Baselib_NetworkAddress_Family)BaselibAddress.family);
+            set => BaselibAddress.family = (byte)ToBaselibFamily(value);
         }
 
-        /// <summary>
-        /// Get the raw representation of the endpoint. This is only useful for low-level code that
-        /// must interface with native libraries, for example if writing a custom implementation of
-        /// <see cref="INetworkInterface"/>. The raw representation of an endpoint will match that
-        /// of an appropriate <c>sockaddr</c> structure for the current platform.
-        /// </summary>
-        /// <returns>Temporary native array with raw representation of the endpoint.</returns>
-        public NativeArray<byte> GetRawAddressBytes()
+        /// <summary>Get or set the port number of the endpoint.</summary>
+        /// <value>Port number.</value>
+        public ushort Port
         {
-            var bytes = new NativeArray<byte>(Length, Allocator.Temp);
-            UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref rawNetworkAddress), Length);
-            return bytes;
-        }
-
-        /// <summary>
-        /// Set the raw representation of the endpoint. This is only useful for low-level code that
-        /// must interface with native libraries, for example if writing a custom implementation of
-        /// <see cref="INetworkInterface"/>. The raw representation of an endpoint must match that
-        /// of an appropriate <c>sockaddr</c> structure for the current platform.
-        /// </summary>
-        /// <param name="bytes">Raw representation of the endpoint.</param>
-        /// <param name="family">Address family of the raw representation.</param>
-        public void SetRawAddressBytes(NativeArray<byte> bytes, NetworkFamily family = NetworkFamily.Ipv4)
-        {
-            if ((family == NetworkFamily.Ipv4 && bytes.Length != rawIpv4Length) ||
-                (family == NetworkFamily.Ipv6 && bytes.Length != rawIpv6Length))
+            get => (ushort)(BaselibAddress.port1 | (BaselibAddress.port0 << 8));
+            set
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Bad input length for given address family.");
-#else
-                DebugLog.LogError("Bad input length for given address family.");
-                return;
-#endif
-            }
-
-            if (family == NetworkFamily.Ipv4)
-            {
-                UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(), rawIpv4Length);
-                Family = family;
-            }
-            else if (family == NetworkFamily.Ipv6)
-            {
-                UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref rawNetworkAddress), bytes.GetUnsafeReadOnlyPtr(), rawIpv6Length);
-                Family = family;
+                BaselibAddress.port0 = (byte)((value >> 8) & 0xff);
+                BaselibAddress.port1 = (byte)(value & 0xff);
             }
         }
 
@@ -178,52 +130,87 @@ namespace Unity.Networking.Transport
         /// that value will always match the endianness of the current platform.
         /// </summary>
         /// <value>Port value in network byte order.</value>
+        [Obsolete("Use Port instead, and use standard C# APIs to convert to/from network byte order.")]
         public ushort RawPort
         {
-            get
-            {
-                ushort *port = (ushort*)((byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress) + rawDataLength);
-                return *port;
-            }
+            get => (ushort)((BaselibAddress.port1 << 8) | BaselibAddress.port0);
             set
             {
-                ushort *port = (ushort*)((byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress) + rawDataLength);
-                *port = value;
+                BaselibAddress.port0 = (byte)(value & 0xff);
+                BaselibAddress.port1 = (byte)((value >> 8) & 0xff);
             }
         }
-
-        /// <summary>String representation of the endpoint. Same as <see cref="ToString"/>.</summary>
-        /// <value>Endpoint represented as a string.</value>
-        public string Address => ToString();
-
-        /// <summary>Whether the endpoint is valid or not (whether it's IPv4 or IPv6).</summary>
-        /// <value>True if family is IPv4 or IPv6, false otherwise.</value>
-        public bool IsValid => Family != 0;
-
-        /// <summary>Shortcut for the wildcard IPv4 address (0.0.0.0).</summary>
-        /// <value>Endpoint structure for the 0.0.0.0 IPv4 address.</value>
-        public static NetworkEndpoint AnyIpv4 => CreateAddress(0);
-
-        /// <summary>Shortcut for the loopback/localhost IPv4 address (127.0.0.1).</summary>
-        /// <value>Endpoint structure for the 127.0.0.1 IPv4 address.</value>
-        public static NetworkEndpoint LoopbackIpv4 => CreateAddress(0, AddressType.Loopback);
-
-        /// <summary>Shortcut for the wildcard IPv6 address (::).</summary>
-        /// <value>Endpoint structure for the :: IPv6 address.</value>
-        public static NetworkEndpoint AnyIpv6 => CreateAddress(0, AddressType.Any, NetworkFamily.Ipv6);
-
-        /// <summary>Shortcut for the loopback/localhost IPv6 address (::1).</summary>
-        /// <value>Endpoint structure for the ::1 IPv6 address.</value>
-        public static NetworkEndpoint LoopbackIpv6 => CreateAddress(0, AddressType.Loopback, NetworkFamily.Ipv6);
 
         /// <summary>Get a copy of the endpoint that uses the specified port.</summary>
         /// <param name="port">Port number of the new endpoint.</param>
         /// <returns>Copy of the endpoint that uses the given port.</returns>
         public NetworkEndpoint WithPort(ushort port)
         {
-            var ep = this;
-            ep.Port = port;
-            return ep;
+            var endpoint = this;
+            endpoint.Port = port;
+            return endpoint;
+        }
+
+        /// <summary>
+        /// Get the raw representation of the endpoint's address. This is only useful for low-level
+        /// code that must interface with native libraries, for example if writing a custom
+        /// implementation of <see cref="INetworkInterface"/>.
+        /// </summary>
+        /// <returns>Temporary native array with raw representation of the endpoint.</returns>
+        public NativeArray<byte> GetRawAddressBytes()
+        {
+            var bytes = new NativeArray<byte>(Length, Allocator.Temp);
+            UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref BaselibAddress), Length);
+            return bytes;
+        }
+
+        /// <summary>
+        /// Set the raw representation of the endpoint's address and set its family. This is only
+        /// useful for low-level code that must interface with native libraries, for example if
+        /// writing a custom implementation of <see cref="INetworkInterface"/>.
+        /// </summary>
+        /// <param name="bytes">Raw representation of the endpoint.</param>
+        /// <param name="family">Address family of the raw representation.</param>
+        public void SetRawAddressBytes(NativeArray<byte> bytes, NetworkFamily family = NetworkFamily.Ipv4)
+        {
+            CheckRawAddressLength(bytes.Length, family);
+
+            var length = math.min(bytes.Length, Length);
+            UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref BaselibAddress), bytes.GetUnsafeReadOnlyPtr(), length);
+            Family = family;
+        }
+
+        /// <summary>Shortcut for the wildcard IPv4 address (0.0.0.0).</summary>
+        /// <value>Endpoint structure for the 0.0.0.0 IPv4 address.</value>
+        public static NetworkEndpoint AnyIpv4 => new NetworkEndpoint { Family = NetworkFamily.Ipv4 };
+
+        /// <summary>Shortcut for the wildcard IPv6 address (::).</summary>
+        /// <value>Endpoint structure for the :: IPv6 address.</value>
+        public static NetworkEndpoint AnyIpv6 => new NetworkEndpoint { Family = NetworkFamily.Ipv6 };
+
+        /// <summary>Shortcut for the loopback/localhost IPv4 address (127.0.0.1).</summary>
+        /// <value>Endpoint structure for the 127.0.0.1 IPv4 address.</value>
+        public static NetworkEndpoint LoopbackIpv4
+        {
+            get
+            {
+                var endpoint = new NetworkEndpoint { Family = NetworkFamily.Ipv4 };
+                endpoint.BaselibAddress.data0 = 127;
+                endpoint.BaselibAddress.data3 = 1;
+                return endpoint;
+            }
+        }
+
+        /// <summary>Shortcut for the loopback/localhost IPv6 address (::1).</summary>
+        /// <value>Endpoint structure for the ::1 IPv6 address.</value>
+        public static NetworkEndpoint LoopbackIpv6
+        {
+            get
+            {
+                var endpoint = new NetworkEndpoint { Family = NetworkFamily.Ipv6 };
+                endpoint.BaselibAddress.data15 = 1;
+                return endpoint;
+            }
         }
 
         /// <summary>Whether the endpoint is for a wildcard address.</summary>
@@ -263,26 +250,16 @@ namespace Unity.Networking.Transport
             }
 #endif
 
-            var nullTerminator = '\0';
-            var errorState = default(ErrorState);
-            var ipBytes = System.Text.Encoding.UTF8.GetBytes(address + nullTerminator);
+            var addressBytes = System.Text.Encoding.UTF8.GetBytes(address + '\0');
+            var errorState = default(Binding.Baselib_ErrorState);
 
-            fixed(byte* ipBytesPtr = ipBytes)
-            fixed(Binding.Baselib_NetworkAddress * rawAddress = &endpoint.rawNetworkAddress)
+            fixed (byte* addressPtr = addressBytes)
+            fixed (Binding.Baselib_NetworkAddress* baselibAddressPtr = &endpoint.BaselibAddress)
             {
-                Binding.Baselib_NetworkAddress_Encode(
-                    rawAddress,
-                    ToBaselibFamily(family),
-                    ipBytesPtr,
-                    (ushort)port,
-                    &errorState);
+                Binding.Baselib_NetworkAddress_Encode(baselibAddressPtr, ToBaselibFamily(family), addressPtr, port, &errorState);
             }
 
-            if (errorState.code != Binding.Baselib_ErrorCode.Success)
-            {
-                return false;
-            }
-            return endpoint.IsValid;
+            return errorState.code == Binding.Baselib_ErrorCode.Success && endpoint.IsValid;
         }
 
         /// <summary>
@@ -295,112 +272,7 @@ namespace Unity.Networking.Transport
         /// <returns>Parsed endpoint, or a default value if couldn't parse successfully.</returns>
         public static NetworkEndpoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Ipv4)
         {
-            if (TryParse(address, port, out var endpoint, family))
-                return endpoint;
-
-            return default;
-        }
-
-        public static bool operator==(NetworkEndpoint lhs, NetworkEndpoint rhs)
-        {
-            return lhs.Compare(rhs);
-        }
-
-        public static bool operator!=(NetworkEndpoint lhs, NetworkEndpoint rhs)
-        {
-            return !lhs.Compare(rhs);
-        }
-
-        public override bool Equals(object other)
-        {
-            return this == (NetworkEndpoint)other;
-        }
-
-        public bool Equals(NetworkEndpoint other)
-        {
-            return this == other;
-        }
-
-        public override int GetHashCode()
-        {
-            var p = (byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress);
-            unchecked
-            {
-                var result = 0;
-
-                for (int i = 0; i < rawLength; i++)
-                {
-                    result = (result * 31) ^ (int)p[i];
-                }
-
-                return result;
-            }
-        }
-
-        bool Compare(NetworkEndpoint other)
-        {
-            var p = (byte*)UnsafeUtility.AddressOf(ref rawNetworkAddress);
-            var p1 = (byte*)UnsafeUtility.AddressOf(ref other.rawNetworkAddress);
-            return UnsafeUtility.MemCmp(p, p1, rawLength) == 0;
-        }
-
-        internal static FixedString128Bytes AddressToString(ref Binding.Baselib_NetworkAddress rawNetworkAddress)
-        {
-            FixedString128Bytes str = default;
-            FixedString32Bytes dot = ".";
-            FixedString32Bytes colon = ":";
-            FixedString32Bytes opensqb = "[";
-            FixedString32Bytes closesqb = "]";
-            switch ((Binding.Baselib_NetworkAddress_Family)rawNetworkAddress.family)
-            {
-                case Binding.Baselib_NetworkAddress_Family.IPv4:
-                    // TODO(steve): Update to use ipv4_0 ... 3 when its available.
-                    str.Append(rawNetworkAddress.data0);
-                    str.Append(dot);
-                    str.Append(rawNetworkAddress.data1);
-                    str.Append(dot);
-                    str.Append(rawNetworkAddress.data2);
-                    str.Append(dot);
-                    str.Append(rawNetworkAddress.data3);
-
-                    str.Append(colon);
-                    str.Append((ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8)));
-                    break;
-                case Binding.Baselib_NetworkAddress_Family.IPv6:
-                    // TODO(steve): Include scope and handle leading zeros
-                    // TODO(steve): Update to use ipv6_0 ... 15 when its available.
-                    str.Append(opensqb);
-
-                    str.AppendHex((ushort)(rawNetworkAddress.data1 | (rawNetworkAddress.data0 << 8)));
-                    str.Append(colon);
-                    str.AppendHex((ushort)(rawNetworkAddress.data3 | (rawNetworkAddress.data2 << 8)));
-                    str.Append(colon);
-                    str.AppendHex((ushort)(rawNetworkAddress.data5 | (rawNetworkAddress.data4 << 8)));
-                    str.Append(colon);
-                    str.AppendHex((ushort)(rawNetworkAddress.data7 | (rawNetworkAddress.data6 << 8)));
-                    str.Append(colon);
-                    str.AppendHex((ushort)(rawNetworkAddress.data9 | (rawNetworkAddress.data8 << 8)));
-                    str.Append(colon);
-                    str.AppendHex((ushort)(rawNetworkAddress.data11 | (rawNetworkAddress.data10 << 8)));
-                    str.Append(colon);
-                    str.AppendHex((ushort)(rawNetworkAddress.data13 | (rawNetworkAddress.data12 << 8)));
-                    str.Append(colon);
-                    str.AppendHex((ushort)(rawNetworkAddress.data15 | (rawNetworkAddress.data14 << 8)));
-                    str.Append(colon);
-
-                    str.Append(closesqb);
-                    str.Append(colon);
-                    str.Append((ushort)(rawNetworkAddress.port1 | (rawNetworkAddress.port0 << 8)));
-                    break;
-                default:
-                    return "invalid";
-            }
-            return str;
-        }
-
-        public override string ToString()
-        {
-            return ToFixedString().ToString();
+            return TryParse(address, port, out var endpoint, family) ? endpoint : default;
         }
 
         /// <summary>
@@ -410,73 +282,142 @@ namespace Unity.Networking.Transport
         /// <returns>Fixed string representation of the endpoint.</returns>
         public FixedString128Bytes ToFixedString()
         {
-            return AddressToString(ref rawNetworkAddress);
+            var str = default(FixedString128Bytes);
+            var temp = default(FixedString32Bytes);
+
+            var ptr = (byte*)UnsafeUtility.AddressOf(ref BaselibAddress);
+
+            switch (Family)
+            {
+                case NetworkFamily.Ipv4:
+                    str = $"{BaselibAddress.data0}.{BaselibAddress.data1}.{BaselibAddress.data2}.{BaselibAddress.data3}";
+                    break;
+                case NetworkFamily.Ipv6:
+                    str.Append('[');
+                    for (int i = 0; i < k_Ipv6Length; i += 2)
+                    {
+                        temp = $"{ptr[i]:x2}{ptr[i+1]:x2}:";
+                        str.Append(temp);
+                    }
+                    str.Length -= 1;
+                    str.Append(']');
+                    break;
+                case NetworkFamily.Custom:
+                    str = "custom:0x";
+                    for (int i = 0; i < k_CustomLength; i++)
+                    {
+                        temp = $"{ptr[i]:x2}";
+                        str.Append(temp);
+                    }
+                    break;
+                case NetworkFamily.Invalid:
+                default:
+                    return "invalid";
+            }
+
+            if (Family == NetworkFamily.Ipv4 || Family == NetworkFamily.Ipv6)
+            {
+                str.Append(':');
+                str.Append(Port);
+            }
+
+            return str;
         }
 
-        private static ushort ByteSwap(ushort val)
+        /// <summary>String representation of the endpoint. Same as <see cref="ToString"/>.</summary>
+        /// <value>Endpoint represented as a string.</value>
+        public string Address => ToString();
+
+        public override string ToString()
         {
-            return (ushort)(((val & 0xff) << 8) | (val >> 8));
+            return ToFixedString().ToString();
         }
 
-        private static uint ByteSwap(uint val)
+        public override int GetHashCode()
         {
-            return (uint)(((val & 0xff) << 24) | ((val & 0xff00) << 8) | ((val >> 8) & 0xff00) | (val >> 24));
+            var p = (byte*)UnsafeUtility.AddressOf(ref BaselibAddress);
+            var size = UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
+
+            unchecked
+            {
+                var result = 0;
+                for (int i = 0; i < size; i++)
+                    result = (result * 31) ^ (int)p[i];
+                return result;
+            }
         }
 
-        static NetworkEndpoint CreateAddress(ushort port, AddressType type = AddressType.Any, NetworkFamily family = NetworkFamily.Ipv4)
+        public bool Equals(NetworkEndpoint other)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            UnityEngine.Debug.Assert(UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>() == rawLength);
-#endif
+            var p1 = UnsafeUtility.AddressOf(ref BaselibAddress);
+            var p2 = UnsafeUtility.AddressOf(ref other.BaselibAddress);
+            var size = UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
+
+            return UnsafeUtility.MemCmp(p1, p2, size) == 0;
+        }
+
+        public override bool Equals(object other)
+        {
+            return this.Equals((NetworkEndpoint)other);
+        }
+
+        public static bool operator==(NetworkEndpoint lhs, NetworkEndpoint rhs)
+        {
+            return lhs.Equals(rhs);
+        }
+
+        public static bool operator!=(NetworkEndpoint lhs, NetworkEndpoint rhs)
+        {
+            return !lhs.Equals(rhs);
+        }
+
+        private static NetworkFamily FromBaselibFamily(Binding.Baselib_NetworkAddress_Family family)
+        {
+            switch (family)
+            {
+                case Binding.Baselib_NetworkAddress_Family.IPv4:
+                    return NetworkFamily.Ipv4;
+                case Binding.Baselib_NetworkAddress_Family.IPv6:
+                    return NetworkFamily.Ipv6;
+                default:
+                    return NetworkFamily.Invalid;
+            }
+        }
+
+        private static Binding.Baselib_NetworkAddress_Family ToBaselibFamily(NetworkFamily family)
+        {
+            switch (family)
+            {
+                case NetworkFamily.Ipv4:
+                    return Binding.Baselib_NetworkAddress_Family.IPv4;
+                case NetworkFamily.Ipv6:
+                    return Binding.Baselib_NetworkAddress_Family.IPv6;
+                default:
+                    return Binding.Baselib_NetworkAddress_Family.Invalid;
+            }
+        }
+
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void CheckRawAddressLength(int length, NetworkFamily family)
+        {
+            if (family == NetworkFamily.Ipv4 && length != k_Ipv4Length)
+                throw new ArgumentException($"Raw IPv4 addresses must be {k_Ipv4Length} bytes long (got {length}).");
+
+            if (family == NetworkFamily.Ipv6 && length != k_Ipv6Length)
+                throw new ArgumentException($"Raw IPv6 addresses must be {k_Ipv4Length} bytes long (got {length}).");
+
+            if (family == NetworkFamily.Custom && length > k_CustomLength)
+                throw new ArgumentException($"Raw custom addresses must be at least {k_CustomLength} bytes long (got {length}).");
+
             if (family == NetworkFamily.Invalid)
-                return default;
-
-            uint ipv4Loopback = (127 << 24) | 1;
-
-            if (IsLittleEndian)
-            {
-                port = ByteSwap(port);
-                ipv4Loopback = ByteSwap(ipv4Loopback);
-            }
-
-            var ep = new NetworkEndpoint
-            {
-                Family = family,
-                RawPort = port
-            };
-
-            if (type == AddressType.Loopback)
-            {
-                if (family == NetworkFamily.Ipv4)
-                {
-                    *(uint*)UnsafeUtility.AddressOf(ref ep.rawNetworkAddress) = ipv4Loopback;
-                }
-                else if (family == NetworkFamily.Ipv6)
-                {
-                    ep.rawNetworkAddress.data15 = 1;
-                }
-            }
-            return ep;
-        }
-
-        static NetworkFamily FromBaselibFamily(Binding.Baselib_NetworkAddress_Family family)
-        {
-            if (family == Binding.Baselib_NetworkAddress_Family.IPv4)
-                return NetworkFamily.Ipv4;
-            if (family == Binding.Baselib_NetworkAddress_Family.IPv6)
-                return NetworkFamily.Ipv6;
-            return NetworkFamily.Invalid;
-        }
-
-        static Binding.Baselib_NetworkAddress_Family ToBaselibFamily(NetworkFamily family)
-        {
-            if (family == NetworkFamily.Ipv4)
-                return Binding.Baselib_NetworkAddress_Family.IPv4;
-            if (family == NetworkFamily.Ipv6)
-                return Binding.Baselib_NetworkAddress_Family.IPv6;
-            return Binding.Baselib_NetworkAddress_Family.Invalid;
+                throw new ArgumentException("Can't set raw address if family is invalid.");
         }
     }
+
+    /// <summary>Obsolete. Should be automatically updated to <see cref="NetworkEndpoint"/>.</summary>
+    [Obsolete("NetworkEndPoint has been renamed to NetworkEndpoint. (UnityUpgradable) -> NetworkEndpoint", true)]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public struct NetworkEndPoint {}
 
     /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
     [Obsolete("Use NetworkEndpoint instead.", true)]

@@ -135,6 +135,8 @@ namespace Unity.Networking.Transport
                 if (m_ConnectionList.GetConnectionState(c) != NetworkConnection.State.Connected)
                     return (int)Error.StatusCode.NetworkStateMismatch;
 
+                var maxMessageSize = m_DriverSender.m_SendQueue.PayloadCapacity;
+
                 var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) + 1 : 0;
                 var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
 
@@ -144,14 +146,14 @@ namespace Unity.Networking.Transport
                 // fragmented pipelines have an explicity capacity, and we want users to be able to
                 // rely on this configured value.
                 var payloadCapacity = pipelinePayloadCapacity == 0
-                    ? NetworkParameterConstants.MTU - m_PacketPadding - pipelineHeader
+                    ? maxMessageSize - m_PacketPadding - pipelineHeader
                     : pipelinePayloadCapacity;
 
                 // Total capacity is the full size of the buffer we'll allocate. Without an explicit
                 // pipeline payload capacity, this is the MTU. Otherwise it's the pipeline payload
                 // capacity plus whatever overhead we need to transmit the packet.
                 var totalCapacity = pipelinePayloadCapacity == 0
-                    ? NetworkParameterConstants.MTU
+                    ? maxMessageSize
                     : pipelinePayloadCapacity + m_PacketPadding + pipelineHeader;
 
                 // Check if we can accomodate the user's required payload size.
@@ -169,7 +171,7 @@ namespace Unity.Networking.Transport
                 }
 
                 var sendHandle = default(NetworkInterfaceSendHandle);
-                if (totalCapacity > NetworkParameterConstants.MTU)
+                if (totalCapacity > maxMessageSize)
                 {
                     sendHandle.data = (IntPtr)UnsafeUtility.Malloc(totalCapacity, 8, Allocator.Temp);
                     sendHandle.capacity = totalCapacity;
@@ -301,8 +303,9 @@ namespace Unity.Networking.Transport
                 if (0 != (sendHandle.flags & SendHandleFlags.AllocatedByDriver))
                 {
                     var ret = 0;
-                    NetworkInterfaceSendHandle originalHandle = sendHandle;
-                    if ((ret = m_DriverSender.BeginSend(out sendHandle, (uint)math.max(NetworkParameterConstants.MTU, originalHandle.size))) != 0)
+                    var originalHandle = sendHandle;
+                    var maxMessageSize = m_DriverSender.m_SendQueue.PayloadCapacity;
+                    if ((ret = m_DriverSender.BeginSend(out sendHandle, (uint)math.max(maxMessageSize, originalHandle.size))) != 0)
                     {
                         return ret;
                     }
@@ -1189,7 +1192,7 @@ namespace Unity.Networking.Transport
 
             pipe = new NetworkPipeline { Id = pipelineId };
 
-            if (size > 0)
+            if (size >= 0)
                 reader = new DataStreamReader(m_DriverReceiver.GetDataStreamSubArray(offset, size));
 
             connection = id < 0

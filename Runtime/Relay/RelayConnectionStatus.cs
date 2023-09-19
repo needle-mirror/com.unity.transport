@@ -38,6 +38,9 @@ namespace Unity.Networking.Transport.Relay
         /// allocation.
         /// </para>
         /// </summary>
-        AllocationInvalid
+        AllocationInvalid,
+
+        /// <summary>The <see cref="NetworkDriver"/> is not configured to use Unity Relay.</summary>
+        NotUsingRelay
     }
 }

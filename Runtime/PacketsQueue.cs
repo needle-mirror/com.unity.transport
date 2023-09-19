@@ -80,7 +80,8 @@ namespace Unity.Networking.Transport
         /// Created a pool and allocated the buffers
         /// </summary>
         /// <param name="capacity">The ammount of packets available</param>
-        internal PacketsQueue(int capacity)
+        /// <param name="payloadSize">Maximum size of packet payloads</param>
+        internal PacketsQueue(int capacity, int payloadSize = NetworkParameterConstants.AbsoluteMaxMessageSize)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (capacity <= 0)
@@ -88,7 +89,6 @@ namespace Unity.Networking.Transport
 #endif
             var metadataSize = UnsafeUtility.SizeOf<PacketMetadata>();
             var endpointSize = UnsafeUtility.SizeOf<NetworkEndpoint>();
-            var payloadSize = NetworkParameterConstants.MTU;
 
             // PacketMetadata is prepended to the payload
             var payloadAndMetadataSize = payloadSize + metadataSize;

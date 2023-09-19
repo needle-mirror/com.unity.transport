@@ -1,5 +1,3 @@
-#if ENABLE_MANAGED_UNITYTLS
-
 using System;
 using System.Runtime.InteropServices;
 using AOT;
@@ -209,5 +207,3 @@ namespace Unity.Networking.Transport.TLS
         }
     }
 }
-
-#endif

@@ -133,7 +133,7 @@ namespace Unity.Networking.Transport
                 {
                     var packetProcessor = SendQueue[i];
                     // Don't send empty packets or packets larger than we can receive on the other side.
-                    if (packetProcessor.Length == 0 || (ushort)packetProcessor.Length > (NetworkParameterConstants.MTU - WebSocket.MaxHeaderSize))
+                    if (packetProcessor.Length == 0 || (ushort)packetProcessor.Length > (SendQueue.PayloadCapacity - WebSocket.MaxHeaderSize))
                         continue;
 
                     var connectionId = packetProcessor.ConnectionRef;
@@ -161,7 +161,7 @@ namespace Unity.Networking.Transport
 
                 // Send buffered handshake packets. User data is packed directly into WebSocket Binary packets above
                 // because packets from the upper layer are guaranteed to be no greater than
-                // NetworkParameterConstants.MTU - WebSocket.MaxHeaderSize bytes.
+                // SendQueue.PayloadCapacity - WebSocket.MaxHeaderSize bytes.
                 count = ConnectionList.Count;
                 for (int i  = 0; i < count; i++)
                 {
@@ -370,7 +370,7 @@ namespace Unity.Networking.Transport
                                         // Nothing in the send buffer is releavent anymore because a timeout is final.
                                         ConnectionList.StartDisconnecting(ref connectionId);
                                         connectionData.WebSocketState = WebSocket.State.ClosedAndFlushed;
-                                        connectionData.DisconnectReason = Error.DisconnectReason.Timeout;
+                                        connectionData.DisconnectReason = Error.DisconnectReason.MaxConnectionAttempts;
                                     }
                                     break;
                                 default:
@@ -420,10 +420,10 @@ namespace Unity.Networking.Transport
                 {
                     var packetProcessor = ReceiveQueue[i];
 
-                    // Must check packets up to NetworkParameterConstants.MTU here (including WebSocket.MaxHeaderSize)
+                    // Must check packets up to ReceiveQueue.PayloadCapacity here (including WebSocket.MaxHeaderSize)
                     // because in theory, a handshake packet larger than MTU would be split by the layer below (or
                     // network interface) into potentially multiple MTU-sized segments with no header.
-                    if (packetProcessor.Length == 0 || packetProcessor.Length > NetworkParameterConstants.MTU)
+                    if (packetProcessor.Length == 0 || packetProcessor.Length > ReceiveQueue.PayloadCapacity)
                     {
                         packetProcessor.Drop();
                         continue;
@@ -481,8 +481,7 @@ namespace Unity.Networking.Transport
                                     if (connectionData.WebSocketState == WebSocket.State.Closed)
                                     {
                                         ConnectionList.StartDisconnecting(ref connectionId);
-                                        // TODO: We should probably use a proper error reason here (Protocol Error, Buffer Overflow, ...)
-                                        connectionData.DisconnectReason = Error.DisconnectReason.Timeout;
+                                        connectionData.DisconnectReason = Error.DisconnectReason.ProtocolError;
                                     }
                                     else if (connectionData.WebSocketState == WebSocket.State.Open)
                                     {
@@ -511,8 +510,7 @@ namespace Unity.Networking.Transport
                                 Warn("Insufficient receive buffer.");
                                 ConnectionList.StartDisconnecting(ref connectionId);
                                 connectionData.WebSocketState = WebSocket.State.Closed;
-                                // TODO: We should probably use a proper error reason here (Protocol Error, Buffer Overflow, ...)
-                                connectionData.DisconnectReason = Error.DisconnectReason.Timeout;
+                                connectionData.DisconnectReason = Error.DisconnectReason.ProtocolError;
                             }
                         }
                         ConnectionMap[connectionId] = connectionData;
@@ -532,6 +530,8 @@ namespace Unity.Networking.Transport
                 var total = connectionData.RecvBuffer.Length;
                 if (total <= 0)
                     return;
+
+                var maxPayloadSize = ReceiveQueue.PayloadCapacity - WebSocket.MaxHeaderSize;
 
                 var pending = total;
                 fixed(byte* start = connectionData.RecvBuffer.Data)
@@ -602,10 +602,10 @@ namespace Unity.Networking.Transport
                             wsPayloadSize = (ulong)payloadByte;
                         }
 
-                        // We don't support payloads larger than WebSocket.MaxPayloadSize.
-                        if (wsPayloadSize > WebSocket.MaxPayloadSize)
+                        // We don't support payloads larger than maxPayloadSize.
+                        if (wsPayloadSize > (ulong)maxPayloadSize)
                         {
-                            Warn($"Received a message with a payload size of {wsPayloadSize} which exceeds maximum of {WebSocket.MaxPayloadSize} supported");
+                            Warn($"Received a message with a payload size of {wsPayloadSize} which exceeds maximum of {maxPayloadSize} supported");
                             Abort(ref connectionId, ref connectionData, WebSocket.StatusCode.MessageTooBig, isClient);
                             return;
                         }
@@ -638,11 +638,11 @@ namespace Unity.Networking.Transport
                             // be the case if the first fragment was not empty because we ignore ignore empty data
                             // frames when handling WebSocket.Opcode.BinaryData.
                             var invalidFragment = !connectionData.IsReceivingPayload;
-                            var invalidTotalSize = (connectionData.RecvPayload.Length + payloadSize) > WebSocket.MaxPayloadSize;
+                            var invalidTotalSize = (connectionData.RecvPayload.Length + payloadSize) > maxPayloadSize;
                             if (invalidFragment || invalidTotalSize)
                             {
                                 WarnIf(invalidFragment, "Received a continuation that doesn't belong to a message");
-                                WarnIf(invalidTotalSize, $"Total message size is larger than maximum of {WebSocket.MaxPayloadSize} supported");
+                                WarnIf(invalidTotalSize, $"Total message size is larger than maximum of {maxPayloadSize} supported");
 
                                 var status = invalidFragment ? WebSocket.StatusCode.ProtocolError : WebSocket.StatusCode.MessageTooBig;
                                 Abort(ref connectionId, ref connectionData, status, isClient);
@@ -794,8 +794,7 @@ namespace Unity.Networking.Transport
                     ConnectionList.StartDisconnecting(ref connectionId);
                 connectionData.WebSocketState = WebSocket.State.Closed;
 
-                // TODO Replace with a better reason once we have one.
-                connectionData.DisconnectReason = Error.DisconnectReason.ClosedByRemote;
+                connectionData.DisconnectReason = Error.DisconnectReason.ProtocolError;
             }
 
             public void Execute()

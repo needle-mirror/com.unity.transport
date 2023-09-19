@@ -88,7 +88,7 @@ namespace Unity.Networking.Transport
 
             var timestamp = ctx.timestamp;
 
-            if (inboundBuffer.bufferLength > 0)
+            if (inboundBuffer.buffer != null)
             {
                 context->PacketCount++;
 
@@ -147,7 +147,7 @@ namespace Unity.Networking.Transport
             var timestamp = ctx.timestamp;
 
             // Inbound buffer is empty if this is a resumed receive
-            if (inboundBuffer.bufferLength > 0)
+            if (inboundBuffer.buffer != null)
             {
                 context->PacketCount++;
 
@@ -280,7 +280,7 @@ namespace Unity.Networking.Transport
 
             var timestamp = ctx.timestamp;
 
-            if (inboundBuffer.bufferLength > 0)
+            if (inboundBuffer.buffer != null)
             {
                 context->PacketCount++;
 

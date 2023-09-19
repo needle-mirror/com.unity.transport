@@ -100,7 +100,8 @@ By default, the size of messages is limited by the [MTU](https://en.wikipedia.or
 
 ```csharp
 // 1. Directly by substracting headers from the MTU.
-var maxPayloadSize = NetworkParameterConstants.MTU - driver.MaxHeaderSize(pipeline);
+// (Only works if max message size was not modified, see question below.)
+var maxPayloadSize = NetworkParameterConstants.MaxMessageSize - driver.MaxHeaderSize(pipeline);
 
 // 2. By looking at the capacity of a DataStreamWriter.
 driver.BeginSend(pipeline, connection, out var writer);
@@ -109,6 +110,21 @@ driver.AbortSend(writer);
 ```
 
 To send messages larger than that, use a pipeline with the `FragmentationPipelineStage`. Refer to the section on [using pipelines](pipelines-usage.md) for more information.
+
+## Why are large messages getting lost?
+
+If large messages (and _only_ large messages) are being lost on the network, it's possible that they are getting fragmented at the IP layer and then being dropped by equipment that doesn't properly handle [IP fragmentation](https://en.wikipedia.org/wiki/IP_fragmentation). This can sometime happen with some VPN providers or on particularly limited mobile networks.
+
+This is often caused by faulty or misconfigured equipment which network operators will fix, so such issues tend to resolve themselves over time. However, if the issue is persistent or if you are getting frequent reports of it impacting users, it is possible to modify the size of the largest messages that a `NetworkDriver` will send:
+
+```csharp
+var settings = new NetworkSettings();
+settings.WithNetworkConfigParameters(maxMessageSize: 1200);
+
+var driver = NetworkDriver.Create(settings);
+```
+
+Note that it is recommended to modify this value only if its default value (1400) is causing problems. Lower values will negatively impact bandwidth efficiency and the default value was selected to carefully strike a balance between efficiency and avoiding IP fragmentation.
 
 ## What does error `NetworkSendQueueFull` mean?
 

@@ -1,5 +1,3 @@
-#if ENABLE_MANAGED_UNITYTLS
-
 using System;
 using System.Text;
 using Unity.Collections;
@@ -66,5 +64,3 @@ namespace Unity.Networking.Transport.TLS
         }
     }
 }
-
-#endif

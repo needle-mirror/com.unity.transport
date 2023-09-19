@@ -113,6 +113,12 @@ When creating the `NetworkDriver`, pass in this `NetworkSettings` object:
 m_Driver = NetworkDriver.Create(settings); 
 ```
 
+The `WithSecureServerParameters` method is provided by the `Unity.Networking.Transport.TLS` namespace, so be sure to include that at the top of the file:
+
+```csharp
+using Unity.Networking.Transport.TLS;
+```
+
 That's it for the server!
 
 ### Creating a secure client

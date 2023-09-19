@@ -55,7 +55,7 @@ namespace Unity.Networking.Transport.Utilities
         public struct Parameters : INetworkParameter
         {
             internal const int k_DefaultPayloadCapacity = 4 * 1024;
-            internal const int k_MaxPayloadCapacity = NetworkParameterConstants.MTU * (0xFFFF >> 2);
+            internal const int k_MaxPayloadCapacity = NetworkParameterConstants.AbsoluteMaxMessageSize * (0xFFFF >> 2);
 
             /// <summary>
             /// Maximum size that can be fragmented by the <see cref="FragmentationPipelineStage"/>.
@@ -71,10 +71,10 @@ namespace Unity.Networking.Transport.Utilities
             {
                 var valid = true;
 
-                if (PayloadCapacity <= NetworkParameterConstants.MTU)
+                if (PayloadCapacity <= 0)
                 {
                     valid = false;
-                    DebugLog.ErrorFragmentationSmallerPayloadThanMTU(PayloadCapacity, NetworkParameterConstants.MTU);
+                    DebugLog.ErrorValueIsZeroOrNegative("PayloadCapacity", PayloadCapacity);
                 }
 
                 if (PayloadCapacity >= k_MaxPayloadCapacity)

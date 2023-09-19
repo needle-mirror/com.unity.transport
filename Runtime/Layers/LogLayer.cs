@@ -67,7 +67,9 @@ namespace Unity.Networking.Transport
                         var length = packetProcessor.Length;
                         for (var i = 0; i < length; i++)
                         {
-                            if (buffer.AppendHex2(packetProcessor.GetPayloadDataRef<byte>(i)) == FormatError.Overflow)
+                            var value = packetProcessor.GetPayloadDataRef<byte>(i);
+                            FixedString32Bytes temp = $"{value:x2}";
+                            if (buffer.Append(temp) == FormatError.Overflow)
                                 return FormatError.Overflow;
                             if (buffer.Append(' ') == FormatError.Overflow)
                                 return FormatError.Overflow;
@@ -85,7 +87,9 @@ namespace Unity.Networking.Transport
                         var length = packetProcessor.Length;
                         for (var i = 0; i < length; i++)
                         {
-                            if (str.AppendHex2(packetProcessor.GetPayloadDataRef<byte>(i)) == FormatError.Overflow)
+                            var value = packetProcessor.GetPayloadDataRef<byte>(i);
+                            FixedString32Bytes temp = $"{value:x2}";
+                            if (str.Append(temp) == FormatError.Overflow)
                                 return false;
                             if (str.Append(' ') == FormatError.Overflow)
                                 return false;

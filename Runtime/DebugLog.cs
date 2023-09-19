@@ -191,7 +191,7 @@ namespace Unity.Networking.Transport.Logging
         public static void ErrorBaselibBind(Binding.Baselib_ErrorState error, ushort port)
         {
             FixedString128Bytes extraExplain = error.code == Binding.Baselib_ErrorCode.AddressInUse
-                ? FixedString.Format(" This is likely due to another process listening on port {}.", port) : "";
+                ? FixedString.Format(" This is likely due to another process listening on port {0}.", port) : "";
 
 #if USE_UNITY_LOGGING
             Unity.Logging.Log.Error("Socket creation failed (error {ErrorCode}: {ErrorMessage}).{ExtraExplain}", (int)error.code, GetBaselibErrorMessage(error), extraExplain);
@@ -278,15 +278,6 @@ namespace Unity.Networking.Transport.Logging
             Unity.Logging.Log.Error("Error on {Label}, errorCode = {ErrorCode}", label, errorCode);
 #else
             UnityEngine.Debug.LogError(FixedString.Format("Error on {0}, errorCode = {1}", label, errorCode));
-#endif
-        }
-
-        public static void ErrorFragmentationSmallerPayloadThanMTU(int payloadCapacity, int mtu)
-        {
-#if USE_UNITY_LOGGING
-            Unity.Logging.Log.Error("PayloadCapacity value ({PayloadCapacity}) must be greater than MTU ({MTU})", payloadCapacity, mtu);
-#else
-            UnityEngine.Debug.LogError($"PayloadCapacity value ({payloadCapacity}) must be greater than MTU ({mtu})");
 #endif
         }
 
@@ -386,6 +377,24 @@ namespace Unity.Networking.Transport.Logging
             Unity.Logging.Log.Error("{ValueName} value ({Value}) must be greater than 0", name, value);
 #else
             UnityEngine.Debug.LogError($"{name} value ({value}) must be greater than 0");
+#endif
+        }
+
+        public static void ErrorValueIsNotInRange(FixedString64Bytes name, int value, int min, int max)
+        {
+#if USE_UNITY_LOGGING
+            Unity.Logging.Log.Error("{ValueName} value ({Value}) must be greater than {Min} and less than or equal to {Max}", name, value, min, max);
+#else
+            UnityEngine.Debug.LogError($"{name} value ({value}) must be greater than {min} and less than or equal to {max}");
+#endif
+        }
+
+        public static void WarningMaxMessageSizeTooSmall(FixedString64Bytes name, int value)
+        {
+#if USE_UNITY_LOGGING
+            Unity.Logging.Log.Warning("{ValueName} value ({Value}) is unnecessarily low. 548 should be safe in all circumstances.", name, value);
+#else
+            UnityEngine.Debug.LogWarning($"{name} value ({value}) is unnecessarily low. 548 should be safe in all circumstances.");
 #endif
         }
 

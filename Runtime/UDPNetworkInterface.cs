@@ -99,7 +99,7 @@ namespace Unity.Networking.Transport
                 var error = default(ErrorState);
                 var endpoint = default(NetworkEndpoint);
 
-                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(socket, &endpoint.rawNetworkAddress, &error);
+                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(socket, &endpoint.BaselibAddress, &error);
                 if (error.code != ErrorCode.Success)
                 {
                     // Bind endpoint is better than nothing if we can't get the effective one.
@@ -123,7 +123,7 @@ namespace Unity.Networking.Transport
 
             m_InternalState = new NativeReference<InternalState>(state, Allocator.Persistent);
 
-            var bufferSize = NetworkParameterConstants.MTU + UnsafeUtility.SizeOf<PacketMetadata>() + (int)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize;
+            var bufferSize = networkConfiguration.maxMessageSize + UnsafeUtility.SizeOf<PacketMetadata>() + (int)Binding.Baselib_RegisteredNetwork_Endpoint_MaxSize;
 
             m_ReceiveBuffers = new UnsafeBaselibNetworkArray(state.ReceiveQueueCapacity, bufferSize);
             m_SendBuffers = new UnsafeBaselibNetworkArray(state.SendQueueCapacity, bufferSize);
@@ -131,10 +131,9 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
-        internal void CreateQueues(int sendQueueCapacity, int receiveQueueCapacity, out PacketsQueue sendQueue, out PacketsQueue receiveQueue)
+        internal void CreateQueues(int sendQueueCapacity, int receiveQueueCapacity, int payloadSize, out PacketsQueue sendQueue, out PacketsQueue receiveQueue)
         {
             var metadataSize = UnsafeUtility.SizeOf<PacketMetadata>();
-            var payloadSize = NetworkParameterConstants.MTU;
             var endpointSize = UnsafeUtility.SizeOf<NetworkEndpoint>();
 
             // The registered network endpoint size might require some extra bytes
@@ -210,9 +209,7 @@ namespace Unity.Networking.Transport
             m_InternalState.Dispose();
         }
 
-#if !UNITY_DOTSRUNTIME // TODO Remove when all required baselib APIs are Burst-compatible.
         [BurstCompile]
-#endif
         struct FlushSendJob : IJob
         {
             public PacketsQueue SendQueue;
@@ -346,9 +343,7 @@ namespace Unity.Networking.Transport
             }
         }
 
-#if !UNITY_DOTSRUNTIME // TODO Remove when all required baselib APIs are Burst-compatible.
         [BurstCompile]
-#endif
         struct ReceiveJob : IJob
         {
             public PacketsQueue ReceiveQueue;
@@ -425,7 +420,7 @@ namespace Unity.Networking.Transport
                         }
 
                         var receivedBytes = (int)results[i].bytesTransferred;
-                        if (receivedBytes <= 0 || receivedBytes > NetworkParameterConstants.MTU)
+                        if (receivedBytes <= 0 || receivedBytes > ReceiveQueue.PayloadCapacity)
                             continue;
 
                         if (!ReceiveQueue.EnqueuePacket(bufferIndex, out var packetProcessor))
@@ -558,7 +553,7 @@ namespace Unity.Networking.Transport
         {
             var error = default(ErrorState);
             socket = Binding.Baselib_RegisteredNetwork_Socket_UDP_Create(
-                &endpoint.rawNetworkAddress,
+                &endpoint.BaselibAddress,
                 Binding.Baselib_NetworkAddress_AddressReuse.DoNotAllow,
                 checked((uint)sendQueueCapacity),
                 checked((uint)receiveQueueCapacity),
@@ -641,7 +636,7 @@ namespace Unity.Networking.Transport
 
             Binding.Baselib_RegisteredNetwork_Endpoint_GetNetworkAddress(
                 new RegisteredNetworkEndpoint { slice = endpointSlice },
-                &endpoint.rawNetworkAddress,
+                &endpoint.BaselibAddress,
                 &error
             );
 
