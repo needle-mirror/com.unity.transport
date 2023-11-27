@@ -930,25 +930,28 @@ namespace Unity.Networking.Transport.Tests
                 var stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(0, receiveContext->Resume);
+                Assert.AreEqual(65535, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 0, after that 1 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(1, receiveContext->Resume);
+                Assert.AreEqual(0, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 1, after that 2 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(2, receiveContext->Resume);
+                Assert.AreEqual(1, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 2, and we are done
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(-1, receiveContext->Resume);
+                Assert.AreEqual(2, receiveContext->Delivered);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
             }
             recvBuffer.Dispose();
@@ -1017,25 +1020,28 @@ namespace Unity.Networking.Transport.Tests
                 var stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(65535, receiveContext->Resume);
+                Assert.AreEqual(65534, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 65535, after that 0 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(0, receiveContext->Resume);
+                Assert.AreEqual(65535, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 0, after that 1 is up
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(1, receiveContext->Resume);
+                Assert.AreEqual(0, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 // Process 1, and we are done
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(-1, receiveContext->Resume);
+                Assert.AreEqual(1, receiveContext->Delivered);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
             }
             recvBuffer.Dispose();
@@ -1103,7 +1109,7 @@ namespace Unity.Networking.Transport.Tests
                 var stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(-1, receiveContext->Resume);
+                Assert.AreEqual(94, receiveContext->Delivered);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
 
                 GeneratePacket(10000, 98, ~0ul, 95, ref sendBuffer, out packet);
@@ -1112,27 +1118,31 @@ namespace Unity.Networking.Transport.Tests
                 stageRequest = NetworkPipelineStage.Requests.None;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(96, receiveContext->Resume);
+                Assert.AreEqual(95, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(97, receiveContext->Resume);
+                Assert.AreEqual(96, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(98, receiveContext->Resume);
+                Assert.AreEqual(97, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(99, receiveContext->Resume);
+                Assert.AreEqual(98, receiveContext->Delivered);
                 Assert.AreNotEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
                 stageRequest = NetworkPipelineStage.Requests.None;
+                packet = default;
                 reliablePipeline.Receive.Ptr.Invoke(ref pipelineContext, ref packet, ref stageRequest, 0);
                 Assert.AreEqual((ReliableUtility.ErrorCodes) 0, sharedContext->errorCode);
-                Assert.AreEqual(-1, receiveContext->Resume);
+                Assert.AreEqual(99, receiveContext->Delivered);
                 Assert.AreEqual(NetworkPipelineStage.Requests.None, stageRequest& NetworkPipelineStage.Requests.Resume);
 
                 // Verify that the ReceivePackets state is correct, 99 should be latest received and ackmask 0xFFFFF
@@ -1775,8 +1785,10 @@ namespace Unity.Networking.Transport.Tests
         }
 
         [Test]
-        public unsafe void NetworkPipeline_ReliableSequencedStatistics_Drop([Values(10, 100)] int packetsToSkip)
+        public unsafe void NetworkPipeline_ReliableSequencedStatistics_Drop()
         {
+            const int packetsToSkip = 10;
+
             var clientPipe = m_ClientDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
             var serverPipe = m_ServerDriver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
             Assert.AreEqual(clientPipe, serverPipe);

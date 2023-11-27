@@ -163,12 +163,10 @@ namespace Unity.Networking.Transport.Utilities
         /// <returns>An integer value equal to the distance between the sequence IDs.</returns>
         public static int AbsDistance(ushort lhs, ushort rhs)
         {
-            int distance;
-            if (lhs < rhs)
-                distance = lhs + ushort.MaxValue + 1 - rhs;
+            if (GreaterThan16(lhs, rhs))
+                return lhs > rhs ? lhs - rhs : lhs + ushort.MaxValue + 1 - rhs;
             else
-                distance = lhs - rhs;
-            return distance;
+                return rhs >= lhs ? rhs - lhs : rhs + ushort.MaxValue + 1 - lhs;
         }
 
         /// <summary>

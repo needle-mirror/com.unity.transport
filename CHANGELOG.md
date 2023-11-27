@@ -1,5 +1,10 @@
 # Change log
 
+## [1.4.1] - 2023-11-27
+
+### Fixes
+* Fixed an issue where reliable packets could be resent even after they had been acknowledged, which would lead to wasted bandwidth.
+
 ## [1.4.0] - 2023-06-28
 
 ### New features

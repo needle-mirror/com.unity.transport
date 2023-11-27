@@ -12,7 +12,7 @@ The full documentation for the package can be found on the [Unity multiplayer do
 
 This version of `com.unity.transport` is compatible with the following Unity versions and platforms:
 
-* Unity 2021.3 and 2022.2 (and later 2022 versions).
+* Unity 2020.3, 2021.3 and 2022.2 (and later 2022 versions).
 * All platforms supported by Unity are supported, except WebGL.
 
 ## Document revision history
