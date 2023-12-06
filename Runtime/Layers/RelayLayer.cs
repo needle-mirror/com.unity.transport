@@ -258,8 +258,8 @@ namespace Unity.Networking.Transport
                                 var endpoint = disconnectMessage.FromAllocationId.ToNetworkEndpoint();
                                 if (EndpointsHashmap.TryGetValue(endpoint, out var connectionId))
                                 {
-                                    Connections.StartDisconnecting(ref connectionId);
-                                    Connections.FinishDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
+                                    Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
+                                    Connections.FinishDisconnecting(ref connectionId);
                                     EndpointsHashmap.Remove(endpoint);
                                 }
                             }
@@ -377,6 +377,12 @@ namespace Unity.Networking.Transport
                                 RelayMessageBind.Write(ref packetProcessor, ref protocolData.ServerData);
                                 packetProcessor.ConnectionRef = protocolData.UnderlyingConnection;
                                 packetProcessor.EndpointRef = protocolData.ServerData.Endpoint;
+
+                                // Increment the nonce so that on the next bind attempt (if any),
+                                // we'll be using a new one. This allows reusing the same allocation
+                                // on a new driver, since eventually we'll try to bind with a nonce
+                                // that had not already been used by a previous driver.
+                                protocolData.ServerData.IncrementNonce();
                             }
                         }
                     }
@@ -488,7 +494,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     DebugLog.LogError("Connect can only be called once when using Relay");
 #endif
-                    Connections.StartDisconnecting(ref connectionId);
+                    Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
                     Connections.FinishDisconnecting(ref connectionId);
                     return;
                 }
@@ -519,7 +525,7 @@ namespace Unity.Networking.Transport
 
             private bool UnderlyingConnectionFailed(ref ConnectionId underlyingConnection)
             {
-                var disconnects = UnderlyingConnections.QueryFinishedDisconnections(Allocator.Temp);
+                var disconnects = UnderlyingConnections.QueryIncomingDisconnections(Allocator.Temp);
 
                 var count = disconnects.Length;
                 for (int i = 0; i < count; i++)

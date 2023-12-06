@@ -1,3 +1,4 @@
+using System;
 using Unity.Collections;
 using Unity.Networking.Transport.Logging;
 
@@ -90,6 +91,7 @@ namespace Unity.Networking.Transport
     /// <summary>
     /// Configuration structure for a <see cref="NetworkDriver"/>, containing general parameters.
     /// </summary>
+    [Serializable]
     public struct NetworkConfigParameter : INetworkParameter
     {
         /// <summary>Time between connection attempts.</summary>

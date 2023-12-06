@@ -27,7 +27,7 @@ namespace Unity.Networking.Transport
         /// </summary>
         /// <param name="allocator">The allocator to use for the NativeArray</param>
         /// <returns>Returns a NativeArray with the disconnections of the underlying layer.</returns>
-        public NativeArray<ConnectionList.CompletedDisconnection> QueryFinishedDisconnections(Allocator allocator);
+        public NativeArray<ConnectionList.IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator);
     }
 
     internal struct NullUnderlyingConnectionList : IUnderlyingConnectionList
@@ -40,7 +40,7 @@ namespace Unity.Networking.Transport
 
         public void Disconnect(ref ConnectionId connectionId) {}
 
-        public NativeArray<ConnectionList.CompletedDisconnection> QueryFinishedDisconnections(Allocator allocator) => default;
+        public NativeArray<ConnectionList.IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator) => default;
     }
 
     internal struct UnderlyingConnectionList : IUnderlyingConnectionList
@@ -75,7 +75,7 @@ namespace Unity.Networking.Transport
             }
         }
 
-        public NativeArray<ConnectionList.CompletedDisconnection> QueryFinishedDisconnections(Allocator allocator)
-            => Connections.QueryFinishedDisconnections(allocator);
+        public NativeArray<ConnectionList.IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator)
+            => Connections.QueryIncomingDisconnections(allocator);
     }
 }

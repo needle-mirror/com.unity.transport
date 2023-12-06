@@ -1,5 +1,30 @@
 # Change log
 
+## [2.2.1] - 2023-12-06
+
+### Fixes
+* Fixed an issue where `NetworkEndpoint.TryParse` would leave the out parameter endpoint with a valid `NetworkFamily`, even if parsing of the address had failed.
+
+## [2.2.0] - 2023-12-01
+
+### New features
+* The WebSocket URL path can now be configured using `NetworkSettings.WithWebSocketParameters`. For clients, the path provided there is the path on which connections will be made. For servers, it's the path connections will be accepted on.
+* It is now possible to specify a payload to be sent along with connection requests through a new parameter for the `NetworkDriver.Connect` call. This payload is retrievable as-is on the server side when calling `NetworkDriver.Accept`. An example usage would be to send an authentication token (thus alleviating the need to do this through a separate message).
+
+### Changes
+* All parameter structures that can be used with `NetworkSettings` are now marked as `Serializable`.
+* For custom endpoints, `NetworkDriver.Connect` will now automatically bind to the endpoint passed as a parameter instead of binding to the wildcard IPv4 address (only if the driver was not previously bound).
+* The size of `NetworkEndpoint` has been increased, which allows creating custom endpoints (endpoints where the family is `NetworkFamily.Custom`) containing up to 60 bytes of data.
+
+### Fixes
+* Allow creating a driver with the same Relay allocation as a previous driver. Note that having two drivers using the same Relay allocation _at the same time_ is not supported. This fix is for the case where one disposes of a driver, and then creates a new one with the same Relay allocation.
+* Fixed an issue where some data messages could be inadvertently dropped if the last message in the connection handshake was lost in transit.
+* Fixed an issue where reliable packets could be resent even after they had been acknowledged, which would lead to wasted bandwidth.
+* Fixed an issue that made it impossible to set the family of a `NetworkEndpoint` to `NetworkFamily.Custom`.
+* Fixed an issue where it was possible for the state of a connection (as reported by `GetConnectionState`) would be `Disconnected` one update before the `Disconnect` event would appear through `PopEvent`.
+* Fixed an issue where WebSocket connections would be closed if the TCP OS buffers were overflowed. In this situation, traffic that can't be sent on the TCP socket will now accumulate in the send queue. If _that_ fills up, then new `BeginSend` operations will return `Error.StatusCode.NetworkSendQueueFull` and the situation can be handled by user as they see fit (e.g. buffer the traffic on the side). Frameworks like Netcode for GameObjects already handle this situation gracefully.
+* Fixed an issue where if the receive queue was filled up (say when pulling a lot of data at once from a socket), then WebSocket packets would fail to be processed and their associated connections would be closed.
+
 ## [2.1.0] - 2023-09-19
 
 ### New features

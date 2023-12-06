@@ -122,7 +122,7 @@ namespace Unity.Networking.Transport
 
             private void GenerateDisconnectionEvents()
             {
-                var newDisconnections = Connections.QueryFinishedDisconnections(Allocator.Temp);
+                var newDisconnections = Connections.QueryIncomingDisconnections(Allocator.Temp);
                 var count = newDisconnections.Length;
                 for (int i = 0; i < count; i++)
                 {

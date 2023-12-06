@@ -73,7 +73,7 @@ namespace Unity.Networking.Transport
             {
                 var error = default(ErrorState);
                 var endpoint = localEndpoint;
-                var address = &endpoint.BaselibAddress;
+                var address = endpoint.BaselibAddressPtr;
                 var socket = Binding.Baselib_Socket_Create((Binding.Baselib_NetworkAddress_Family)address->family, Binding.Baselib_Socket_Protocol.TCP, &error);
                 if (error.code == ErrorCode.Success)
                 {
@@ -105,15 +105,16 @@ namespace Unity.Networking.Transport
                 localEndpoint = default;
                 if (IsValid(acceptedSocket) && error.code == ErrorCode.Success)
                 {
-                    var address = default(NetworkEndpoint);
-                    Binding.Baselib_Socket_GetAddress(acceptedSocket, &address.BaselibAddress, &error);
-                    localEndpoint = address;
+                    var address = default(Binding.Baselib_NetworkAddress);
+                    Binding.Baselib_Socket_GetAddress(acceptedSocket, &address, &error);
                     if (error.code != ErrorCode.Success)
                     {
                         DebugLog.ErrorBaselib("Failed to get local endpoint.", error);
                         Binding.Baselib_Socket_Close(acceptedSocket);
                         acceptedSocket = InvalidSocket;
                     }
+
+                    localEndpoint = new NetworkEndpoint(address);
                 }
 
                 return acceptedSocket;
@@ -122,7 +123,7 @@ namespace Unity.Networking.Transport
             // Note that connection in baselib is async. You have to check the completion using IsConnected.
             public static unsafe NetworkSocket Connect(NetworkEndpoint remoteEndoint)
             {
-                var address = &remoteEndoint.BaselibAddress;
+                var address = remoteEndoint.BaselibAddressPtr;
                 var error = default(ErrorState);
                 var socket = Binding.Baselib_Socket_Create((Binding.Baselib_NetworkAddress_Family)address->family, Binding.Baselib_Socket_Protocol.TCP, &error);
                 if (error.code == ErrorCode.Success)
@@ -211,6 +212,16 @@ namespace Unity.Networking.Transport
             public long ConnectTime;                // Connect start time
             public long LastConnectAttemptTime;     // Time of the last attempt
             public int LastConnectAttempt;          // Number of attempts so far
+
+            // Whether this connection must wait for previous data to be sent (e.g. because the OS
+            // buffers for the TCP connection are full).
+            public bool HasPendingSends;
+        }
+
+        private struct PendingSend
+        {
+            public ConnectionId Connection;
+            public int BufferIndex;
         }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -223,6 +234,9 @@ namespace Unity.Networking.Transport
         // Maps a connection id from the connection list to its connection data.
         private ConnectionDataMap<ConnectionData> m_ConnectionMap;
 
+        // List of data buffers that must be sent before any new data.
+        private NativeList<PendingSend> m_PendingSends;
+
         // List of connection information carried over to the layer above
         private ConnectionList m_ConnectionList;
 
@@ -232,10 +246,7 @@ namespace Unity.Networking.Transport
             return m_ConnectionList;
         }
 
-        /// <summary>
-        /// Returns the local endpoint bound to the listen socket.
-        /// </summary>
-        /// <value>NetworkEndpoint</value>
+        /// <inheritdoc/>
         public unsafe NetworkEndpoint LocalEndpoint
         {
             get
@@ -251,10 +262,11 @@ namespace Unity.Networking.Transport
 
                     if (data.Socket.handle != IntPtr.Zero)
                     {
-                        var endpoint = default(NetworkEndpoint);
+                        var address = default(Binding.Baselib_NetworkAddress);
                         var error = default(ErrorState);
 
-                        Binding.Baselib_Socket_GetAddress(data.Socket, &endpoint.BaselibAddress, &error);
+                        Binding.Baselib_Socket_GetAddress(data.Socket, &address, &error);
+                        var endpoint = new NetworkEndpoint(address);
                         if (error.code == (int)ErrorCode.Success && endpoint.Port != 0)
                         {
                             return endpoint;
@@ -266,9 +278,7 @@ namespace Unity.Networking.Transport
             }
         }
 
-        /// <summary>
-        /// Initializes a instance of the UDPNetworkInterface struct.
-        /// </summary>
+        /// <inheritdoc/>
         public unsafe int Initialize(ref NetworkSettings settings, ref int packetPadding)
         {
             // TODO: We might at some point want to apply receiveQueueCapacity to SO_RECVBUF and sendQueueCapacity to SO_SENDBUF
@@ -284,6 +294,7 @@ namespace Unity.Networking.Transport
 
             m_InternalData = new NativeReference<InternalData>(state, Allocator.Persistent);
             m_ConnectionMap = new ConnectionDataMap<ConnectionData>(1, default, Allocator.Persistent);
+            m_PendingSends = new NativeList<PendingSend>(1, Allocator.Persistent);
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_SocketsPendingAdd = new NativeList<NetworkSocket>(Allocator.Persistent);
@@ -348,6 +359,7 @@ namespace Unity.Networking.Transport
 
             m_ConnectionMap.Dispose();
             m_ConnectionList.Dispose();
+            m_PendingSends.Dispose();
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_SocketsPendingAdd.Dispose();
@@ -415,9 +427,9 @@ namespace Unity.Networking.Transport
             private void AllSocketsDeferredRemove(NetworkSocket socket) {}
 #endif
 
-            private void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData, Error.DisconnectReason reason = default)
+            private void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData)
             {
-                ConnectionList.FinishDisconnecting(ref connectionId, reason);
+                ConnectionList.FinishDisconnecting(ref connectionId);
                 ConnectionMap.ClearData(ref connectionId);
                 TCPSocket.Close(connectionData.Socket);
                 AllSocketsDeferredRemove(connectionData.Socket);
@@ -469,8 +481,8 @@ namespace Unity.Networking.Transport
                         // Disconnect if maximum connection attempts reached
                         if (connectionData.LastConnectAttempt >= InternalData.Value.MaxConnectAttempts)
                         {
-                            ConnectionList.StartDisconnecting(ref connectionId);
-                            Abort(ref connectionId, ref connectionData, Error.DisconnectReason.MaxConnectionAttempts);
+                            ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.MaxConnectionAttempts);
+                            Abort(ref connectionId, ref connectionData);
                             continue;
                         }
 
@@ -512,7 +524,9 @@ namespace Unity.Networking.Transport
                     // Detect if the upper layer is requesting to disconnect.
                     if (connectionState == NetworkConnection.State.Disconnecting)
                     {
-                        Abort(ref connectionId, ref connectionData);
+                        // Keep the connection alive a bit if we still need to send stuff.
+                        if (!connectionData.HasPendingSends)
+                            Abort(ref connectionId, ref connectionData);
                         continue;
                     }
 
@@ -522,10 +536,27 @@ namespace Unity.Networking.Transport
                     // Close the connection in case of a receive error.
                     while (true)
                     {
-                        // No need to disconnect in case the receive queue becomes full just let the TCP socket buffer
-                        // the incoming data.
-                        if (!ReceiveQueue.EnqueuePacket(out var packetProcessor))
+                        // This is SUPER hacky, but we can't just enqueue packets until the receive
+                        // queue is filled. We need to stop when we're halfway there. The reason is
+                        // that the WebSocket layer (which will always live somewhere above us)
+                        // drops all packets and enqueues new ones for the actual messages that were
+                        // parsed. That is, if we fill up the receive queue here, then the WebSocket
+                        // layer will not be able to enqueue any messages.
+                        //
+                        // Generally, any received packet will trigger one new message to be
+                        // enqueued. Thus, we stop filling the receive queue once we reach half of
+                        // its capacity. (Technically, it's possible for one packet to trigger MORE
+                        // than one new message to be enqueued. So half capacity may even be too
+                        // much. But in such a scenario the messages would presumably be small and
+                        // we could afford to let them linger in the WebSocket layer a bit.)
+                        //
+                        // Ideally, this would be addressed in the WebSocket layer rather than hack
+                        // things here. But this would require a big refactoring of the WebSocket
+                        // layer so for now we have to make do with this ugly hack.
+                        if (ReceiveQueue.Count >= ReceiveQueue.Capacity / 2)
                             break;
+
+                        ReceiveQueue.EnqueuePacket(out var packetProcessor);
 
                         packetProcessor.ConnectionRef = connectionId;
                         packetProcessor.EndpointRef = endpoint;
@@ -540,8 +571,8 @@ namespace Unity.Networking.Transport
 
                     if (error.code != ErrorCode.Success)
                     {
-                        ConnectionList.StartDisconnecting(ref connectionId);
-                        Abort(ref connectionId, ref connectionData, Error.DisconnectReason.ProtocolError);
+                        ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
+                        Abort(ref connectionId, ref connectionData);
                         break;
                     }
 
@@ -559,6 +590,7 @@ namespace Unity.Networking.Transport
                 InternalData = m_InternalData,
                 ConnectionMap = m_ConnectionMap,
                 ConnectionList = m_ConnectionList,
+                PendingSends = m_PendingSends,
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 SocketsPendingRemove = m_SocketsPendingRemove,
 #endif
@@ -569,10 +601,9 @@ namespace Unity.Networking.Transport
         unsafe struct SendJob : IJob
         {
             public PacketsQueue SendQueue;
-
             public NativeReference<InternalData> InternalData;
-
             public ConnectionList ConnectionList;
+            public NativeList<PendingSend> PendingSends;
 
             // See the comment in ReceiveJob
             [NativeDisableUnsafePtrRestriction]
@@ -588,9 +619,83 @@ namespace Unity.Networking.Transport
 
             public void Execute()
             {
-                // Each packet is sent individually. The connection is aborted if a packet cannot be transmiited
-                // entirely.
-                for (int i = 0; i < SendQueue.Count; i++)
+                ProcessPendingSends();
+                ProcessSendQueue();
+            }
+
+            private void ProcessPendingSends()
+            {
+                var pendingCount = PendingSends.Length;
+                var newPendingSends = new NativeList<PendingSend>(pendingCount, Allocator.Temp);
+
+                // First we clear the HasPendingSend flag of all connections. We need to do this to
+                // properly detect (by setting the flag on again) that a connection has hit a socket
+                // buffer overflow while processing pending sends.
+                ResetHasPendingSendsFlag();
+
+                for (int i = 0; i < pendingCount; i++)
+                {
+                    var connectionId = PendingSends[i].Connection;
+                    var bufferIndex = PendingSends[i].BufferIndex;
+                    var packetProcessor = SendQueue.GetPacketProcessor(bufferIndex);
+
+                    var connectionState = ConnectionList.GetConnectionState(connectionId);
+                    if (connectionState == NetworkConnection.State.Disconnected)
+                        continue;
+
+                    var connectionData = ConnectionMap[connectionId];
+
+                    // For this to be true, we need to have hit a socket buffer overflow while
+                    // processing the pending sends. At this point, we need to keep as pending
+                    // everything else for that connection. We can't rely on the Send operation not
+                    // completing, as there is a risk that while processing pending sends, some
+                    // buffer space would have freed up. We'd then end up sending out-of-order.
+                    if (connectionData.HasPendingSends)
+                    {
+                        newPendingSends.Add(PendingSends[i]);
+                        continue;
+                    }
+
+                    var payloadPtr = (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset;
+                    var bytesSent = TCPSocket.Send(connectionData.Socket, payloadPtr, packetProcessor.Length, out var error);
+                    if (bytesSent != packetProcessor.Length)
+                    {
+                        // Socket can't take any more. Keep aside for later.
+                        var newOffset = packetProcessor.Offset + bytesSent;
+                        var newLength = packetProcessor.Length - bytesSent;
+                        packetProcessor.SetUnsafeMetadata(newLength, newOffset);
+
+                        connectionData.HasPendingSends = true;
+                        ConnectionMap[connectionId] = connectionData;
+
+                        newPendingSends.Add(PendingSends[i]);
+                    }
+                    else if (error.code != ErrorCode.Success)
+                    {
+                        // Socket error. Need to close connection. Error will determine reason.
+                        var reason = error.code == ErrorCode.Disconnected
+                            ? Error.DisconnectReason.ClosedByRemote : Error.DisconnectReason.ProtocolError;
+                        Abort(connectionId, reason);
+                    }
+                    else
+                    {
+                        // Successful send. Re-enqueue the buffer. Bottom layer will release it.
+                        SendQueue.EnqueuePacket(bufferIndex, out packetProcessor);
+                        packetProcessor.Drop();
+                    }
+                }
+
+                // Replace the current pending sends with those that couldn't be sent. We do this
+                // instead of removing successful sends in the loop above because we need to
+                // preserve the order of all pending sends and this is easier this way.
+                PendingSends.Clear();
+                PendingSends.AddRangeNoResize(newPendingSends);
+            }
+
+            private void ProcessSendQueue()
+            {
+                var count = SendQueue.Count;
+                for (int i = 0; i < count; i++)
                 {
                     var packetProcessor = SendQueue[i];
                     if (packetProcessor.Length == 0)
@@ -604,26 +709,61 @@ namespace Unity.Networking.Transport
 
                     var connectionData = ConnectionMap[connectionId];
 
-                    var nbytes = TCPSocket.Send(connectionData.Socket, (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset, packetProcessor.Length, out var error);
-                    if (error.code != ErrorCode.Success || nbytes != packetProcessor.Length)
+                    // If there are pending sends, we need to keep them aside for later.
+                    if (connectionData.HasPendingSends)
                     {
-                        if (error.code != ErrorCode.Disconnected)
-                        {
-                            // Likely incomplete send. Still want to disconnect but log an error.
-                            var endpoint = ConnectionList.GetConnectionEndpoint(connectionId).ToFixedString();
-                            DebugLog.LogError($"Overflow of OS send buffer while trying to send data to {endpoint}. Closing connection.");
-                        }
-
-                        ConnectionList.StartDisconnecting(ref connectionId);
-                        ConnectionList.FinishDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
-                        ConnectionMap.ClearData(ref connectionId);
-                        TCPSocket.Close(connectionData.Socket);
-                        AllSocketsDeferredRemove(connectionData.Socket);
+                        var bufferIndex = SendQueue.DequeuePacketNoRelease(i);
+                        PendingSends.Add(new PendingSend { Connection = connectionId, BufferIndex = bufferIndex });
                         continue;
                     }
 
+                    var payloadPtr = (byte*)packetProcessor.GetUnsafePayloadPtr() + packetProcessor.Offset;
+                    var bytesSent = TCPSocket.Send(connectionData.Socket, payloadPtr, packetProcessor.Length, out var error);
+                    if (bytesSent != packetProcessor.Length)
+                    {
+                        // Socket can't take any more. Keep aside for later.
+                        var newOffset = packetProcessor.Offset + bytesSent;
+                        var newLength = packetProcessor.Length - bytesSent;
+                        packetProcessor.SetUnsafeMetadata(newLength, newOffset);
+
+                        connectionData.HasPendingSends = true;
+                        ConnectionMap[connectionId] = connectionData;
+
+                        var bufferIndex = SendQueue.DequeuePacketNoRelease(i);
+                        PendingSends.Add(new PendingSend { Connection = connectionId, BufferIndex = bufferIndex });
+                    }
+                    else if (error.code != ErrorCode.Success)
+                    {
+                        // Socket error. Need to close connection. Error will determine reason.
+                        var reason = error.code == ErrorCode.Disconnected
+                            ? Error.DisconnectReason.ClosedByRemote : Error.DisconnectReason.ProtocolError;
+                        Abort(connectionId, reason);
+                    }
+                }
+            }
+
+            private void ResetHasPendingSendsFlag()
+            {
+                var count = ConnectionList.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    var connectionId = ConnectionList.ConnectionAt(i);
+                    var connectionData = ConnectionMap[connectionId];
+
+                    connectionData.HasPendingSends = false;
+
                     ConnectionMap[connectionId] = connectionData;
                 }
+            }
+
+            private void Abort(ConnectionId connectionId, Error.DisconnectReason reason)
+            {
+                var connectionData = ConnectionMap[connectionId];
+                ConnectionList.StartDisconnecting(ref connectionId, reason);
+                ConnectionList.FinishDisconnecting(ref connectionId);
+                ConnectionMap.ClearData(ref connectionId);
+                TCPSocket.Close(connectionData.Socket);
+                AllSocketsDeferredRemove(connectionData.Socket);
             }
         }
     }

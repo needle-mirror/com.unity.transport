@@ -59,8 +59,6 @@ namespace Unity.Networking.Transport
             public long CloseTimeStamp;
             public long ReceiveTimeStamp;
 
-            public Error.DisconnectReason DisconnectReason;
-
             public bool IsClient => Role == WebSocket.Role.Client;
         }
 
@@ -77,6 +75,7 @@ namespace Unity.Networking.Transport
 
             m_Settings = new WebSocket.Settings
             {
+                Path = settings.GetWebSocketParameters().Path,
                 ConnectTimeoutMS = Math.Max(0, networkConfigParameters.connectTimeoutMS),
                 DisconnectTimeoutMS = Math.Max(0, networkConfigParameters.disconnectTimeoutMS),
                 HeartbeatTimeoutMS = Math.Max(0, networkConfigParameters.heartbeatTimeoutMS)
@@ -107,7 +106,6 @@ namespace Unity.Networking.Transport
                 UnderlyingConnectionList = m_UnderlyingConnectionList,
                 ConnectionList = m_ConnectionList,
                 ConnectionMap = m_ConnectionMap,
-                Settings = m_Settings,
                 Rand = new Mathematics.Random((uint)TimerHelpers.GetTicks()),
             }.Schedule(dep);
         }
@@ -119,7 +117,6 @@ namespace Unity.Networking.Transport
             public ConnectionList UnderlyingConnectionList;
             public ConnectionList ConnectionList;
             public ConnectionDataMap<ConnectionData> ConnectionMap;
-            public WebSocket.Settings Settings;
             public Mathematics.Random Rand;
 
             public void Execute()
@@ -232,10 +229,10 @@ namespace Unity.Networking.Transport
             public Mathematics.Random Rand;
             public long Time;
 
-            // Close and clear data from disconnected underlying connections.
+            // Close and clear data from disconnecting underlying connections.
             void ProcessUnderlyingDisconnections()
             {
-                var disconnectionList = UnderlyingConnectionList.QueryFinishedDisconnections(Allocator.Temp);
+                var disconnectionList = UnderlyingConnectionList.QueryIncomingDisconnections(Allocator.Temp);
                 var count = disconnectionList.Length;
                 for (int i = 0; i < count; i++)
                 {
@@ -251,8 +248,8 @@ namespace Unity.Networking.Transport
                         var state = ConnectionList.GetConnectionState(connectionId);
                         if (state != NetworkConnection.State.Disconnecting && state != NetworkConnection.State.Disconnected)
                         {
-                            ConnectionList.StartDisconnecting(ref connectionId);
-                            ConnectionList.FinishDisconnecting(ref connectionId, disconnectionList[i].Reason);
+                            ConnectionList.StartDisconnecting(ref connectionId, disconnectionList[i].Reason);
+                            ConnectionList.FinishDisconnecting(ref connectionId);
                         }
                     }
                 }
@@ -291,7 +288,6 @@ namespace Unity.Networking.Transport
                                     {
                                         // Nothing in the send buffer is relevant anymore because a timeout is final.
                                         connectionData.WebSocketState = WebSocket.State.ClosedAndFlushed;
-                                        connectionData.DisconnectReason = Error.DisconnectReason.Default;
                                     }
                                     break;
                                 // If we were still in the middle of the handshake, the upper layer must want to
@@ -299,7 +295,6 @@ namespace Unity.Networking.Transport
                                 case WebSocket.State.Opening:
                                     // Nothing in the send buffer is relevant anymore because an abort is final.
                                     connectionData.WebSocketState = WebSocket.State.ClosedAndFlushed;
-                                    connectionData.DisconnectReason = Error.DisconnectReason.Default;
                                     break;
                                 // If the upper layer is trying to disconnect normally, send a WebSocket Close and
                                 // wait for a CLOSE reply. If the send buffer is full and we cannot send a CLOSE
@@ -322,7 +317,7 @@ namespace Unity.Networking.Transport
                             if (connectionData.WebSocketState == WebSocket.State.ClosedAndFlushed)
                             {
                                 UnderlyingConnectionList.Disconnect(ref connectionData.UnderlyingConnectionId);
-                                ConnectionList.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
+                                ConnectionList.FinishDisconnecting(ref connectionId);
                             }
 
                             ConnectionMap[connectionId] = connectionData;
@@ -357,7 +352,7 @@ namespace Unity.Networking.Transport
                                     connectionData.Keys.Key[3] = Rand.NextUInt();
                                     connectionData.CreateTimeStamp = Time;
 
-                                    WebSocket.Connect(ref connectionData.SendBuffer, ref remoteEndpoint, ref connectionData.Keys);
+                                    WebSocket.Connect(ref connectionData.SendBuffer, ref remoteEndpoint, ref connectionData.Keys, ref Settings.Path);
                                 }
                                 break;
                                 // If this is a active (client) connection for which an HTTP UPGARDE has already
@@ -368,9 +363,8 @@ namespace Unity.Networking.Transport
                                     if (Time - connectionData.CreateTimeStamp >  Settings.ConnectTimeoutMS)
                                     {
                                         // Nothing in the send buffer is releavent anymore because a timeout is final.
-                                        ConnectionList.StartDisconnecting(ref connectionId);
+                                        ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.MaxConnectionAttempts);
                                         connectionData.WebSocketState = WebSocket.State.ClosedAndFlushed;
-                                        connectionData.DisconnectReason = Error.DisconnectReason.MaxConnectionAttempts;
                                     }
                                     break;
                                 default:
@@ -476,12 +470,11 @@ namespace Unity.Networking.Transport
                                     // If an error occurs, an error message may get written into the send buffer to
                                     // be transmitted by the next send job scheduled.
                                     connectionData.WebSocketState = WebSocket.Handshake(ref connectionData.RecvBuffer,
-                                        ref connectionData.SendBuffer, connectionData.IsClient, ref connectionData.Keys);
+                                        ref connectionData.SendBuffer, connectionData.IsClient, ref connectionData.Keys, ref Settings.Path);
 
                                     if (connectionData.WebSocketState == WebSocket.State.Closed)
                                     {
-                                        ConnectionList.StartDisconnecting(ref connectionId);
-                                        connectionData.DisconnectReason = Error.DisconnectReason.ProtocolError;
+                                        ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
                                     }
                                     else if (connectionData.WebSocketState == WebSocket.State.Open)
                                     {
@@ -503,14 +496,14 @@ namespace Unity.Networking.Transport
                             }
                             else
                             {
-                                // Insufficient buffer space at this level means an unrecoverable data loss.
-                                // The WebSocket Protocol is an independent TCP-based protocol so there is no reason to
-                                // presume the remote peer will be able to retransmit the lost packets in which case
-                                // we're left with no other option but to disconnect.
-                                Warn("Insufficient receive buffer.");
-                                ConnectionList.StartDisconnecting(ref connectionId);
+                                // If we hit this it means we've left data accumulate in the receive
+                                // buffer without being able to enqueue its packets on the receive
+                                // queue and now we don't have any space left. The only things we
+                                // can do is abort and tell the user what they can do to avoid this
+                                // problem in the future.
+                                Warn("Insufficient space in receive queue, consider increasing receiveQueueCapacity.");
+                                ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
                                 connectionData.WebSocketState = WebSocket.State.Closed;
-                                connectionData.DisconnectReason = Error.DisconnectReason.ProtocolError;
                             }
                         }
                         ConnectionMap[connectionId] = connectionData;
@@ -663,8 +656,8 @@ namespace Unity.Networking.Transport
                                     {
                                         if (!ReceiveQueue.EnqueuePacket(out var packetProcessor))
                                         {
-                                            Abort(ref connectionId, ref connectionData, WebSocket.StatusCode.InternalError, isClient);
-                                            return;
+                                            // Leave the data there and hope we can process it later.
+                                            break;
                                         }
 
                                         packetProcessor.ConnectionRef = connectionId;
@@ -711,8 +704,8 @@ namespace Unity.Networking.Transport
 
                                     if (!ReceiveQueue.EnqueuePacket(out var packetProcessor))
                                     {
-                                        Abort(ref connectionId, ref connectionData, WebSocket.StatusCode.InternalError, isClient);
-                                        return;
+                                        // Leave the data there and hope we can process it later.
+                                        break;
                                     }
 
                                     packetProcessor.ConnectionRef = connectionId;
@@ -730,7 +723,7 @@ namespace Unity.Networking.Transport
                             {
                                 connectionData.WebSocketState = WebSocket.State.ClosedAndFlushed;
                                 UnderlyingConnectionList.Disconnect(ref connectionData.UnderlyingConnectionId);
-                                ConnectionList.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
+                                ConnectionList.FinishDisconnecting(ref connectionId);
                             }
                             else
                             {
@@ -791,10 +784,8 @@ namespace Unity.Networking.Transport
 
                 var state = ConnectionList.GetConnectionState(connectionId);
                 if (state != NetworkConnection.State.Disconnected && state != NetworkConnection.State.Disconnecting)
-                    ConnectionList.StartDisconnecting(ref connectionId);
+                    ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
                 connectionData.WebSocketState = WebSocket.State.Closed;
-
-                connectionData.DisconnectReason = Error.DisconnectReason.ProtocolError;
             }
 
             public void Execute()

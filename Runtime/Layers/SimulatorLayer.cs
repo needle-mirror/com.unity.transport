@@ -1,10 +1,10 @@
+using System;
 using Unity.Collections;
 using Unity.Burst;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
-using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -93,6 +93,7 @@ namespace Unity.Networking.Transport
     /// it has more features than the global one (which is only intended for specialized use cases).
     /// </para>
     /// </remarks>
+    [Serializable]
     public struct NetworkSimulatorParameter : INetworkParameter
     {
         /// <summary>Percentage of received packets to drop (0-100).</summary>

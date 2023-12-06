@@ -1,3 +1,4 @@
+using System;
 using Unity.Collections;
 using Unity.Networking.Transport.Logging;
 
@@ -49,6 +50,7 @@ namespace Unity.Networking.Transport.Utilities
     }
 
     /// <summary>Utility types for the <see cref="FragmentationPipelineStage"/>.</summary>
+    [Serializable]
     public struct FragmentationUtility
     {
         /// <summary>Parameters for the <see cref="FragmentationPipelineStage"/>.</summary>

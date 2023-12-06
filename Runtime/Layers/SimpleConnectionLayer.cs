@@ -13,14 +13,14 @@ namespace Unity.Networking.Transport
         internal const byte k_ProtocolVersion = 1;
         internal const int k_HeaderSize = 1 + ConnectionToken.k_Length;
         internal const int k_HandshakeSize = 4 + k_HeaderSize;
-        internal const uint k_ProtocolSignatureAndVersion = 0x00505455 | (k_ProtocolVersion << 3 * 8); // Reversed for endianness
+        internal const uint k_ProtocolSignatureAndVersion = 0x00505455 | (k_ProtocolVersion << 24); // Reversed for endianness
+        private const int k_DeferredSendsQueueSize = 64;
 
         internal enum ConnectionState
         {
             Default = 0,
             AwaitingAccept,
             Established,
-            DisconnectionSent,
         }
 
         internal enum HandshakeType : byte
@@ -44,64 +44,14 @@ namespace Unity.Networking.Transport
             public long LastReceiveTime;
             public long LastSendTime;
             public int ConnectionAttempts;
-            public Error.DisconnectReason DisconnectReason;
-        }
-
-        internal unsafe struct ControlPacketCommand
-        {
-            private const int k_Capacity = k_HandshakeSize;
-            public ConnectionId Connection;
-            private fixed byte Data[k_Capacity];
-            private int Length;
-
-            public void CopyTo(ref PacketProcessor packetProcessor)
-            {
-                fixed(void* dataPtr = Data)
-                packetProcessor.AppendToPayload(dataPtr, Length);
-            }
-
-            public ControlPacketCommand(ConnectionId connection, HandshakeType type, ref ConnectionToken token)
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (UnsafeUtility.SizeOf<uint>() +
-                    UnsafeUtility.SizeOf<HandshakeType>() +
-                    UnsafeUtility.SizeOf<ConnectionToken>() > k_HandshakeSize ||
-                    k_HandshakeSize > k_Capacity)
-                    throw new System.OverflowException();
-#endif
-                Connection = connection;
-                fixed(byte* dataPtr = Data)
-                {
-                    *(uint*)dataPtr = k_ProtocolSignatureAndVersion;
-                    UnsafeUtility.CopyStructureToPtr(ref type, dataPtr + UnsafeUtility.SizeOf<uint>());
-                    UnsafeUtility.CopyStructureToPtr(ref token, dataPtr + UnsafeUtility.SizeOf<uint>() + UnsafeUtility.SizeOf<HandshakeType>());
-                }
-                Length = k_HandshakeSize;
-            }
-
-            public ControlPacketCommand(ConnectionId connection, MessageType type, ref ConnectionToken token)
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (UnsafeUtility.SizeOf<MessageType>() +
-                    UnsafeUtility.SizeOf<ConnectionToken>() > k_HeaderSize ||
-                    k_HeaderSize > k_Capacity)
-                    throw new System.OverflowException();
-#endif
-                Connection = connection;
-                fixed(byte* dataPtr = Data)
-                {
-                    UnsafeUtility.CopyStructureToPtr(ref type, dataPtr);
-                    UnsafeUtility.CopyStructureToPtr(ref token, dataPtr + UnsafeUtility.SizeOf<MessageType>());
-                }
-                Length = k_HeaderSize;
-            }
         }
 
         private ConnectionList m_ConnectionList;
         private ConnectionList m_UnderlyingConnectionList;
         private ConnectionDataMap<SimpleConnectionData> m_ConnectionsData;
-        private NativeList<ControlPacketCommand> m_ControlCommands;
-        private NativeParallelHashMap<ConnectionToken, ConnectionId> m_TokensHashMap;
+        private NativeHashMap<ConnectionToken, ConnectionId> m_TokensHashMap;
+        private PacketsQueue m_DeferredSends;
+
         private int m_ConnectTimeout;
         private int m_DisconnectTimeout;
         private int m_HeartbeatTimeout;
@@ -123,8 +73,8 @@ namespace Unity.Networking.Transport
 
             connectionList = m_ConnectionList = ConnectionList.Create();
             m_ConnectionsData = new ConnectionDataMap<SimpleConnectionData>(1, default(SimpleConnectionData), Collections.Allocator.Persistent);
-            m_ControlCommands = new NativeList<ControlPacketCommand>(Allocator.Persistent);
-            m_TokensHashMap = new NativeParallelHashMap<ConnectionToken, ConnectionId>(1, Allocator.Persistent);
+            m_TokensHashMap = new NativeHashMap<ConnectionToken, ConnectionId>(1, Allocator.Persistent);
+            m_DeferredSends = new PacketsQueue(k_DeferredSendsQueueSize, networkConfigParameters.maxMessageSize);
 
             return 0;
         }
@@ -133,8 +83,8 @@ namespace Unity.Networking.Transport
         {
             m_ConnectionList.Dispose();
             m_ConnectionsData.Dispose();
-            m_ControlCommands.Dispose();
             m_TokensHashMap.Dispose();
+            m_DeferredSends.Dispose();
         }
 
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dependency)
@@ -157,8 +107,9 @@ namespace Unity.Networking.Transport
             job.ConnectionsData = m_ConnectionsData;
             job.UnderlyingConnections = underlyingConnectionList;
             job.ReceiveQueue = arguments.ReceiveQueue;
-            job.ControlCommands = m_ControlCommands;
+            job.DeferredSends = m_DeferredSends;
             job.TokensHashMap = m_TokensHashMap;
+            job.ConnectionPayloads = arguments.ConnectionPayloads;
             job.Time = arguments.Time;
             job.ConnectTimeout = m_ConnectTimeout;
             job.MaxConnectionAttempts = m_MaxConnectionAttempts;
@@ -175,7 +126,7 @@ namespace Unity.Networking.Transport
                 Connections = m_ConnectionList,
                 ConnectionsData = m_ConnectionsData,
                 SendQueue = arguments.SendQueue,
-                ControlCommands = m_ControlCommands,
+                DeferredSends = m_DeferredSends,
                 Time = arguments.Time,
             }.Schedule(dependency);
         }
@@ -186,7 +137,7 @@ namespace Unity.Networking.Transport
             public ConnectionList Connections;
             public ConnectionDataMap<SimpleConnectionData> ConnectionsData;
             public PacketsQueue SendQueue;
-            public NativeList<ControlPacketCommand> ControlCommands;
+            public PacketsQueue DeferredSends;
             public long Time;
 
             public void Execute()
@@ -213,26 +164,24 @@ namespace Unity.Networking.Transport
                 }
 
                 // Send all control messages
-                var controlCommandsCount = ControlCommands.Length;
-                for (int i = 0; i < controlCommandsCount; i++)
-                    SendControlCommand(ref ControlCommands.ElementAt(i));
-                ControlCommands.Clear();
-            }
-
-            private void SendControlCommand(ref ControlPacketCommand controlCommand)
-            {
-                if (SendQueue.EnqueuePacket(out var packetProcessor))
+                var deferredCount = DeferredSends.Count;
+                for (int i = 0; i < deferredCount; i++)
                 {
-                    packetProcessor.EndpointRef = Connections.GetConnectionEndpoint(controlCommand.Connection);
+                    if (SendQueue.EnqueuePacket(out var packetProcessor))
+                    {
+                        var deferredPacketProcessor = DeferredSends[i];
+                        var connection = deferredPacketProcessor.ConnectionRef;
+                        var connectionData = ConnectionsData[connection];
 
-                    controlCommand.CopyTo(ref packetProcessor);
+                        packetProcessor.ConnectionRef = connectionData.UnderlyingConnection;
+                        packetProcessor.EndpointRef = Connections.GetConnectionEndpoint(connection);
+                        packetProcessor.AppendToPayload(deferredPacketProcessor);
 
-                    var connectionData = ConnectionsData[controlCommand.Connection];
-                    connectionData.LastSendTime = Time;
-                    ConnectionsData[controlCommand.Connection] = connectionData;
-
-                    packetProcessor.ConnectionRef = connectionData.UnderlyingConnection;
+                        connectionData.LastSendTime = Time;
+                        ConnectionsData[connection] = connectionData;
+                    }
                 }
+                DeferredSends.Clear();
             }
         }
 
@@ -243,8 +192,9 @@ namespace Unity.Networking.Transport
             public ConnectionDataMap<SimpleConnectionData> ConnectionsData;
             public T UnderlyingConnections;
             public PacketsQueue ReceiveQueue;
-            public NativeList<ControlPacketCommand> ControlCommands;
-            public NativeParallelHashMap<ConnectionToken, ConnectionId> TokensHashMap;
+            public PacketsQueue DeferredSends;
+            public NativeHashMap<ConnectionToken, ConnectionId> TokensHashMap;
+            public NativeHashMap<ConnectionId, ConnectionPayload> ConnectionPayloads;
             public long Time;
             public int ConnectTimeout;
             public int DisconnectTimeout;
@@ -259,8 +209,8 @@ namespace Unity.Networking.Transport
 
             private void ProcessConnectionStates()
             {
-                // Disconnect if underlying connection is disconnected.
-                var underlyingDisconnections = UnderlyingConnections.QueryFinishedDisconnections(Allocator.Temp);
+                // Disconnect if underlying connection is disconnecting.
+                var underlyingDisconnections = UnderlyingConnections.QueryIncomingDisconnections(Allocator.Temp);
                 var count = underlyingDisconnections.Length;
                 for (int i = 0; i < count; i++)
                 {
@@ -279,8 +229,7 @@ namespace Unity.Networking.Transport
 
                     var connectionData = ConnectionsData[connectionId];
 
-                    Connections.StartDisconnecting(ref connectionId);
-                    connectionData.DisconnectReason = disconnection.Reason;
+                    Connections.StartDisconnecting(ref connectionId, disconnection.Reason);
                     connectionData.State = ConnectionState.Default;
                     ConnectionsData[connectionId] = connectionData;
                 }
@@ -310,19 +259,17 @@ namespace Unity.Networking.Transport
             {
                 var connectionData = ConnectionsData[connectionId];
 
-                // If we still need to send a disconnect, don't disconnect and queue up the message.
-                var needToSendDisconnect = connectionData.State == ConnectionState.Established &&
-                    connectionData.DisconnectReason != Error.DisconnectReason.ClosedByRemote;
-                if (needToSendDisconnect)
+                // If we're disconnecting on an established connection, send a disconnect.
+                if (connectionData.State == ConnectionState.Established)
                 {
-                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Disconnect, ref connectionData.Token));
-                    connectionData.State = ConnectionState.DisconnectionSent;
+                    EnqueueDeferredMessage(connectionId, MessageType.Disconnect, ref connectionData.Token);
+                    connectionData.State = ConnectionState.Default;
                     ConnectionsData[connectionId] = connectionData;
                 }
                 else
                 {
                     UnderlyingConnections.Disconnect(ref connectionData.UnderlyingConnection);
-                    Connections.FinishDisconnecting(ref connectionId, connectionData.DisconnectReason);
+                    Connections.FinishDisconnecting(ref connectionId);
                     TokensHashMap.Remove(connectionData.Token);
                 }
             }
@@ -346,7 +293,7 @@ namespace Unity.Networking.Transport
 
                         TokensHashMap.Add(connectionData.Token, connectionId);
 
-                        ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionRequest, ref connectionData.Token));
+                        EnqueueDeferredMessage(connectionId, HandshakeType.ConnectionRequest, ref connectionData.Token);
 
                         ConnectionsData[connectionId] = connectionData;
                         return;
@@ -361,11 +308,7 @@ namespace Unity.Networking.Transport
                 {
                     if (connectionData.ConnectionAttempts >= MaxConnectionAttempts)
                     {
-                        Connections.StartDisconnecting(ref connectionId);
-                        connectionData.DisconnectReason = Error.DisconnectReason.MaxConnectionAttempts;
-
-                        ConnectionsData[connectionId] = connectionData;
-
+                        Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.MaxConnectionAttempts);
                         ProcessDisconnecting(ref connectionId);
                     }
                     else
@@ -377,7 +320,7 @@ namespace Unity.Networking.Transport
 
                         // Send connect request only if underlying connection has been fully established.
                         if (connectionState == ConnectionState.AwaitingAccept)
-                            ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionRequest, ref connectionData.Token));
+                            EnqueueDeferredMessage(connectionId, HandshakeType.ConnectionRequest, ref connectionData.Token);
                     }
                 }
             }
@@ -389,16 +332,14 @@ namespace Unity.Networking.Transport
                 // Check for the disconnect timeout.
                 if (Time - connectionData.LastReceiveTime > DisconnectTimeout)
                 {
-                    Connections.StartDisconnecting(ref connectionId);
-                    connectionData.DisconnectReason = Error.DisconnectReason.Timeout;
-                    ConnectionsData[connectionId] = connectionData;
+                    Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.Timeout);
                     ProcessDisconnecting(ref connectionId);
                 }
 
                 // Check for the heartbeat timeout.
                 if (HeartbeatTimeout > 0 && Time - connectionData.LastSendTime > HeartbeatTimeout)
                 {
-                    ControlCommands.Add(new ControlPacketCommand(connectionId, MessageType.Heartbeat, ref connectionData.Token));
+                    EnqueueDeferredMessage(connectionId, MessageType.Heartbeat, ref connectionData.Token);
                 }
             }
 
@@ -428,7 +369,27 @@ namespace Unity.Networking.Transport
                     var connectionToken = packetProcessor.RemoveFromPayloadStart<ConnectionToken>();
                     var connectionId = FindConnectionByToken(ref connectionToken);
 
-                    if (!connectionId.IsCreated || Connections.GetConnectionState(connectionId) != NetworkConnection.State.Connected)
+                    if (!connectionId.IsCreated)
+                    {
+                        packetProcessor.Drop();
+                        continue;
+                    }
+
+                    var connectionState = Connections.GetConnectionState(connectionId);
+                    var connectionData = ConnectionsData[connectionId];
+
+                    // If we were still waiting on an accept message and receive any message for the
+                    // connection, consider the connection accepted. This way we won't drop messages
+                    // sent by the server if the accept is lost.
+                    if (connectionState == NetworkConnection.State.Connecting &&
+                        connectionData.State == ConnectionState.AwaitingAccept)
+                    {
+                        connectionData.State = ConnectionState.Established;
+                        Connections.FinishConnectingFromLocal(ref connectionId);
+                        ConnectionPayloads.Remove(connectionId);
+                        ConnectionsData[connectionId] = connectionData;
+                    }
+                    else if (connectionState != NetworkConnection.State.Connected)
                     {
                         packetProcessor.Drop();
                         continue;
@@ -438,10 +399,8 @@ namespace Unity.Networking.Transport
                     {
                         case MessageType.Disconnect:
                         {
-                            var connectionData = ConnectionsData[connectionId];
-
-                            Connections.StartDisconnecting(ref connectionId);
-                            connectionData.DisconnectReason = Error.DisconnectReason.ClosedByRemote;
+                            Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.ClosedByRemote);
+                            connectionData.State = ConnectionState.Default;
                             ConnectionsData[connectionId] = connectionData;
 
                             ProcessDisconnecting(ref connectionId);
@@ -505,14 +464,15 @@ namespace Unity.Networking.Transport
                 return default;
             }
 
-            private bool ProcessHandshakeReceive(ref PacketProcessor packetProcessor)
+            private unsafe bool ProcessHandshakeReceive(ref PacketProcessor packetProcessor)
             {
-                if (packetProcessor.Length != SimpleConnectionLayer.k_HandshakeSize)
+                if (packetProcessor.Length < SimpleConnectionLayer.k_HandshakeSize)
                     return false;
 
-                if ((packetProcessor.GetPayloadDataRef<int>(0) & 0xFFFFFF00) == (k_ProtocolSignatureAndVersion & 0xFFFFFF00))
+                if ((packetProcessor.GetPayloadDataRef<uint>(0) & 0x00FFFFFF) == (k_ProtocolSignatureAndVersion & 0x00FFFFFF))
                 {
-                    var protocolVersion = packetProcessor.GetPayloadDataRef<byte>(3);
+                    var signatureAndVersion = packetProcessor.RemoveFromPayloadStart<uint>();
+                    var protocolVersion = (byte)(signatureAndVersion >> 24);
                     if (protocolVersion != k_ProtocolVersion)
                     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
@@ -521,8 +481,8 @@ namespace Unity.Networking.Transport
                         return true;
                     }
 
-                    var handshakeSeq = (HandshakeType)packetProcessor.GetPayloadDataRef<byte>(4);
-                    var connectionToken = packetProcessor.GetPayloadDataRef<ConnectionToken>(5);
+                    var handshakeSeq = (HandshakeType)packetProcessor.RemoveFromPayloadStart<byte>();
+                    var connectionToken = packetProcessor.RemoveFromPayloadStart<ConnectionToken>();
                     var connectionId = FindConnectionByToken(ref connectionToken);
                     var connectionData = ConnectionsData[connectionId];
                     switch (handshakeSeq)
@@ -543,18 +503,31 @@ namespace Unity.Networking.Transport
                                 TokensHashMap.Add(connectionToken, connectionId);
                             }
 
+                            // Get the connect payload, if any.
+                            if (packetProcessor.Length > SimpleConnectionLayer.k_HandshakeSize + sizeof(ushort))
+                            {
+                                var length = packetProcessor.RemoveFromPayloadStart<ushort>();
+                                if (length != packetProcessor.Length)
+                                    break; // Ignore connect payload if length is off.
+
+                                var connectPayload = new ConnectionPayload { Length = length };
+                                packetProcessor.CopyPayload(connectPayload.Data, length);
+
+                                ConnectionPayloads[connectionId] = connectPayload;
+                            }
+
                             connectionData.LastSendTime = Time;
-                            ControlCommands.Add(new ControlPacketCommand(connectionId, HandshakeType.ConnectionAccept, ref connectionToken));
+                            EnqueueDeferredMessage(connectionId, HandshakeType.ConnectionAccept, ref connectionToken);
                             break;
                         }
 
                         case HandshakeType.ConnectionAccept:
                         {
-                            if (connectionId.IsCreated &&
-                                connectionData.State == ConnectionState.AwaitingAccept)
+                            if (connectionId.IsCreated && connectionData.State == ConnectionState.AwaitingAccept)
                             {
                                 connectionData.State = ConnectionState.Established;
                                 Connections.FinishConnectingFromLocal(ref connectionId);
+                                ConnectionPayloads.Remove(connectionId);
                             }
                             else
                             {
@@ -576,6 +549,35 @@ namespace Unity.Networking.Transport
                 }
 
                 return false;
+            }
+
+            private unsafe void EnqueueDeferredMessage(ConnectionId connection, HandshakeType type, ref ConnectionToken token)
+            {
+                if (DeferredSends.EnqueuePacket(out var packetProcessor))
+                {
+                    packetProcessor.ConnectionRef = connection;
+                    packetProcessor.AppendToPayload(k_ProtocolSignatureAndVersion);
+                    packetProcessor.AppendToPayload(type);
+                    packetProcessor.AppendToPayload(token);
+
+                    if (type == HandshakeType.ConnectionRequest &&
+                        ConnectionPayloads.TryGetValue(connection, out var payload) &&
+                        payload.Length > 0)
+                    {
+                        packetProcessor.AppendToPayload((ushort)payload.Length);
+                        packetProcessor.AppendToPayload(payload.Data, payload.Length);
+                    }
+                }
+            }
+
+            private void EnqueueDeferredMessage(ConnectionId connection, MessageType type, ref ConnectionToken token)
+            {
+                if (DeferredSends.EnqueuePacket(out var packetProcessor))
+                {
+                    packetProcessor.ConnectionRef = connection;
+                    packetProcessor.AppendToPayload(type);
+                    packetProcessor.AppendToPayload(token);
+                }
             }
         }
     }

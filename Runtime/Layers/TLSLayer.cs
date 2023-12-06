@@ -38,7 +38,6 @@ namespace Unity.Networking.Transport
             public Binding.unitytls_client* UnityTLSClientPtr;
 
             public ConnectionId UnderlyingConnection;
-            public Error.DisconnectReason DisconnectReason;
 
             // Used to delete old half-open connections.
             public long LastHandshakeUpdate;
@@ -276,7 +275,7 @@ namespace Unity.Networking.Transport
             private void ProcessUnderlyingConnectionList()
             {
                 // The only thing we care about in the underlying connection list is disconnections.
-                var disconnects = UnderlyingConnections.QueryFinishedDisconnections(Allocator.Temp);
+                var disconnects = UnderlyingConnections.QueryIncomingDisconnections(Allocator.Temp);
 
                 var count = disconnects.Length;
                 for (int i = 0; i < count; i++)
@@ -290,9 +289,9 @@ namespace Unity.Networking.Transport
                     // If our connection is not disconnecting, then it means the layer below
                     // triggered the disconnection on its own, so start disconnecting.
                     if (Connections.GetConnectionState(connectionId) != NetworkConnection.State.Disconnecting)
-                        Connections.StartDisconnecting(ref connectionId);
+                        Connections.StartDisconnecting(ref connectionId, disconnects[i].Reason);
 
-                    Disconnect(connectionId, disconnects[i].Reason);
+                    Disconnect(connectionId);
                 }
             }
 
@@ -382,7 +381,7 @@ namespace Unity.Networking.Transport
             {
                 var underlyingId = ConnectionsData[connection].UnderlyingConnection;
                 UnderlyingConnections.StartDisconnecting(ref underlyingId);
-                Disconnect(connection, ConnectionsData[connection].DisconnectReason);
+                Disconnect(connection);
             }
 
             private void CheckForFailedClient(ConnectionId connection)
@@ -408,10 +407,8 @@ namespace Unity.Networking.Transport
                     }
 
                     UnderlyingConnections.StartDisconnecting(ref data.UnderlyingConnection);
-                    Connections.StartDisconnecting(ref connection);
-
-                    data.DisconnectReason = Error.DisconnectReason.AuthenticationFailure;
-                    ConnectionsData[connection] = data;
+                    Connections.StartDisconnecting(ref connection, Error.DisconnectReason.AuthenticationFailure);
+                    Disconnect(connection);
                 }
             }
 
@@ -429,10 +426,8 @@ namespace Unity.Networking.Transport
                 if (Time - data.LastHandshakeUpdate > HalfOpenDisconnectTimeout)
                 {
                     UnderlyingConnections.StartDisconnecting(ref data.UnderlyingConnection);
-                    Connections.StartDisconnecting(ref connection);
-
-                    data.DisconnectReason = Error.DisconnectReason.Timeout;
-                    ConnectionsData[connection] = data;
+                    Connections.StartDisconnecting(ref connection, Error.DisconnectReason.Timeout);
+                    Disconnect(connection);
                 }
             }
 
@@ -457,7 +452,7 @@ namespace Unity.Networking.Transport
                 while (Binding.unitytls_client_handshake(clientPtr) == Binding.UNITYTLS_HANDSHAKE_STEP);
             }
 
-            private void Disconnect(ConnectionId connection, Error.DisconnectReason reason)
+            private void Disconnect(ConnectionId connection)
             {
                 var data = ConnectionsData[connection];
                 if (data.UnityTLSClientPtr != null)
@@ -465,7 +460,7 @@ namespace Unity.Networking.Transport
 
                 UnderlyingIdToCurrentId.Remove(data.UnderlyingConnection);
                 ConnectionsData.ClearData(ref connection);
-                Connections.FinishDisconnecting(ref connection, reason);
+                Connections.FinishDisconnecting(ref connection);
             }
         }
 

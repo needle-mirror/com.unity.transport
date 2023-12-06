@@ -100,6 +100,8 @@ namespace Unity.Networking.Transport
             // If non-empty, will connect to this hostname with the wss:// protocol. Otherwise the
             // IP address of the endpoint is used to connect with the ws:// protocol.
             public FixedString512Bytes SecureHostname;
+
+            public FixedString128Bytes Path;
         }
 
         unsafe struct ConnectionData
@@ -154,6 +156,7 @@ namespace Unity.Networking.Transport
             {
                 ConnectTimeoutMS = networkConfiguration.connectTimeoutMS * networkConfiguration.maxConnectAttempts,
                 SecureHostname = secureHostname,
+                Path = settings.GetWebSocketParameters().Path,
             };
             m_InternalData = new NativeReference<InternalData>(state, Allocator.Persistent);
 
@@ -207,9 +210,9 @@ namespace Unity.Networking.Transport
             public ConnectionDataMap<ConnectionData> ConnectionMap;
             public long Time;
 
-            private void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData, Error.DisconnectReason reason = default)
+            private void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData)
             {
-                ConnectionList.FinishDisconnecting(ref connectionId, reason);
+                ConnectionList.FinishDisconnecting(ref connectionId);
                 ConnectionMap.ClearData(ref connectionId);
                 WebSocket.Destroy(connectionData.Socket);
             }
@@ -236,8 +239,8 @@ namespace Unity.Networking.Transport
                         if (connectionData.ConnectStartTime == 0)
                         {
                             var socket = ++WebSocket.s_NextSocketId;
-                            GetServerAddress(connectionId, out var address);
-                            WebSocket.Create(socket, (IntPtr)address.GetUnsafePtr(), address.Length);
+                            var url = GetServerURL(connectionId);
+                            WebSocket.Create(socket, (IntPtr)url.GetUnsafePtr(), url.Length);
 
                             connectionData.ConnectStartTime = Time;
                             connectionData.Socket = socket;
@@ -251,16 +254,16 @@ namespace Unity.Networking.Transport
                         }
                         else if (status < 0)
                         {
-                            ConnectionList.StartDisconnecting(ref connectionId);
-                            Abort(ref connectionId, ref connectionData, Error.DisconnectReason.MaxConnectionAttempts);
+                            ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.MaxConnectionAttempts);
+                            Abort(ref connectionId, ref connectionData);
                             continue;
                         }
 
                         // Disconnect if we've reached the maximum connection timeout.
                         if (Time - connectionData.ConnectStartTime >= InternalData.Value.ConnectTimeoutMS)
                         {
-                            ConnectionList.StartDisconnecting(ref connectionId);
-                            Abort(ref connectionId, ref connectionData, Error.DisconnectReason.MaxConnectionAttempts);
+                            ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.MaxConnectionAttempts);
+                            Abort(ref connectionId, ref connectionData);
                             continue;
                         }
 
@@ -303,8 +306,8 @@ namespace Unity.Networking.Transport
                     if (nbytes < 0)
                     {
                         // Disconnect
-                        ConnectionList.StartDisconnecting(ref connectionId);
-                        Abort(ref connectionId, ref connectionData, Error.DisconnectReason.ClosedByRemote);
+                        ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.ClosedByRemote);
+                        Abort(ref connectionId, ref connectionData);
                         continue;
                     }
 
@@ -318,15 +321,16 @@ namespace Unity.Networking.Transport
             // endpoint in the connection list. But if using TLS, then the hostname provided in the
             // secure parameters overrides the address, and we connect to "wss://{hostname}:{port}"
             // (with the port still taken from the connection's endpoint in the connection list).
-            private void GetServerAddress(ConnectionId connection, out FixedString512Bytes address)
+            private FixedString512Bytes GetServerURL(ConnectionId connection)
             {
                 var endpoint = ConnectionList.GetConnectionEndpoint(connection);
                 var secureHostname = InternalData.Value.SecureHostname;
+                var path = InternalData.Value.Path;
 
                 if (secureHostname.IsEmpty)
-                    address = FixedString.Format("ws://{0}", endpoint.ToFixedString());
+                    return FixedString.Format("ws://{0}{1}", endpoint.ToFixedString(), path);
                 else
-                    address = FixedString.Format("wss://{0}:{1}", secureHostname, endpoint.Port);
+                    return FixedString.Format("wss://{0}:{1}{2}", secureHostname, endpoint.Port, path);
             }
         }
 
@@ -347,9 +351,9 @@ namespace Unity.Networking.Transport
             public ConnectionList ConnectionList;
             public ConnectionDataMap<ConnectionData> ConnectionMap;
 
-            private void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData, Error.DisconnectReason reason = default)
+            private void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData)
             {
-                ConnectionList.FinishDisconnecting(ref connectionId, reason);
+                ConnectionList.FinishDisconnecting(ref connectionId);
                 ConnectionMap.ClearData(ref connectionId);
                 WebSocket.Destroy(connectionData.Socket);
             }
@@ -380,8 +384,8 @@ namespace Unity.Networking.Transport
                     if (nbytes != packetProcessor.Length)
                     {
                         // Disconnect
-                        ConnectionList.StartDisconnecting(ref connectionId);
-                        Abort(ref connectionId, ref connectionData, Error.DisconnectReason.ClosedByRemote);
+                        ConnectionList.StartDisconnecting(ref connectionId, Error.DisconnectReason.ClosedByRemote);
+                        Abort(ref connectionId, ref connectionData);
                         continue;
                     }
 

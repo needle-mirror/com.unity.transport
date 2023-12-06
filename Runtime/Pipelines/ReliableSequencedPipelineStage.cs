@@ -62,64 +62,65 @@ namespace Unity.Networking.Transport
         {
             // Request a send update to see if a queued packet needs to be resent later or if an ack packet should be sent
             requests = NetworkPipelineStage.Requests.SendUpdate;
-            bool needsResume = false;
 
-            var header = default(ReliableUtility.PacketHeader);
-            var slice = default(InboundRecvBuffer);
-            ReliableUtility.Context* reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
-            ReliableUtility.SharedContext* shared = (ReliableUtility.SharedContext*)ctx.internalSharedProcessBuffer;
+            var header = new ReliableUtility.PacketHeader();
+            var reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
+            var shared = (ReliableUtility.SharedContext*)ctx.internalSharedProcessBuffer;
 
-            if (reliable->Resume == ReliableUtility.NullEntry)
+            // We've received a packet (i.e. not a resume call).
+            if (inboundBuffer.buffer != null)
             {
-                if (inboundBuffer.buffer == null)
-                {
-                    inboundBuffer = slice;
-                    return;
-                }
                 var inboundArray = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(inboundBuffer.buffer, inboundBuffer.bufferLength, Allocator.Invalid);
+
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 var safetyHandle = AtomicSafetyHandle.GetTempMemoryHandle();
                 NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref inboundArray, safetyHandle);
 #endif
+
                 var reader = new DataStreamReader(inboundArray);
                 reader.ReadBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
+                var packetWithoutHeader = inboundBuffer.Slice(ReliableUtility.PacketHeaderWireSize(ctx));
+
+                // Drop the packet. We'll set it back if it was expected.
+                inboundBuffer = default;
 
                 if (header.Type == (ushort)ReliableUtility.PacketType.Ack)
                 {
+                    // Packet is just an ACK.
                     ReliableUtility.ReadAckPacket(ctx, header);
-                    inboundBuffer = default;
-                    return;
                 }
-
-                var result = ReliableUtility.Read(ctx, header);
-
-                if (result >= 0)
+                else
                 {
-                    var nextExpectedSequenceId = (ushort)(reliable->Delivered + 1);
-                    if (result == nextExpectedSequenceId)
+                    // Packet contains a payload.
+                    var receivedSequenceId = ReliableUtility.Read(ctx, header);
+                    if (receivedSequenceId >= 0)
                     {
-                        reliable->Delivered = result;
-                        slice = inboundBuffer.Slice(ReliableUtility.PacketHeaderWireSize(ctx));
+                        var nextExpectedSequenceId = (ushort)(reliable->Delivered + 1);
 
-                        if (needsResume = SequenceHelpers.GreaterThan16((ushort)shared->ReceivedPackets.Sequence, (ushort)result))
+                        if (receivedSequenceId == nextExpectedSequenceId)
                         {
-                            reliable->Resume = (ushort)(result + 1);
+                            // Received packet is the next one in the sequence. Return it.
+                            reliable->Delivered = receivedSequenceId;
+                            inboundBuffer = packetWithoutHeader;
+                        }
+                        else
+                        {
+                            // Received packet is later in the sequence. Save it for later.
+                            ReliableUtility.SetPacket(ctx.internalProcessBuffer, receivedSequenceId, packetWithoutHeader);
                         }
                     }
-                    else
-                    {
-                        ReliableUtility.SetPacket(ctx.internalProcessBuffer, result, inboundBuffer.Slice(ReliableUtility.PacketHeaderWireSize(ctx)));
-                        slice = ReliableUtility.ResumeReceive(ctx, reliable->Delivered + 1, ref needsResume);
-                    }
                 }
             }
-            else
-            {
-                slice = ReliableUtility.ResumeReceive(ctx, reliable->Resume, ref needsResume);
-            }
-            if (needsResume)
+
+            // If in a resume call or if the inbound buffer has been cleared while processing a
+            // packet (i.e. it was an ACK or an out-of-order packet), then try to resume the next
+            // packet in the sequence.
+            if (inboundBuffer.buffer == null)
+                inboundBuffer = ReliableUtility.ResumeReceive(ctx);
+
+            // Check if we need to resume.
+            if (ReliableUtility.NeedResumeReceive(ctx))
                 requests |= NetworkPipelineStage.Requests.Resume;
-            inboundBuffer = slice;
         }
 
         [BurstCompile(DisableDirectCall = true)]

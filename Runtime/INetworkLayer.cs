@@ -65,5 +65,6 @@ namespace Unity.Networking.Transport
         internal NetworkDriverReceiver DriverReceiver;
         internal NetworkEventQueue EventQueue;
         internal NetworkPipelineProcessor PipelineProcessor;
+        internal NativeHashMap<ConnectionId, ConnectionPayload> ConnectionPayloads;
     }
 }

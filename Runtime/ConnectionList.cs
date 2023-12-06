@@ -15,7 +15,7 @@ namespace Unity.Networking.Transport
             public NetworkConnection.State State;
         }
 
-        internal struct CompletedDisconnection
+        internal struct IncomingDisconnection
         {
             public ConnectionId Connection;
             public Error.DisconnectReason Reason;
@@ -23,11 +23,10 @@ namespace Unity.Networking.Transport
 
         private ConnectionDataMap<ConnectionData> m_Connections;
 
-
         /// <summary>
-        /// Stores all connections that completed the disconnection.
+        /// Stores all connections with an impending disconnection.
         /// </summary>
-        private NativeQueue<CompletedDisconnection> m_FinishedDisconnections;
+        private NativeQueue<IncomingDisconnection> m_IncomingDisconnections;
 
         /// <summary>
         /// Stores all connections (not requested by the remote endpoint) that completed the connection.
@@ -59,7 +58,7 @@ namespace Unity.Networking.Transport
 
         internal NativeArray<ConnectionId> QueryFinishedConnections(Allocator allocator) => m_FinishedConnections.ToArray(allocator);
         internal NativeArray<ConnectionId> QueryIncomingConnections(Allocator allocator) => m_IncomingConnections.ToArray(allocator);
-        internal NativeArray<CompletedDisconnection> QueryFinishedDisconnections(Allocator allocator) => m_FinishedDisconnections.ToArray(allocator);
+        internal NativeArray<IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator) => m_IncomingDisconnections.ToArray(allocator);
 
         public static ConnectionList Create()
         {
@@ -70,7 +69,7 @@ namespace Unity.Networking.Transport
         {
             var defaultConnectionData = new ConnectionData { State = NetworkConnection.State.Disconnected };
             m_Connections = new ConnectionDataMap<ConnectionData>(1, defaultConnectionData, allocator);
-            m_FinishedDisconnections = new NativeQueue<CompletedDisconnection>(allocator);
+            m_IncomingDisconnections = new NativeQueue<IncomingDisconnection>(allocator);
             m_FinishedConnections = new NativeQueue<ConnectionId>(allocator);
             m_FreeList = new NativeQueue<ConnectionId>(allocator);
             m_IncomingConnections = new NativeQueue<ConnectionId>(allocator);
@@ -79,7 +78,7 @@ namespace Unity.Networking.Transport
         public void Dispose()
         {
             m_Connections.Dispose();
-            m_FinishedDisconnections.Dispose();
+            m_IncomingDisconnections.Dispose();
             m_FinishedConnections.Dispose();
             m_IncomingConnections.Dispose();
             m_FreeList.Dispose();
@@ -153,10 +152,7 @@ namespace Unity.Networking.Transport
             var connectionData = m_Connections[connectionId];
 
             if (connectionData.State != NetworkConnection.State.Connecting)
-            {
-                DebugLog.ConnectionCompletingWrongState(connectionData.State);
                 return;
-            }
 
             connectionData.State = NetworkConnection.State.Connected;
             m_Connections[connectionId] = connectionData;
@@ -190,11 +186,16 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Sets the state of the connection to Disconnected.
+        /// Sets the state of the connection to Disconnecting.
         /// </summary>
         /// <param name="connectionId">The connection to disconnect.</param>
-        /// <remarks>The connection is going to be fully disconnected only when CompleteDisconnection is called.</remarks>
-        internal void StartDisconnecting(ref ConnectionId connectionId)
+        /// <param name="reason">The disconnect reason.</param>
+        /// <remarks>
+        /// The connection is going to be fully disconnected only when FinishDisconnecting is
+        /// called. A Disconnect event with the provided reason will be enqueued at the begining of
+        /// the next ScheduleUpdate call.
+        /// </remarks>
+        internal void StartDisconnecting(ref ConnectionId connectionId, Error.DisconnectReason reason = Error.DisconnectReason.Default)
         {
             var connectionData = m_Connections[connectionId];
 
@@ -205,24 +206,25 @@ namespace Unity.Networking.Transport
                 return;
             }
 
+            m_IncomingDisconnections.Enqueue(new IncomingDisconnection
+            {
+                Connection = connectionId,
+                Reason = reason,
+            });
+
             connectionData.State = NetworkConnection.State.Disconnecting;
             m_Connections[connectionId] = connectionData;
         }
 
         /// <summary>
-        /// Completes a disconnection by setting the state of the connection to Disconneted.
+        /// Completes a disconnection by setting the state of the connection to Disconnected.
         /// </summary>
         /// <param name="connectionId">The disconnecting connection to be completed.</param>
-        /// <param name="reason">The disconnect reason</param>
         /// <remarks>
-        /// A Disconnect event with the provided reason will be enqueued at the begining of the next ScheduleUpdate() call.
-        /// The resources associated to the connection will be released at the begining of the next ScheduleUpdate() call.
+        /// The connection's ID will be freed up at the beginning of the next ScheduleUpdate call.
         /// </remarks>
-        internal void FinishDisconnecting(ref ConnectionId connectionId, Error.DisconnectReason reason = Error.DisconnectReason.Default)
+        internal void FinishDisconnecting(ref ConnectionId connectionId)
         {
-            // TODO: we might want to restric the disconnection completion to the layer that
-            // owns the connection list.
-
             var connectionData = m_Connections[connectionId];
 
             if (connectionData.State != NetworkConnection.State.Disconnecting)
@@ -231,12 +233,6 @@ namespace Unity.Networking.Transport
                 return;
             }
 
-            m_FinishedDisconnections.Enqueue(new CompletedDisconnection
-            {
-                Connection = connectionId,
-                Reason = reason,
-            });
-            
             connectionData.State = NetworkConnection.State.Disconnected;
             m_Connections[connectionId] = connectionData;
         }
@@ -246,18 +242,29 @@ namespace Unity.Networking.Transport
         /// </summary>
         internal void Cleanup()
         {
-            while (m_FinishedDisconnections.TryDequeue(out var disconnectionRequest))
-            {
-                var overridingConnection = disconnectionRequest.Connection;
-                overridingConnection.Version++;
-
-                // This will "initialize" the new available connection left by the disconnected one.
-                m_Connections.ClearData(ref overridingConnection);
-
-                m_FreeList.Enqueue(overridingConnection);
-            }
-
             m_FinishedConnections.Clear();
+            m_IncomingDisconnections.Clear();
+
+            // If the free list is empty, add all the connections that are disconnected. It would be
+            // better to just always immediately add disconnected connections, but then we'd have to
+            // be careful about not adding connections that are already in the free list. That could
+            // get expensive so we just lazily add connections when we're likely to need new ones
+            // (that is, when there's nothing in the free list).
+            if (m_FreeList.Count == 0)
+            {
+                for (int i = 0; i < Count; i++)
+                {
+                    var connectionId = ConnectionAt(i);
+                    var connectionData = m_Connections[connectionId];
+
+                    if (connectionData.State == NetworkConnection.State.Disconnected)
+                    {
+                        connectionId.Version++;
+                        m_Connections.ClearData(ref connectionId);
+                        m_FreeList.Enqueue(connectionId);
+                    }
+                }
+            }
         }
 
         internal void UpdateConnectionAddress(ref ConnectionId connection, ref NetworkEndpoint address)

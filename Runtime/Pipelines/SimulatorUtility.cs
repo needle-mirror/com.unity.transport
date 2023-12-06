@@ -161,6 +161,7 @@ namespace Unity.Networking.Transport.Utilities
         /// Configuration parameters for the simulator pipeline stage.
         /// </summary>
         [StructLayout(LayoutKind.Sequential)]
+        [Serializable]
         public struct Parameters : INetworkParameter
         {
             /// <summary>

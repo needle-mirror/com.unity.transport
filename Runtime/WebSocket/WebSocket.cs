@@ -51,10 +51,13 @@ namespace Unity.Networking.Transport
             Client = 1, // outgoing (active) connection
         }
 
-        public static unsafe void Connect(ref Buffer buffer, ref NetworkEndpoint remoteEndpoint, ref Keys keys)
+        public static unsafe void Connect(ref Buffer buffer, ref NetworkEndpoint remoteEndpoint, ref Keys keys, ref FixedString128Bytes path)
         {
             FixedString32Bytes end = "\r\n";
-            FixedString512Bytes handshake = "GET / HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n";
+            FixedString512Bytes handshake = "GET ";
+            handshake.Append(path);
+            FixedString128Bytes headers = " HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n";
+            handshake.Append(headers);
             FixedString32Bytes key = "Sec-WebSocket-Key: ";
             handshake.Append(key);
             GenerateBase64Key(out key, ref keys);
@@ -73,7 +76,7 @@ namespace Unity.Networking.Transport
             buffer.Length = handshake.Length;
         }
 
-        public static unsafe State Handshake(ref Buffer recvbuffer, ref Buffer sendbuffer, bool isClient, ref Keys keys)
+        public static unsafe State Handshake(ref Buffer recvbuffer, ref Buffer sendbuffer, bool isClient, ref Keys keys, ref FixedString128Bytes path)
         {
             if (recvbuffer.Length == 0)
                 return State.Opening;
@@ -290,8 +293,11 @@ namespace Unity.Networking.Transport
                            
                         return State.Closed;
                     }
-                    // Only / is available
-                    if (firstLineEnd != 14 || recvHandshake[4] != '/')
+
+                    // Check that path is the one expected.
+                    var pathValid = firstLineEnd == 13 + path.Length &&
+                        UnsafeUtility.MemCmp(recvHandshake + 4, path.GetUnsafePtr(), path.Length) == 0;
+                    if (!pathValid)
                     {
                         Warn("Received handshake with an incorrect resource name.");
 
@@ -526,6 +532,7 @@ namespace Unity.Networking.Transport
                     
         public struct Settings
         {
+            public FixedString128Bytes Path;
             public int ConnectTimeoutMS;
             public int DisconnectTimeoutMS;
             public int HeartbeatTimeoutMS;

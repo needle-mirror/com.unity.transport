@@ -18,6 +18,7 @@ namespace Unity.Networking.Transport.TLS
     /// <summary>
     /// Settings used to configure the secure protocol implementation.
     /// </summary>
+    [Serializable]
     public struct SecureNetworkProtocolParameter : INetworkParameter
     {
         /// <summary>Root CA certificate (PEM format).</summary>

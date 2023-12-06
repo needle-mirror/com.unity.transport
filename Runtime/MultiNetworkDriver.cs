@@ -386,14 +386,16 @@ namespace Unity.Networking.Transport
             return pipeline;
         }
 
-        /// <inheritdoc cref="NetworkDriver.Accept"/>
-        public NetworkConnection Accept()
+        /// <inheritdoc cref="NetworkDriver.Accept(out NativeArray{byte})"/>
+        public NetworkConnection Accept(out NativeArray<byte> payload)
         {
+            payload = default;
+
             for (int id = 1; id <= DriverCount; id++)
             {
                 if (this.GetDriverRef(id).Listening)
                 {
-                    var connection = this.GetDriverRef(id).Accept();
+                    var connection = this.GetDriverRef(id).Accept(out payload);
                     if (connection != default)
                     {
                         connection.DriverId = id;
@@ -405,11 +407,17 @@ namespace Unity.Networking.Transport
             return default;
         }
 
-        /// <inheritdoc cref="NetworkDriver.Connect"/>
+        /// <inheritdoc cref="NetworkDriver.Accept()"/>
+        public NetworkConnection Accept()
+        {
+            return Accept(out _);
+        }
+
+        /// <inheritdoc cref="NetworkDriver.Connect(NetworkEndpoint, NativeArray{byte})"/>
         /// <param name="driverId">
         /// ID of the driver to connect, as obtained with <see cref="AddDriver"/>.
         /// </param>
-        public NetworkConnection Connect(int driverId, NetworkEndpoint endpoint)
+        public NetworkConnection Connect(int driverId, NetworkEndpoint endpoint, NativeArray<byte> payload)
         {
             CheckDriverId(driverId);
 
@@ -420,6 +428,12 @@ namespace Unity.Networking.Transport
             }
 
             return connection;
+        }
+
+        /// <inheritdoc cref="Connect"/>
+        public NetworkConnection Connect(int driverId, NetworkEndpoint endpoint)
+        {
+            return Connect(driverId, endpoint, default);
         }
 
         /// <inheritdoc cref="NetworkDriver.Disconnect"/>

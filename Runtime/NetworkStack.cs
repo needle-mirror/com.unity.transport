@@ -326,7 +326,8 @@ namespace Unity.Networking.Transport
         internal NetworkEndpoint GetLocalEndpoint() => m_NetworkInterfaceFunctions.GetLocalEndpoint(ref this);
 
         internal JobHandle ScheduleReceive(ref NetworkDriverReceiver driverReceiver, ref ConnectionList connectionList,
-            ref NetworkEventQueue eventQueue, ref NetworkPipelineProcessor pipelineProcessor, long time, JobHandle dependency)
+            ref NetworkEventQueue eventQueue, ref NetworkPipelineProcessor pipelineProcessor,
+            ref NativeHashMap<ConnectionId, ConnectionPayload> connectionPayloads, long time, JobHandle dependency)
         {
             var jobArguments = new ReceiveJobArguments
             {
@@ -335,6 +336,7 @@ namespace Unity.Networking.Transport
                 ReceiveResult = driverReceiver.Result,
                 EventQueue = eventQueue,
                 PipelineProcessor = pipelineProcessor,
+                ConnectionPayloads = connectionPayloads,
                 Time = time,
             };
 

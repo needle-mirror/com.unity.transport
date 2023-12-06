@@ -7,5 +7,6 @@
 ## [Encrypted communications](client-server-secure.md)
 ## [Integration with Unity.Logging](logging.md)
 # [Cross-play support](cross-play.md)
+# [WebGL support](websockets.md)
 # [FAQ](faq.md)
 # [Migrating from 1.X](migration.md)

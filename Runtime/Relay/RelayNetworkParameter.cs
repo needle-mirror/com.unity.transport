@@ -52,6 +52,7 @@ namespace Unity.Networking.Transport.Relay
     }
 
     /// <summary>Parameters for the Unity Relay connection.</summary>
+    [Serializable]
     public struct RelayNetworkParameter : INetworkParameter
     {
         internal const int k_DefaultConnectionTimeMS = 3000;

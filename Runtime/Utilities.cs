@@ -151,12 +151,10 @@ namespace Unity.Networking.Transport.Utilities
         // Calculate difference between the sequence IDs taking into account wrapping, so when you go from 65535 to 0 the distance is 1
         internal static int AbsDistance(ushort lhs, ushort rhs)
         {
-            int distance;
-            if (lhs < rhs)
-                distance = lhs + ushort.MaxValue + 1 - rhs;
+            if (GreaterThan16(lhs, rhs))
+                return lhs > rhs ? lhs - rhs : lhs + ushort.MaxValue + 1 - rhs;
             else
-                distance = lhs - rhs;
-            return distance;
+                return rhs >= lhs ? rhs - lhs : rhs + ushort.MaxValue + 1 - lhs;
         }
 
         // Not used, but was used by DOTS so keeping around for a while to be safe.

@@ -279,4 +279,11 @@ namespace Unity.Networking.Transport
             set => m_ConnectionId.Version |= (value << 24);
         }
     }
+
+    /// <summary>Container for payloads sent along with connection requests.</summary>
+    internal unsafe struct ConnectionPayload
+    {
+        public fixed byte Data[NetworkParameterConstants.AbsoluteMaxMessageSize];
+        public int Length;
+    }
 }

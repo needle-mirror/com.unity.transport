@@ -338,8 +338,8 @@ namespace Unity.Networking.Transport
                         DebugLog.ErrorDTLSHandshakeFailed(handshakeStep);
                     }
 
-                    Connections.StartDisconnecting(ref connection);
-                    Disconnect(connection, Error.DisconnectReason.AuthenticationFailure);
+                    Connections.StartDisconnecting(ref connection, Error.DisconnectReason.AuthenticationFailure);
+                    Disconnect(connection);
                 }
             }
 
@@ -358,8 +358,8 @@ namespace Unity.Networking.Transport
                 var lastHandshakeUpdate = ConnectionsData[connection].LastHandshakeUpdate;
                 if (Time - lastHandshakeUpdate > HalfOpenDisconnectTimeout)
                 {
-                    Connections.StartDisconnecting(ref connection);
-                    Disconnect(connection, Error.DisconnectReason.Timeout);
+                    Connections.StartDisconnecting(ref connection, Error.DisconnectReason.Timeout);
+                    Disconnect(connection);
                 }
             }
 
@@ -403,10 +403,10 @@ namespace Unity.Networking.Transport
                 ConnectionsData[connection] = data;
             }
 
-            private void Disconnect(ConnectionId connection, Error.DisconnectReason reason = Error.DisconnectReason.Default)
+            private void Disconnect(ConnectionId connection)
             {
                 EndpointToConnection.Remove(Connections.GetConnectionEndpoint(connection));
-                Connections.FinishDisconnecting(ref connection, reason);
+                Connections.FinishDisconnecting(ref connection);
 
                 var data = ConnectionsData[connection];
                 if (data.UnityTLSClientPtr != null)

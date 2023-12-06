@@ -344,6 +344,15 @@ namespace Unity.Networking.Transport.Logging
 #endif
         }
 
+        public static void ErrorConnectPayloadTooLarge(int size, int maxSize)
+        {
+#if USE_UNITY_LOGGING
+            Unity.Logging.Log.Error("Payload provided to Connect() call is too large ({Size} bytes, maximum is {MaxSize}). Ignoring.", size, maxSize);
+#else
+            UnityEngine.Debug.LogError($"Payload provided to Connect() call is too large ({size} bytes, maximum is {maxSize}). Ignoring.");
+#endif
+        }
+
         public static void ErrorRelayServerDataEndpoint(NetworkEndpoint serverDataEndpoint)
         {
 #if USE_UNITY_LOGGING
@@ -359,6 +368,15 @@ namespace Unity.Networking.Transport.Logging
             Unity.Logging.Log.Error("ServerData.AllocationId must be a valid value");
 #else
             UnityEngine.Debug.LogError($"ServerData.AllocationId value ({serverDataAllocationId}) must be a valid value");
+#endif
+        }
+
+        public static void ErrorWebSocketPathInvalid(FixedString128Bytes path)
+        {
+#if USE_UNITY_LOGGING
+            Unity.Logging.Log.Error("WebSocket path \"{0}\" is invalid", path);
+#else
+            UnityEngine.Debug.LogError($"WebSocket path \"{path}\" is invalid");
 #endif
         }
 
@@ -404,15 +422,6 @@ namespace Unity.Networking.Transport.Logging
             Unity.Logging.Log.Error("Invalid offset in packet processor ({Offset}, should be >={Padding}).", packetOffset, packetPadding);
 #else
             UnityEngine.Debug.LogError($"Invalid offset in packet processor ({packetOffset}, should be >={packetPadding}).");
-#endif
-        }
-
-        public static void ConnectionCompletingWrongState(NetworkConnection.State connectionDataState)
-        {
-#if USE_UNITY_LOGGING
-            Unity.Logging.Log.Warning("Attempting to complete a connection with state '{State}'", (byte)connectionDataState);
-#else
-            UnityEngine.Debug.LogWarning(string.Format("Attempting to complete a connection with state '{0}'", connectionDataState));
 #endif
         }
 

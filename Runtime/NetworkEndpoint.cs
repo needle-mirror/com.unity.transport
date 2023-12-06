@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -69,13 +70,63 @@ namespace Unity.Networking.Transport
     {
         private const int k_Ipv4Length = 4;
         private const int k_Ipv6Length = 16;
-        private const int k_CustomLength = 16;
 
-        // Offset of the port inside Baselib_NetworkAddress.
-        private const int k_PortOffset = 16;
+        // Raw container is 64 bytes, minus one for the family, and 3 reserved for future use.
+        private const int k_CustomLength = 60;
 
-        /// <summary>Raw <c>Baselib_NetworkAddress</c> structure.</summary>
-        internal Binding.Baselib_NetworkAddress BaselibAddress;
+        private const int k_FamilyOffset = 60;
+
+        /// <summary>Container for the raw address structure.</summary>
+        /// <remarks>
+        /// We're just using this as a raw bunch of bytes, and not as a fixed list. Do not call any
+        /// of the fixed list methods on this as they are likely broken.
+        /// </remarks>
+        private FixedList64Bytes<byte> m_RawAddressContainer;
+
+        // Helper to construct from the baselib structure.
+        internal NetworkEndpoint(Binding.Baselib_NetworkAddress baselibAddress)
+        {
+            m_RawAddressContainer = default;
+
+            if (baselibAddress.family == (byte)Binding.Baselib_NetworkAddress_Family.IPv4)
+                Family = NetworkFamily.Ipv4;
+            if (baselibAddress.family == (byte)Binding.Baselib_NetworkAddress_Family.IPv6)
+                Family = NetworkFamily.Ipv6;
+
+            *BaselibAddressPtr = baselibAddress;
+        }
+
+        internal unsafe byte* RawAddressPtr
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (byte*)UnsafeUtility.AddressOf(ref m_RawAddressContainer);
+        }
+
+        internal unsafe Binding.Baselib_NetworkAddress* BaselibAddressPtr
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                CheckFamilyIsIPv4OrIPv6();
+                return (Binding.Baselib_NetworkAddress*)RawAddressPtr;
+            }
+        }
+
+        /// <summary>Get or set the family of the endpoint.</summary>
+        /// <value>Address family of the endpoint.</value>
+        public NetworkFamily Family
+        {
+            get => (NetworkFamily)RawAddressPtr[k_FamilyOffset];
+            set
+            {
+                RawAddressPtr[k_FamilyOffset] = (byte)value;
+
+                if (value == NetworkFamily.Ipv4)
+                    BaselibAddressPtr->family = (byte)Binding.Baselib_NetworkAddress_Family.IPv4;
+                if (value == NetworkFamily.Ipv6)
+                    BaselibAddressPtr->family = (byte)Binding.Baselib_NetworkAddress_Family.IPv6;
+            }
+        }
 
         /// <summary>Whether the endpoint is valid or not (based on the address family).</summary>
         /// <value>True if family is IPv4, IPv6 or custom, false otherwise.</value>
@@ -104,23 +155,15 @@ namespace Unity.Networking.Transport
             }
         }
 
-        /// <summary>Get or set the family of the endpoint.</summary>
-        /// <value>Address family of the endpoint.</value>
-        public NetworkFamily Family
-        {
-            get => FromBaselibFamily((Binding.Baselib_NetworkAddress_Family)BaselibAddress.family);
-            set => BaselibAddress.family = (byte)ToBaselibFamily(value);
-        }
-
-        /// <summary>Get or set the port number of the endpoint.</summary>
+        /// <summary>Get or set the port number of the endpoint (IPv4 or IPv6 only).</summary>
         /// <value>Port number.</value>
         public ushort Port
         {
-            get => (ushort)(BaselibAddress.port1 | (BaselibAddress.port0 << 8));
+            get => (ushort)(BaselibAddressPtr->port1 | (BaselibAddressPtr->port0 << 8));
             set
             {
-                BaselibAddress.port0 = (byte)((value >> 8) & 0xff);
-                BaselibAddress.port1 = (byte)(value & 0xff);
+                BaselibAddressPtr->port0 = (byte)((value >> 8) & 0xff);
+                BaselibAddressPtr->port1 = (byte)(value & 0xff);
             }
         }
 
@@ -133,11 +176,11 @@ namespace Unity.Networking.Transport
         [Obsolete("Use Port instead, and use standard C# APIs to convert to/from network byte order.")]
         public ushort RawPort
         {
-            get => (ushort)((BaselibAddress.port1 << 8) | BaselibAddress.port0);
+            get => (ushort)((BaselibAddressPtr->port1 << 8) | BaselibAddressPtr->port0);
             set
             {
-                BaselibAddress.port0 = (byte)(value & 0xff);
-                BaselibAddress.port1 = (byte)((value >> 8) & 0xff);
+                BaselibAddressPtr->port0 = (byte)(value & 0xff);
+                BaselibAddressPtr->port1 = (byte)((value >> 8) & 0xff);
             }
         }
 
@@ -160,7 +203,7 @@ namespace Unity.Networking.Transport
         public NativeArray<byte> GetRawAddressBytes()
         {
             var bytes = new NativeArray<byte>(Length, Allocator.Temp);
-            UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), UnsafeUtility.AddressOf(ref BaselibAddress), Length);
+            UnsafeUtility.MemCpy(bytes.GetUnsafePtr(), RawAddressPtr, Length);
             return bytes;
         }
 
@@ -176,7 +219,7 @@ namespace Unity.Networking.Transport
             CheckRawAddressLength(bytes.Length, family);
 
             var length = math.min(bytes.Length, Length);
-            UnsafeUtility.MemCpy(UnsafeUtility.AddressOf(ref BaselibAddress), bytes.GetUnsafeReadOnlyPtr(), length);
+            UnsafeUtility.MemCpy(RawAddressPtr, bytes.GetUnsafeReadOnlyPtr(), length);
             Family = family;
         }
 
@@ -190,25 +233,25 @@ namespace Unity.Networking.Transport
 
         /// <summary>Shortcut for the loopback/localhost IPv4 address (127.0.0.1).</summary>
         /// <value>Endpoint structure for the 127.0.0.1 IPv4 address.</value>
-        public static NetworkEndpoint LoopbackIpv4
+        public static unsafe NetworkEndpoint LoopbackIpv4
         {
             get
             {
                 var endpoint = new NetworkEndpoint { Family = NetworkFamily.Ipv4 };
-                endpoint.BaselibAddress.data0 = 127;
-                endpoint.BaselibAddress.data3 = 1;
+                endpoint.BaselibAddressPtr->data0 = 127;
+                endpoint.BaselibAddressPtr->data3 = 1;
                 return endpoint;
             }
         }
 
         /// <summary>Shortcut for the loopback/localhost IPv6 address (::1).</summary>
         /// <value>Endpoint structure for the ::1 IPv6 address.</value>
-        public static NetworkEndpoint LoopbackIpv6
+        public static unsafe NetworkEndpoint LoopbackIpv6
         {
             get
             {
                 var endpoint = new NetworkEndpoint { Family = NetworkFamily.Ipv6 };
-                endpoint.BaselibAddress.data15 = 1;
+                endpoint.BaselibAddressPtr->data15 = 1;
                 return endpoint;
             }
         }
@@ -234,6 +277,12 @@ namespace Unity.Networking.Transport
         {
             endpoint = default;
 
+            if (family != NetworkFamily.Ipv4 && family != NetworkFamily.Ipv6)
+            {
+                DebugLog.LogError("Can only parse addresses that are IPv4 or IPv6.");
+                return false;
+            }
+
 #if UNITY_SWITCH
             if (family == NetworkFamily.Ipv6)
             {
@@ -250,16 +299,26 @@ namespace Unity.Networking.Transport
             }
 #endif
 
+            endpoint.Family = family;
+
             var addressBytes = System.Text.Encoding.UTF8.GetBytes(address + '\0');
+            var baselibFamily = family == NetworkFamily.Ipv4 ? Binding.Baselib_NetworkAddress_Family.IPv4 : Binding.Baselib_NetworkAddress_Family.IPv6;
             var errorState = default(Binding.Baselib_ErrorState);
 
             fixed (byte* addressPtr = addressBytes)
-            fixed (Binding.Baselib_NetworkAddress* baselibAddressPtr = &endpoint.BaselibAddress)
             {
-                Binding.Baselib_NetworkAddress_Encode(baselibAddressPtr, ToBaselibFamily(family), addressPtr, port, &errorState);
+                Binding.Baselib_NetworkAddress_Encode(endpoint.BaselibAddressPtr, baselibFamily, addressPtr, port, &errorState);
             }
 
-            return errorState.code == Binding.Baselib_ErrorCode.Success && endpoint.IsValid;
+            if (errorState.code == Binding.Baselib_ErrorCode.Success)
+            {
+                return true;
+            }
+            else
+            {
+                endpoint.Family = NetworkFamily.Invalid;
+                return false;
+            }
         }
 
         /// <summary>
@@ -285,12 +344,12 @@ namespace Unity.Networking.Transport
             var str = default(FixedString128Bytes);
             var temp = default(FixedString32Bytes);
 
-            var ptr = (byte*)UnsafeUtility.AddressOf(ref BaselibAddress);
+            var ptr = RawAddressPtr;
 
             switch (Family)
             {
                 case NetworkFamily.Ipv4:
-                    str = $"{BaselibAddress.data0}.{BaselibAddress.data1}.{BaselibAddress.data2}.{BaselibAddress.data3}";
+                    str = $"{ptr[0]}.{ptr[1]}.{ptr[2]}.{ptr[3]}";
                     break;
                 case NetworkFamily.Ipv6:
                     str.Append('[');
@@ -335,25 +394,14 @@ namespace Unity.Networking.Transport
 
         public override int GetHashCode()
         {
-            var p = (byte*)UnsafeUtility.AddressOf(ref BaselibAddress);
-            var size = UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
-
-            unchecked
-            {
-                var result = 0;
-                for (int i = 0; i < size; i++)
-                    result = (result * 31) ^ (int)p[i];
-                return result;
-            }
+            var size = UnsafeUtility.SizeOf<FixedList64Bytes<byte>>();
+            return (int)CollectionHelper.Hash(RawAddressPtr, size);
         }
 
         public bool Equals(NetworkEndpoint other)
         {
-            var p1 = UnsafeUtility.AddressOf(ref BaselibAddress);
-            var p2 = UnsafeUtility.AddressOf(ref other.BaselibAddress);
-            var size = UnsafeUtility.SizeOf<Binding.Baselib_NetworkAddress>();
-
-            return UnsafeUtility.MemCmp(p1, p2, size) == 0;
+            var size = UnsafeUtility.SizeOf<FixedList64Bytes<byte>>();
+            return UnsafeUtility.MemCmp(RawAddressPtr, other.RawAddressPtr, size) == 0;
         }
 
         public override bool Equals(object other)
@@ -371,30 +419,11 @@ namespace Unity.Networking.Transport
             return !lhs.Equals(rhs);
         }
 
-        private static NetworkFamily FromBaselibFamily(Binding.Baselib_NetworkAddress_Family family)
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void CheckFamilyIsIPv4OrIPv6()
         {
-            switch (family)
-            {
-                case Binding.Baselib_NetworkAddress_Family.IPv4:
-                    return NetworkFamily.Ipv4;
-                case Binding.Baselib_NetworkAddress_Family.IPv6:
-                    return NetworkFamily.Ipv6;
-                default:
-                    return NetworkFamily.Invalid;
-            }
-        }
-
-        private static Binding.Baselib_NetworkAddress_Family ToBaselibFamily(NetworkFamily family)
-        {
-            switch (family)
-            {
-                case NetworkFamily.Ipv4:
-                    return Binding.Baselib_NetworkAddress_Family.IPv4;
-                case NetworkFamily.Ipv6:
-                    return Binding.Baselib_NetworkAddress_Family.IPv6;
-                default:
-                    return Binding.Baselib_NetworkAddress_Family.Invalid;
-            }
+            if (Family != NetworkFamily.Ipv4 && Family != NetworkFamily.Ipv6)
+                throw new InvalidOperationException($"Trying to access endpoint as IPv4 or IPv6, but family is {Family}.");
         }
 
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]

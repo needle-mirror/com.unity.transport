@@ -1,9 +1,11 @@
+using System;
 using Unity.Collections;
 using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport.Logging
 {
     /// <summary>Parameters related to how UTP logs messages. Currently unused.</summary>
+    [Serializable]
     public struct LoggingParameter : INetworkParameter
     {
         /// <summary>Label to use for this driver in the logs.</summary>
