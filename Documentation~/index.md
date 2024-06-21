@@ -23,18 +23,18 @@ Unity Transport supports all platforms supported by the Unity Engine. For WebGL,
 
 ### Editor compatibility matrix
 
-The page you are reading is the documentation for Unity Transport 2.X, which is only compatible with Unity Editor 2022.2 and later. Older editor versions are supported by Transport 1.X. Here is the compatibility matrix:
+The page you are reading is the documentation for Unity Transport 2.X, which is only compatible with Unity Editor 2022.3 and later. Older editor versions are supported by Transport 1.X. Here is the compatibility matrix:
 
-| Editor Version | 2021 LTS | 2022.2 and LTS | 2023.1 and later |
-|:--------------:|:--------:|:--------------:|:----------------:|
-| Transport 1.X  | **Yes**  | **Yes**        | No               |
-| Transport 2.X  | No       | **Yes**        | **Yes**          |
+| Editor Version | 2021 LTS | 2022 LTS | 2023.1 and later |
+|:--------------:|:--------:|:--------:|:----------------:|
+| Transport 1.X  | **Yes**  | **Yes**  | No               |
+| Transport 2.X  | No       | **Yes**  | **Yes**          |
 
 ### Which version should I use?
 
 If you are using Unity Transport on its own, we recommend using version 2.X if your editor version supports it. If you are using Unity Transport as part of one of Unity's Netcode solutions, refer to the table below for the _minimum_ supported version for each solution:
 
-| Editor Version                    | 2021 LTS      | 2022.2 and LTS | 2023.1 and later |
+| Editor Version                    | 2021 LTS      | 2022 LTS       | 2023.1 and later |
 |:---------------------------------:|:-------------:|:--------------:|:----------------:|
 | Netcode for GameObjects (1.2.0+)  | Transport 1.X | Transport 1.X  | Transport 2.X    |
 | Netcode for Entities (1.0.0+)     | N/A           | Transport 2.X  | Transport 2.X    |

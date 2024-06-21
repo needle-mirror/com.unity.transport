@@ -125,7 +125,14 @@ namespace Unity.Networking.Transport
 
             var bufferSize = networkConfiguration.maxMessageSize + UnsafeUtility.SizeOf<PacketMetadata>() + UnsafeUtility.SizeOf<NetworkEndpoint>();
 
-            m_ReceiveBuffers = new UnsafeBaselibNetworkArray(state.ReceiveQueueCapacity, bufferSize);
+            // Baselib doesn't differientiate between receiving a packet that fits exactly in the
+            // receive buffer, and receiving a packet that is larger. In the latter case, it just
+            // silently truncates the packet. Thus, we ensure there's more data in the buffer than
+            // required for a maximally-sized packet so that if we receive a packet larger than our
+            // MTU, we'll be able to detect it.
+            var receiveBufferSize = bufferSize + 1;
+
+            m_ReceiveBuffers = new UnsafeBaselibNetworkArray(state.ReceiveQueueCapacity, receiveBufferSize);
             m_SendBuffers = new UnsafeBaselibNetworkArray(state.SendQueueCapacity, bufferSize);
 
             return 0;
@@ -653,6 +660,7 @@ namespace Unity.Networking.Transport
 
             request.payload.offset = bufferLayout.PayloadOffset;
             request.payload.data = new IntPtr((byte*)request.payload.data + bufferLayout.PayloadOffset);
+            request.payload.size -= bufferLayout.PayloadOffset;
 
             request.remoteEndpoint.slice.offset = bufferLayout.EndpointOffset;
             request.remoteEndpoint.slice.data = new IntPtr((byte*)request.remoteEndpoint.slice.data + bufferLayout.EndpointOffset);

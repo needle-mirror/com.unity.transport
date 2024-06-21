@@ -248,6 +248,39 @@ namespace Unity.Networking.Transport
         public const int Alignment = 8;
         public const int AlignmentMinusOne = Alignment - 1;
 
+        internal struct UpdatePipeline : IEquatable<UpdatePipeline>
+        {
+            public NetworkPipeline pipeline;
+            public int stage;
+            public NetworkConnection connection;
+
+            public override int GetHashCode()
+            {
+                var hash = (pipeline.Id << 8) ^ stage;
+                return (hash << 16) ^ connection.GetHashCode();
+            }
+
+            public bool Equals(UpdatePipeline other)
+            {
+                return pipeline.Id == other.pipeline.Id && stage == other.stage && connection == other.connection;
+            }
+
+            public override bool Equals(object other)
+            {
+                return this.Equals((UpdatePipeline)other);
+            }
+
+            public static bool operator==(UpdatePipeline lhs, UpdatePipeline rhs)
+            {
+                return lhs.Equals(rhs);
+            }
+
+            public static bool operator!=(UpdatePipeline lhs, UpdatePipeline rhs)
+            {
+                return !lhs.Equals(rhs);
+            }
+        }
+
         public int PayloadCapacity(NetworkPipeline pipeline)
         {
             if (pipeline.Id > 0)
@@ -330,20 +363,22 @@ namespace Unity.Networking.Transport
                     driver.AbortSend(sendHandle);
                     return (int)Error.StatusCode.NetworkDriverParallelForErr;
                 }
-                NativeList<UpdatePipeline> currentUpdates = new NativeList<UpdatePipeline>(128, Allocator.Temp);
+
+                NativeParallelHashSet<UpdatePipeline> currentUpdates = new NativeParallelHashSet<UpdatePipeline>(128, Allocator.Temp);
 
                 int retval = ProcessPipelineSend(driver, 0, pipeline, connection, sendHandle, headerSize, currentUpdates);
 
                 Interlocked.Exchange(ref *sendBufferLock, 0);
+
                 // Move the updates requested in this iteration to the concurrent queue so it can be read/parsed in update routine
-                for (int i = 0; i < currentUpdates.Length; ++i)
-                    m_SendStageNeedsUpdateWrite.Enqueue(currentUpdates[i]);
+                foreach (var update in currentUpdates)
+                    m_SendStageNeedsUpdateWrite.Enqueue(update);
 
                 return retval;
             }
 
             internal unsafe int ProcessPipelineSend(NetworkDriver.Concurrent driver, int startStage, NetworkPipeline pipeline, NetworkConnection connection,
-                NetworkInterfaceSendHandle sendHandle, int headerSize, NativeList<UpdatePipeline> currentUpdates)
+                NetworkInterfaceSendHandle sendHandle, int headerSize, NativeParallelHashSet<UpdatePipeline> currentUpdates)
             {
                 int initialHeaderSize = headerSize;
                 int retval = sendHandle.size;
@@ -421,7 +456,7 @@ namespace Unity.Networking.Transport
                         var sendResult = ProcessSendStage(i, internalBufferOffset, internalSharedBufferOffset, p, ref resumeQ, ref ctx, ref inboundBuffer, ref requests, m_MaxPacketHeaderSize);
 
                         if ((requests & NetworkPipelineStage.Requests.Update) != 0)
-                            AddSendUpdate(connection, i, pipeline, currentUpdates);
+                            currentUpdates.Add(new UpdatePipeline { connection = connection, stage = i, pipeline = pipeline });
 
                         if (inboundBuffer.bufferWithHeadersLength == 0)
                         {
@@ -558,8 +593,8 @@ namespace Unity.Networking.Transport
         private NativeList<byte> m_ReceiveBuffer;
         private NativeList<byte> m_SendBuffer;
         private NativeList<byte> m_SharedBuffer;
-        private NativeList<UpdatePipeline> m_ReceiveStageNeedsUpdate;
-        private NativeList<UpdatePipeline> m_SendStageNeedsUpdate;
+        private NativeParallelHashSet<UpdatePipeline> m_ReceiveStageNeedsUpdate;
+        private NativeParallelHashSet<UpdatePipeline> m_SendStageNeedsUpdate;
         private NativeQueue<UpdatePipeline> m_SendStageNeedsUpdateRead;
 
         private NativeArray<int> sizePerConnection;
@@ -600,8 +635,8 @@ namespace Unity.Networking.Transport
             sizePerConnection = new NativeArray<int>(3, Allocator.Persistent);
             // Store an int for the spinlock first in each connections send buffer, round up to alignment of 8
             sizePerConnection[SendSizeOffset] = Alignment;
-            m_ReceiveStageNeedsUpdate = new NativeList<UpdatePipeline>(128, Allocator.Persistent);
-            m_SendStageNeedsUpdate = new NativeList<UpdatePipeline>(128, Allocator.Persistent);
+            m_ReceiveStageNeedsUpdate = new NativeParallelHashSet<UpdatePipeline>(128, Allocator.Persistent);
+            m_SendStageNeedsUpdate = new NativeParallelHashSet<UpdatePipeline>(128, Allocator.Persistent);
             m_SendStageNeedsUpdateRead = new NativeQueue<UpdatePipeline>(Allocator.Persistent);
             m_timestamp = new NativeArray<long>(1, Allocator.Persistent);
             m_MaxPacketHeaderSize = maxPacketHeaderSize;
@@ -877,13 +912,6 @@ namespace Unity.Networking.Transport
             return (T*)staticInstanceBuffer;
         }
 
-        internal struct UpdatePipeline
-        {
-            public NetworkPipeline pipeline;
-            public int stage;
-            public NetworkConnection connection;
-        }
-
         internal unsafe void UpdateSend(NetworkDriver.Concurrent driver, out int updateCount)
         {
             // Clear the send lock since it cannot be kept here and can be lost if there are exceptions in send
@@ -892,75 +920,56 @@ namespace Unity.Networking.Transport
             for (int connectionOffset = 0; connectionOffset < m_SendBuffer.Length; connectionOffset += sizePerConnection[SendSizeOffset])
                 sendBufferLock[connectionOffset / 4] = 0;
 
-            NativeList<UpdatePipeline> sendUpdates = new NativeList<UpdatePipeline>(m_SendStageNeedsUpdateRead.Count + m_SendStageNeedsUpdate.Length, Allocator.Temp);
+            var concurrent = ToConcurrent();
+            NativeParallelHashSet<UpdatePipeline> currentUpdates = new NativeParallelHashSet<UpdatePipeline>(128, Allocator.Temp);
 
-            UpdatePipeline updateItem;
-            while (m_SendStageNeedsUpdateRead.TryDequeue(out updateItem))
+            updateCount = 0;
+
+            while (m_SendStageNeedsUpdateRead.TryDequeue(out var update))
+                ProcessSendUpdate(ref concurrent, ref driver, update, currentUpdates, ref updateCount);
+
+            foreach (var sendUpdate in m_SendStageNeedsUpdate)
+                ProcessSendUpdate(ref concurrent, ref driver, sendUpdate, currentUpdates, ref updateCount);
+
+            m_SendStageNeedsUpdate.Clear();
+
+            foreach (var currentUpdate in currentUpdates)
+                m_SendStageNeedsUpdateRead.Enqueue(currentUpdate);
+        }
+
+        private static void ProcessSendUpdate(ref Concurrent self, ref NetworkDriver.Concurrent driver, UpdatePipeline update, NativeParallelHashSet<UpdatePipeline> currentUpdates, ref int updateCount)
+        {
+            if (driver.GetConnectionState(update.connection) == NetworkConnection.State.Connected)
             {
-                if (driver.GetConnectionState(updateItem.connection) == NetworkConnection.State.Connected)
-                    AddSendUpdate(updateItem.connection, updateItem.stage, updateItem.pipeline, sendUpdates);
-            }
-
-            for (int i = 0; i < m_SendStageNeedsUpdate.Length; i++)
-            {
-                updateItem = m_SendStageNeedsUpdate[i];
-                if (driver.GetConnectionState(m_SendStageNeedsUpdate[i].connection) == NetworkConnection.State.Connected)
-                    AddSendUpdate(updateItem.connection, updateItem.stage, updateItem.pipeline, sendUpdates);
-            }
-
-            updateCount = sendUpdates.Length;
-
-            NativeList<UpdatePipeline> currentUpdates = new NativeList<UpdatePipeline>(128, Allocator.Temp);
-            // Move the updates requested in this iteration to the concurrent queue so it can be read/parsed in update routine
-            for (int i = 0; i < updateCount; ++i)
-            {
-                updateItem = sendUpdates[i];
-                var result = ToConcurrent().ProcessPipelineSend(driver, updateItem.stage, updateItem.pipeline, updateItem.connection, default, 0, currentUpdates);
+                updateCount++;
+                var result = self.ProcessPipelineSend(driver, update.stage, update.pipeline, update.connection, default, 0, currentUpdates);
                 if (result < 0)
                 {
                     DebugLog.PipelineProcessSendFailed(result);
                 }
             }
-            for (int i = 0; i < currentUpdates.Length; ++i)
-                m_SendStageNeedsUpdateRead.Enqueue(currentUpdates[i]);
-        }
-
-        private static void AddSendUpdate(NetworkConnection connection, int stageId, NetworkPipeline pipelineId, NativeList<UpdatePipeline> currentUpdates)
-        {
-            var newUpdate = new UpdatePipeline
-            {connection = connection, stage = stageId, pipeline = pipelineId};
-            bool uniqueItem = true;
-            for (int j = 0; j < currentUpdates.Length; ++j)
-            {
-                if (currentUpdates[j].stage == newUpdate.stage &&
-                    currentUpdates[j].pipeline.Id == newUpdate.pipeline.Id &&
-                    currentUpdates[j].connection == newUpdate.connection)
-                    uniqueItem = false;
-            }
-            if (uniqueItem)
-                currentUpdates.Add(newUpdate);
         }
 
         public void UpdateReceive(ref NetworkDriver driver, out int updateCount)
         {
-            NativeArray<UpdatePipeline> receiveUpdates = new NativeArray<UpdatePipeline>(m_ReceiveStageNeedsUpdate.Length, Allocator.Temp);
-
-            // Move current update requests to a new queue
             updateCount = 0;
-            for (int i = 0; i < m_ReceiveStageNeedsUpdate.Length; ++i)
-            {
-                if (driver.GetConnectionState(m_ReceiveStageNeedsUpdate[i].connection) == NetworkConnection.State.Connected)
-                    receiveUpdates[updateCount++] = m_ReceiveStageNeedsUpdate[i];
-            }
+
+            var receiveUpdates = m_ReceiveStageNeedsUpdate.ToNativeArray(Allocator.Temp);
+            var receiveUpdatesCount = receiveUpdates.Length;
+
             m_ReceiveStageNeedsUpdate.Clear();
 
-            // Process all current requested updates, new update requests will (possibly) be generated from the pipeline stages
-            for (int i = 0; i < updateCount; ++i)
+            for (int i = 0; i < receiveUpdatesCount; i++)
             {
-                UpdatePipeline updateItem = receiveUpdates[i];
+                var receiveUpdate = receiveUpdates[i];
+
+                if (driver.GetConnectionState(receiveUpdate.connection) != NetworkConnection.State.Connected)
+                    continue;
+
                 var receiver = driver.Receiver;
                 var eventQueue = driver.EventQueue;
-                ProcessReceiveStagesFrom(ref receiver, ref eventQueue, updateItem.stage, updateItem.pipeline, updateItem.connection, default);
+                ProcessReceiveStagesFrom(ref receiver, ref eventQueue, receiveUpdate.stage, receiveUpdate.pipeline, receiveUpdate.connection, default);
+                updateCount++;
             }
         }
 
@@ -1015,24 +1024,12 @@ namespace Unity.Networking.Transport
                 for (int i = startStage; i >= 0; --i)
                 {
                     ProcessReceiveStage(i, pipeline, internalBufferOffset, internalSharedBufferOffset, ref ctx, ref inboundBuffer, ref resumeQ, ref needsUpdate, ref needsSendUpdate, systemHeaderSize);
+
                     if (needsUpdate)
-                    {
-                        var newUpdate = new UpdatePipeline
-                        {connection = connection, stage = i, pipeline = pipeline};
-                        bool uniqueItem = true;
-                        for (int j = 0; j < m_ReceiveStageNeedsUpdate.Length; ++j)
-                        {
-                            if (m_ReceiveStageNeedsUpdate[j].stage == newUpdate.stage &&
-                                m_ReceiveStageNeedsUpdate[j].pipeline.Id == newUpdate.pipeline.Id &&
-                                m_ReceiveStageNeedsUpdate[j].connection == newUpdate.connection)
-                                uniqueItem = false;
-                        }
-                        if (uniqueItem)
-                            m_ReceiveStageNeedsUpdate.Add(newUpdate);
-                    }
+                        m_ReceiveStageNeedsUpdate.Add(new UpdatePipeline { connection = connection, stage = i, pipeline = pipeline });
 
                     if (needsSendUpdate)
-                        AddSendUpdate(connection, i, pipeline, m_SendStageNeedsUpdate);
+                        m_SendStageNeedsUpdate.Add(new UpdatePipeline { connection = connection, stage = i, pipeline = pipeline });
 
                     if (inboundBuffer.buffer == null)
                         break;

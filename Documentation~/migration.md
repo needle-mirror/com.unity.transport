@@ -18,7 +18,7 @@ There errors can occur when upgrading the Collections package from version 1.2 t
 
 ## Editor version support
 
-UTP 1.X supports Unity Editor 2021.X and 2022.X, but 2.0 only supports 2022.2 and up to keep the Collections package dependency up to date. Unity Editor 2022.2 brings many changes to the core engine runtime, allowing more code to be Burst-compiled. UTP benefits from this through increased performance.
+UTP 1.X supports Unity Editor 2021.X and 2022.X, but 2.0 only supports 2022.3 and up to keep the Collections package dependency up to date. Unity Editor 2022.3 brings many changes to the core engine runtime, allowing more code to be Burst-compiled. UTP benefits from this through increased performance.
 
 **Note**: UTP 1.X remains fully supported on the 2021 and 2022 LTS versions, and Unity will continue to release bug fixes and improvements. However, some features (like WebSocket support) will only be available in UTP 2.0 and up.
 

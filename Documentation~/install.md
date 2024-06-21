@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-You need Unity Editor version 2022.2 or later.
+You need Unity Editor version 2022.3 or later.
 
 ## Install Transport
 

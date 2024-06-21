@@ -11,6 +11,7 @@ using Unity.Networking.Transport.Error;
 using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
 using Unity.Networking.Transport.Utilities;
+using BurstRuntime = Unity.Burst.BurstRuntime;
 
 namespace Unity.Networking.Transport
 {
@@ -490,6 +491,28 @@ namespace Unity.Networking.Transport
         {
             var driver = default(NetworkDriver);
 
+            // Check that network interface matches Relay configuration (if provided). We explicitly
+            // test this because if we just let if fail later on, it's very not obvious why.
+            if (settings.TryGet<RelayNetworkParameter>(out var relayParameter))
+            {
+                var wsTypeHash = BurstRuntime.GetHashCode64<WebSocketNetworkInterface>();
+                var netifTypeHash = BurstRuntime.GetHashCode64<N>();
+
+                if (relayParameter.ServerData.IsWebSocket == (byte)1 && netifTypeHash != wsTypeHash)
+                {
+                    DebugLog.LogError("Relay is configured to use WebSockets, but NetworkDriver uses UDP. " +
+                        "Make sure to pass WebSocketNetworkInterface as the first parameter when calling NetworkDriver.Create().");
+                    throw new ArgumentException("Mismatched Relay configuration and network interface.");
+                }
+
+                if (relayParameter.ServerData.IsWebSocket == (byte)0 && netifTypeHash == wsTypeHash)
+                {
+                    DebugLog.LogError("Relay is configured to use UDP, but NetworkDriver was created with WebSocketNetworkInterface." +
+                        "If usage of WebSockets is intended, the Relay allocation should be created with the \"wss\" connection type.");
+                    throw new ArgumentException("Mismatched Relay configuration and network interface.");
+                }
+            }
+
             driver.m_NetworkSettings = new NetworkSettings(settings, Allocator.Persistent);
 
             var networkParams = settings.GetNetworkConfigParameters();
@@ -599,8 +622,9 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 for (int i = 0; i < connectionList.Count; ++i)
                 {
-                    int conCount = eventQueue.GetCountForConnection(i);
-                    if (conCount != 0 && connectionList.GetConnectionState(connectionList.ConnectionAt(i)) != NetworkConnection.State.Disconnected)
+                    var conCount = eventQueue.GetCountForConnection(i);
+                    var connectionState = connectionList.GetConnectionState(connectionList.ConnectionAt(i));
+                    if (conCount != 0 && connectionState != NetworkConnection.State.Disconnected && connectionState != NetworkConnection.State.Disconnecting)
                     {
                         DebugLog.ErrorResetNotEmptyEventQueue(conCount, i, listenState);
                     }

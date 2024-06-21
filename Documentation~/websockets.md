@@ -1,6 +1,8 @@
 # WebGL support
 
-By default, the transport package implements a protocol on top of simple UDP datagrams. But web browsers do not offer direct access to UDP sockets, so this protocol can't work on the WebGL platform. To properly support WebGL, the transport package allows using the WebSocket protocol instead of UDP.
+By default, the Unity Transport package (UTP) implements a protocol on top of simple UDP datagrams. However, since web browsers don't offer direct access to UDP sockets, UTP also supports using the WebSocket protocol instead of UDP to enable compatibility with WebGL.
+
+**Note**: While UTP supports the WebSocket protocol, it is _not_ intended as a general-purpose WebSocket library (such as [websocket-sharp](https://github.com/sta/websocket-sharp)). It can't be used to connect to any random WebSocket server. It can only be used to connect clients and servers that are both using UTP.
 
 ## Configuring WebSockets
 

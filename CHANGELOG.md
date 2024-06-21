@@ -1,5 +1,19 @@
 # Change log
 
+## [2.3.0] - 2024-06-21
+
+### New features
+* The global network simulator (configurable through `NetworkSettings.WithNetworkSimulatorParameters`) now supports delay, jitter and packet duplication, but only in the send direction. Currently users are still recommended to use the `SimulatorPipelineStage` for their network simulation needs until the global network simulator gains in maturity.
+
+### Changes
+* Updated Burst dependency to 1.8.12.
+
+### Fixes
+* Fixed an issue where `NetworkEndpoint.IsAny` and `NetworkEndpoint.IsLoopback` would throw an exception for endpoints where the network family is `NetworkFamily.Custom`. These properties will now return false for custom endpoints.
+* Fixed an issue where an error about resetting the event queue with pending events could be logged even if the connection with pending events was closed.
+* Made the failure mode more obvious when there is a mismatch between the Relay configuration and the choice of network interface.
+* Fixed a rare issue where a sequence ID collision from ushort overflow in certain very specific conditions can result in an old packet being erroneously returned instead of waiting for a new one, causing corruption.
+
 ## [2.2.1] - 2023-12-06
 
 ### Fixes

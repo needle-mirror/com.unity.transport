@@ -174,13 +174,15 @@ namespace Unity.Networking.Transport
 
             remote = NetworkEndpoint.LoopbackIpv4.WithPort(data.fromPort);
 
-            var totalLength = Math.Min(payloadLen, data.length);
-            UnsafeUtility.MemCpy(payloadData, data.data, totalLength);
+            if (data.length > payloadLen)
+            {
+                // Received packet is larger than our capacity. Likely caused by mismatched MTUs on
+                // both ends. Just drop the packet in this case. It's what the UDP interface does.
+                return 0;
+            }
 
-            if (totalLength < data.length)
-                return -10040; // out of memory
-
-            return totalLength;
+            UnsafeUtility.MemCpy(payloadData, data.data, data.length);
+            return data.length;
         }
     }
 }

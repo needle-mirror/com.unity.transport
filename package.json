@@ -1,29 +1,28 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.2.1",
-  "unity": "2022.2",
-  "unityRelease": "0a18",
+  "version": "2.3.0",
+  "unity": "2022.3",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
     "com.unity.collections": "2.2.1",
-    "com.unity.burst": "1.8.8",
+    "com.unity.burst": "1.8.12",
     "com.unity.mathematics": "1.3.1"
   },
   "relatedPackages": {
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### Fixes\n* Fixed an issue where `NetworkEndpoint.TryParse` would leave the out parameter endpoint with a valid `NetworkFamily`, even if parsing of the address had failed."
+    "changelog": "### New features\n* The global network simulator (configurable through `NetworkSettings.WithNetworkSimulatorParameters`) now supports delay, jitter and packet duplication, but only in the send direction. Currently users are still recommended to use the `SimulatorPipelineStage` for their network simulation needs until the global network simulator gains in maturity.\n\n### Changes\n* Updated Burst dependency to 1.8.12.\n\n### Fixes\n* Fixed an issue where `NetworkEndpoint.IsAny` and `NetworkEndpoint.IsLoopback` would throw an exception for endpoints where the network family is `NetworkFamily.Custom`. These properties will now return false for custom endpoints.\n* Fixed an issue where an error about resetting the event queue with pending events could be logged even if the connection with pending events was closed.\n* Made the failure mode more obvious when there is a mismatch between the Relay configuration and the choice of network interface.\n* Fixed a rare issue where a sequence ID collision from ushort overflow in certain very specific conditions can result in an old packet being erroneously returned instead of waiting for a new one, causing corruption."
   },
   "upmCi": {
-    "footprint": "0082e82b059a837341ce02865299e2d44989765f"
+    "footprint": "59ff3f339c684bd4b2fbb8d1add1458be9e49ae6"
   },
-  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.2/manual/index.html",
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.3/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "f4df716a8fc9c55cdb6a886dbe660c33647b0b9b"
+    "revision": "a19910e4bc903acabe37806a2ef43b3735ba7dc8"
   },
   "samples": [
     {

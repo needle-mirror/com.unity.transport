@@ -258,11 +258,15 @@ namespace Unity.Networking.Transport
 
         /// <summary>Whether the endpoint is for a wildcard address.</summary>
         /// <value>True if the address is 0.0.0.0 or ::.</value>
-        public bool IsAny => (this == AnyIpv4.WithPort(Port)) || (this == AnyIpv6.WithPort(Port));
+        public bool IsAny =>
+            (Family == NetworkFamily.Ipv4 || Family == NetworkFamily.Ipv6) &&
+            (this == AnyIpv4.WithPort(Port)) || (this == AnyIpv6.WithPort(Port));
 
         /// <summary>Whether the endpoint is for a loopback address.</summary>
         /// <value>True if the address is 127.0.0.1 or ::1.</value>
-        public bool IsLoopback => (this == LoopbackIpv4.WithPort(Port)) || (this == LoopbackIpv6.WithPort(Port));
+        public bool IsLoopback =>
+            (Family == NetworkFamily.Ipv4 || Family == NetworkFamily.Ipv6) &&
+            (this == LoopbackIpv4.WithPort(Port)) || (this == LoopbackIpv6.WithPort(Port));
 
         /// <summary>
         /// Attempt to parse the provided IP address and port. Prefer this method when parsing IP
