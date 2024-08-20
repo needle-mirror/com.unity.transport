@@ -1,5 +1,10 @@
 # Change log
 
+## [1.5.0] - 2024-08-20
+
+### Fixes
+* Fixed a rare issue where a sequence ID collision from ushort overflow in certain very specific conditions can result in an old packet being erroneously returned instead of waiting for a new one, causing corruption.
+
 ## [1.4.1] - 2023-11-27
 
 ### Fixes

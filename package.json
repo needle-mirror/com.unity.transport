@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "unity": "2020.3",
   "unityRelease": "0f1",
   "description": "Unity network transport layer - the low-level interface for sending UDP data",
@@ -11,16 +11,16 @@
     "com.unity.mathematics": "1.2.6"
   },
   "_upm": {
-    "changelog": "### Fixes\n* Fixed an issue where reliable packets could be resent even after they had been acknowledged, which would lead to wasted bandwidth."
+    "changelog": "### Fixes\n* Fixed a rare issue where a sequence ID collision from ushort overflow in certain very specific conditions can result in an old packet being erroneously returned instead of waiting for a new one, causing corruption."
   },
   "upmCi": {
-    "footprint": "315a9eac1391a4410ec35f60ca57c348a58f790e"
+    "footprint": "5fe8cf5d7992f7b795ceaae03ad753edf2db1637"
   },
-  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@1.4/manual/index.html",
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@1.5/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "3d7fb2e8ffa7b7e375f55d80a592865e48f26888"
+    "revision": "5dc0412c1544591484f9b1f0fd9b3a5db69ed768"
   },
   "samples": [
     {
