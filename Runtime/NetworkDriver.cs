@@ -397,6 +397,10 @@ namespace Unity.Networking.Transport
 
         private NativeHashMap<ConnectionId, ConnectionPayload> m_ConnectionPayloads;
 
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        private NativeList<NetworkConnection> m_HostnameLookups;
+#endif
+
         /// <summary>Current settings used by the driver.</summary>
         /// <remarks>
         /// Current settings are read-only and can't be modified except through methods like
@@ -559,6 +563,10 @@ namespace Unity.Networking.Transport
 
             driver.m_ConnectionPayloads = new NativeHashMap<ConnectionId, ConnectionPayload>(1, Allocator.Persistent);
 
+#if HOSTNAME_RESOLUTION_AVAILABLE
+            driver.m_HostnameLookups = new NativeList<NetworkConnection>(1, Allocator.Persistent);
+#endif
+
             return driver;
         }
 
@@ -586,6 +594,9 @@ namespace Unity.Networking.Transport
             m_EventQueue.Dispose();
             m_InternalState.Dispose();
             m_ConnectionPayloads.Dispose();
+#if HOSTNAME_RESOLUTION_AVAILABLE
+            m_HostnameLookups.Dispose();
+#endif
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_PendingBeginSend.Dispose();
@@ -741,6 +752,15 @@ namespace Unity.Networking.Transport
             {
                 DebugLog.DriverTooManyUpdates(updateCount);
             }
+#if HOSTNAME_RESOLUTION_AVAILABLE
+            for (var i = m_HostnameLookups.Length - 1; i >= 0; --i)
+            {
+                if (CheckHostnameLookupStatus(m_HostnameLookups[i]))
+                {
+                    m_HostnameLookups.RemoveAt(i);
+                }
+            }
+#endif
 
             m_DefaultHeaderFlags = 0;
 
@@ -959,6 +979,56 @@ namespace Unity.Networking.Transport
             return Accept(out _);
         }
 
+        internal unsafe void SetPendingPayloadData(NetworkConnection connection, NativeArray<byte> payload)
+        {
+            var connectRequestHeaderSize = m_NetworkStack.PacketPadding + SimpleConnectionLayer.k_HandshakeSize + sizeof(ushort);
+            var maxSize = m_DriverSender.SendQueue.PayloadCapacity - connectRequestHeaderSize;
+            if (payload.Length > maxSize)
+            {
+                DebugLog.ErrorConnectPayloadTooLarge(payload.Length, maxSize);
+            }
+            else
+            {
+                var connectPayload = new ConnectionPayload { Length = payload.Length };
+                UnsafeUtility.MemCpy(connectPayload.Data, payload.GetUnsafeReadOnlyPtr(), payload.Length);
+                m_ConnectionPayloads[connection.ConnectionId] = connectPayload;
+            }
+        }
+
+        internal bool EnsureBindFromEndpoint(NetworkEndpoint endpoint)
+        {
+            // Bind if not already bound. For IPv4 and IPv6 we bind to the wildcard address to get
+            // an ephemeral port (and the most appropriate IP address on the system). For custom
+            // endpoints, we bind directly to the endpoint so that the custom network interface can
+            // process it in its Bind() method.
+            if (!Bound)
+            {
+                var bindEndpoint = default(NetworkEndpoint);
+                switch (endpoint.Family)
+                {
+                    case NetworkFamily.Ipv4:
+                        bindEndpoint = NetworkEndpoint.AnyIpv4;
+                        break;
+                    case NetworkFamily.Ipv6:
+                        bindEndpoint = NetworkEndpoint.AnyIpv6;
+                        break;
+                    case NetworkFamily.Custom:
+                        bindEndpoint = endpoint;
+                        break;
+                    default:
+                        DebugLog.LogError("Can't connect to endpoint with invalid address family.");
+                        return false;
+                }
+
+                var result = m_NetworkStack.Bind(ref bindEndpoint);
+                Bound = result == 0;
+
+                return result == 0;
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Establish a new connection to the given endpoint. Note that this only starts
         /// establishing the new connection. From there it will either succeed (a
@@ -984,23 +1054,10 @@ namespace Unity.Networking.Transport
         /// be a safe value for all protocols.
         /// </param>
         /// <returns>New connection object, or a default-valued object on failure.</returns>
-        public unsafe NetworkConnection Connect(NetworkEndpoint endpoint, NativeArray<byte> payload)
+        public NetworkConnection Connect(NetworkEndpoint endpoint, NativeArray<byte> payload)
         {
             var connection = Connect(endpoint);
-
-            var connectRequestHeaderSize = m_NetworkStack.PacketPadding + SimpleConnectionLayer.k_HandshakeSize + sizeof(ushort);
-            var maxSize = m_DriverSender.SendQueue.PayloadCapacity - connectRequestHeaderSize;
-            if (payload.Length > maxSize)
-            {
-                DebugLog.ErrorConnectPayloadTooLarge(payload.Length, maxSize);
-            }
-            else
-            {
-                var connectPayload = new ConnectionPayload { Length = payload.Length };
-                UnsafeUtility.MemCpy(connectPayload.Data, payload.GetUnsafeReadOnlyPtr(), payload.Length);
-                m_ConnectionPayloads[connection.ConnectionId] = connectPayload;
-            }
-
+            SetPendingPayloadData(connection, payload);
             return connection;
         }
 
@@ -1012,31 +1069,9 @@ namespace Unity.Networking.Transport
                 throw new InvalidOperationException("Driver must be constructed.");
 #endif
 
-            // Bind if not already bound. For IPv4 and IPv6 we bind to the wildcard address to get
-            // an ephemeral port (and the most appropriate IP address on the system). For custom
-            // endpoints, we bind directly to the endpoint so that the custom network interface can
-            // process it in its Bind() method.
-            if (!Bound)
+            if (!EnsureBindFromEndpoint(endpoint))
             {
-                var bindEndpoint = default(NetworkEndpoint);
-                switch (endpoint.Family)
-                {
-                    case NetworkFamily.Ipv4:
-                        bindEndpoint = NetworkEndpoint.AnyIpv4;
-                        break;
-                    case NetworkFamily.Ipv6:
-                        bindEndpoint = NetworkEndpoint.AnyIpv6;
-                        break;
-                    case NetworkFamily.Custom:
-                        bindEndpoint = endpoint;
-                        break;
-                    default:
-                        DebugLog.LogError("Can't connect to endpoint with invalid address family.");
-                        return default;
-                }
-
-                if (Bind(bindEndpoint) != 0)
-                    return default;
+                return default;
             }
 
             var connectionId = m_NetworkStack.Connections.StartConnecting(ref endpoint);
@@ -1044,6 +1079,121 @@ namespace Unity.Networking.Transport
 
             m_PipelineProcessor.InitializeConnection(networkConnection);
             return networkConnection;
+        }
+
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        /// <summary>
+        /// Establish a new connection to the given endpoint. Note that this only starts
+        /// establishing the new connection. From there it will either succeed (a
+        /// <see cref="NetworkEvent.Type.Connect"/> event will pop on the connection) or fail (a
+        /// <see cref="NetworkEvent.Type.Disconnect"/> event will pop on the connection) at a
+        /// later time.
+        /// </summary>
+        /// <remarks>
+        /// Establishing a new connection normally requires the driver to be bound (e.g. with the
+        /// <see cref="Bind"/> method), but if that's not the case when calling this method, the
+        /// driver will be implicitly bound to the appropriate wildcard address. This is a behavior
+        /// similar to BSD sockets, where calling <c>connect</c> automatically binds the socket to
+        /// an ephemeral port. For custom endpoints (endpoints where the network family is set to
+        /// <see cref="NetworkFamily.Custom"/>), the implicit bind is done on the endpoint passed to
+        /// the method. If binding to a separate endpoint is required, call <see cref="Bind"/>
+        /// before calling this method.
+        /// </remarks>
+        /// <param name="endpoint">Endpoint to connect to.</param>
+        /// <param name="payload">
+        /// Payload to send to the remote peer along with the connection request. This can be
+        /// recovered server-side when calling <see cref="Accept"/>. Payload must fit within a
+        /// single message. Exact maximum size will depend on the protocol in use. 1300 bytes should
+        /// be a safe value for all protocols.
+        /// </param>
+        /// <returns>New connection object, or a default-valued object on failure.</returns>
+        public NetworkConnection Connect(FixedString512Bytes address, ushort port, NativeArray<byte> payload)
+        {
+            var connection = Connect(address, port);
+            SetPendingPayloadData(connection, payload);
+            return connection;
+        }
+
+        /// <inheritdoc cref="Connect(FixedString512Bytes, ushort, NativeArray{byte})" />
+        public NetworkConnection Connect(FixedString512Bytes address, ushort port)
+        { 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            var addressStr = new FixedString512Bytes();
+            addressStr.Append(address);
+            addressStr.Append(":");
+            addressStr.Append(port);
+            var endpoint = new NetworkEndpoint(addressStr);
+            return Connect(endpoint);
+#else
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (!IsCreated)
+                throw new InvalidOperationException("Driver must be constructed.");
+#endif
+
+            var connectionId = m_NetworkStack.Connections.StartConnecting(address, port, out var hostnameLookupFinished, out var resolvedEndpoint, out var disconnectReason);
+            var networkConnection = new NetworkConnection(connectionId);
+
+            if (hostnameLookupFinished)
+            {
+                if (disconnectReason != DisconnectReason.Default)
+                {
+                    m_NetworkStack.Connections.StartDisconnecting(ref connectionId, disconnectReason);
+                    m_NetworkStack.Connections.FinishDisconnecting(ref connectionId);
+                    DisconnectWithReason(networkConnection, disconnectReason);
+                    return default;
+                }
+                if (!EnsureBindFromEndpoint(resolvedEndpoint))
+                {
+                    return default;
+                }
+                m_PipelineProcessor.InitializeConnection(networkConnection);
+            }
+            else
+            {
+                m_HostnameLookups.Add(networkConnection);
+            }
+
+            return networkConnection;
+#endif
+        }
+
+        public bool CheckHostnameLookupStatus(NetworkConnection connection)
+        {
+            var c = connection.ConnectionId;
+            var hostnameLookupFinished = m_NetworkStack.Connections.CheckHostnameLookupStatus(ref c, out var resolvedEndpoint, out var disconnectReason);
+
+            if (hostnameLookupFinished)
+            {
+                if (disconnectReason != DisconnectReason.Default)
+                {
+                    m_NetworkStack.Connections.StartDisconnecting(ref c, disconnectReason);
+                    m_NetworkStack.Connections.FinishDisconnecting(ref c);
+                    DisconnectWithReason(connection, disconnectReason);
+                    return true;
+                }
+                if (!EnsureBindFromEndpoint(resolvedEndpoint))
+                {
+                    return true;
+                }
+                m_PipelineProcessor.InitializeConnection(connection);
+                return true;
+            }
+
+            return false;
+        }
+#endif
+
+        private void DisconnectWithReason(NetworkConnection connection, DisconnectReason reason)
+        {
+            var offset = Receiver.AppendToStream((byte)reason);
+
+            EventQueue.PushEvent(new NetworkEvent
+            {
+                connectionId = connection.ConnectionId.Id,
+                type = NetworkEvent.Type.Disconnect,
+                offset = offset,
+                size = 1
+            });
         }
 
         /// <summary>

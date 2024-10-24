@@ -9,6 +9,7 @@ namespace Unity.Networking.Transport
     {
         public const int k_Length = 8;
         [FieldOffset(0)] public fixed byte Value[k_Length];
+        [FieldOffset(0)] private long m_ValueLongWorkaround;
 
         public static bool operator==(ConnectionToken lhs, ConnectionToken rhs)
         {

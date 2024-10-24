@@ -356,7 +356,7 @@ namespace Unity.Networking.Transport.Logging
         public static void ErrorRelayServerDataEndpoint(NetworkEndpoint serverDataEndpoint)
         {
 #if USE_UNITY_LOGGING
-            Unity.Logging.Log.Error("ServerData.Endpoint value ({ServerDataEndpoint}) must be a valid value", serverDataEndpoint);
+            Unity.Logging.Log.Error("ServerData.Endpoint value ({ServerDataEndpoint}) must be a valid value", serverDataEndpoint.ToString());
 #else
             UnityEngine.Debug.LogError($"ServerData.Endpoint value ({serverDataEndpoint}) must be a valid value");
 #endif

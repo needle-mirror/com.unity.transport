@@ -199,7 +199,7 @@ namespace Unity.Networking.Transport.Relay
                 ComputeBindHMAC(hmacPtr, Nonce, ref connectionData, ref key);
             }
 
-            HostString = endpoint.ToFixedString();
+            HostString = endpoint.ToFixedString512Bytes();
         }
 
         // Keeping this WebSocket-less version around to avoid breaking the API...

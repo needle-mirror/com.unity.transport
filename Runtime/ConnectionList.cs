@@ -1,6 +1,9 @@
 using System;
 using Unity.Collections;
 using Unity.Networking.Transport.Logging;
+using Unity.Baselib.LowLevel;
+using Unity.Networking.Transport.Error;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -9,6 +12,109 @@ namespace Unity.Networking.Transport
     /// </summary>
     internal struct ConnectionList : IDisposable
     {
+
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        internal unsafe struct HostnameLookupTask
+        {
+            private Binding.Baselib_NetworkAddress_HostnameLookupHandle* m_LookupHandle;
+
+            private FixedString512Bytes m_Address;
+
+            private int RetryCount;
+
+            public bool IsCreated => m_LookupHandle != null;
+
+            public static bool Create(FixedString512Bytes address, out HostnameLookupTask task, out Binding.Baselib_NetworkAddress result, out Binding.Baselib_ErrorState error)
+            {
+                task = new HostnameLookupTask();
+                return task.Initialize(address, out result, out error);
+            }
+
+            private bool Initialize(FixedString512Bytes address, out Binding.Baselib_NetworkAddress result, out Binding.Baselib_ErrorState error)
+            {
+                var addressBytes = address.GetUnsafePtr();
+                var errorState = default(Binding.Baselib_ErrorState);
+                var localResult = default(Binding.Baselib_NetworkAddress);
+                Binding.Baselib_NetworkAddress_HostnameLookupHandle* handle;
+
+                do
+                {
+                    if (RetryCount > 10)
+                    {
+                        errorState.code = Binding.Baselib_ErrorCode.NoSupportedAddressFound;
+                        error = errorState;
+                        result = default;
+                        return true;
+                    }
+                    handle = Binding.Baselib_NetworkAddress_HostnameLookup(addressBytes, &localResult, &errorState);
+                    ++RetryCount;
+                } while (errorState.code == Binding.Baselib_ErrorCode.TryAgain);
+
+                error = errorState;
+                if (errorState.code == Binding.Baselib_ErrorCode.Success)
+                {
+                    result = localResult;
+                    m_LookupHandle = handle;
+                    m_Address = address;
+                    return true;
+                }
+
+                if (handle != null)
+                {
+                    result = default;
+                    return true;
+                }
+
+                result = default;
+                return false;
+            }
+
+            public bool CheckStatus(out Binding.Baselib_NetworkAddress result, out Binding.Baselib_ErrorState error)
+            {
+                var errorState = default(Binding.Baselib_ErrorState);
+                var localResult = default(Binding.Baselib_NetworkAddress);
+                var finished = Binding.Baselib_NetworkAddress_HostnameLookupCheckStatus(m_LookupHandle, &localResult, &errorState);
+                if (finished)
+                {
+                    if (errorState.code == Binding.Baselib_ErrorCode.TryAgain)
+                    {
+                        if (RetryCount > 10)
+                        {
+                            errorState.code = Binding.Baselib_ErrorCode.NoSupportedAddressFound;
+                            error = errorState;
+                            result = default;
+                            return true;
+                        }
+                        return Initialize(m_Address, out result, out error);
+                    }
+                    error = errorState;
+                    if (errorState.code == Binding.Baselib_ErrorCode.Success)
+                    {
+                        result = localResult;
+                    }
+                    else
+                    {
+                        result = default;
+                    }
+
+                    m_LookupHandle = null;
+                    return true;
+                }
+
+                result = default;
+                error = default;
+                return false;
+            }
+
+        }
+
+        private struct HostnameLookupData
+        {
+            public HostnameLookupTask Task;
+            public ushort Port;
+        }
+#endif
+
         private struct ConnectionData
         {
             public NetworkEndpoint Endpoint;
@@ -22,6 +128,10 @@ namespace Unity.Networking.Transport
         }
 
         private ConnectionDataMap<ConnectionData> m_Connections;
+
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        private NativeHashMap<int, HostnameLookupData> m_HostnameLookupTasks;
+#endif
 
         /// <summary>
         /// Stores all connections with an impending disconnection.
@@ -69,6 +179,9 @@ namespace Unity.Networking.Transport
         {
             var defaultConnectionData = new ConnectionData { State = NetworkConnection.State.Disconnected };
             m_Connections = new ConnectionDataMap<ConnectionData>(1, defaultConnectionData, allocator);
+#if HOSTNAME_RESOLUTION_AVAILABLE
+            m_HostnameLookupTasks = new NativeHashMap<int, HostnameLookupData>(1, allocator);
+#endif
             m_IncomingDisconnections = new NativeQueue<IncomingDisconnection>(allocator);
             m_FinishedConnections = new NativeQueue<ConnectionId>(allocator);
             m_FreeList = new NativeQueue<ConnectionId>(allocator);
@@ -120,6 +233,91 @@ namespace Unity.Networking.Transport
 
             return connection;
         }
+
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        /// <summary>
+        /// Creates a new connection to the provided address and sets its state to Connecting.
+        /// </summary>
+        /// <param name="address">The endpoint to connect to.</param>
+        /// <returns>Returns the ConnectionId identifier for the new created connection.</returns>
+        /// <remarks>The connection is going to be fully connected only when FinishConnecting() is called.</remarks>
+        internal ConnectionId StartConnecting(FixedString512Bytes address, ushort port, out bool hostnameLookupFinished, out NetworkEndpoint resolvedEndpoint, out DisconnectReason disconnectReason)
+        {
+            var connection = GetNewConnection();
+
+            var success = HostnameLookupTask.Create(address, out var task, out var result, out var error);
+            if (!success)
+            {
+                // TODO: Figure out how to handle errors.
+            }
+
+            if (task.IsCreated)
+            {
+                resolvedEndpoint = default;
+                m_Connections[connection] = new ConnectionData
+                {
+                    State = NetworkConnection.State.Connecting,
+                };
+                m_HostnameLookupTasks[connection.Id] = new HostnameLookupData
+                {
+                    Task = task,
+                    Port = port
+                };
+                hostnameLookupFinished = false;
+                disconnectReason = DisconnectReason.HostNotFound;
+            }
+            else
+            {
+                resolvedEndpoint = new NetworkEndpoint(result);
+                resolvedEndpoint.Port = port;
+                m_Connections[connection] = new ConnectionData
+                {
+                    Endpoint = resolvedEndpoint,
+                    State = NetworkConnection.State.Connecting,
+                };
+                hostnameLookupFinished = true;
+                disconnectReason = DisconnectReason.Default;
+            }
+
+            return connection;
+        }
+
+        internal bool CheckHostnameLookupStatus(ref ConnectionId connectionId, out NetworkEndpoint resolvedEndpoint, out DisconnectReason disconnectReason)
+        {
+            var connectionData = m_Connections[connectionId];
+            var hostnameLookupData = m_HostnameLookupTasks[connectionId.Id];
+            if (connectionData.State != NetworkConnection.State.Connecting || !hostnameLookupData.Task.IsCreated)
+            {
+                resolvedEndpoint = default;
+                disconnectReason = DisconnectReason.Default;
+                return true;
+            }
+
+            var finished = hostnameLookupData.Task.CheckStatus(out var result, out var error);
+            if (finished)
+            {
+                if (error.code != Binding.Baselib_ErrorCode.Success)
+                {
+                    disconnectReason = DisconnectReason.HostNotFound;
+                    resolvedEndpoint = default;
+                    return true;
+                }
+
+                connectionData.Endpoint = new NetworkEndpoint(result);
+                connectionData.Endpoint.Port = hostnameLookupData.Port;
+                m_Connections[connectionId] = connectionData;
+
+                m_HostnameLookupTasks.Remove(connectionId.Id);
+                resolvedEndpoint = connectionData.Endpoint;
+                disconnectReason = DisconnectReason.Default;
+                return true;
+            }
+
+            disconnectReason = DisconnectReason.Default;
+            resolvedEndpoint = default;
+            return false;
+        }
+#endif
 
         /// <summary>
         /// Completes a connection started by the local endpoint in Connecting state by setting it to Connected.

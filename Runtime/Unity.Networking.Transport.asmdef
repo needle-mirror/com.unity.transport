@@ -15,7 +15,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "noEngineReferences": false,
     "versionDefines": [
         {
             "name": "com.unity.services.relay",
@@ -26,6 +25,12 @@
             "name": "com.unity.logging",
             "expression": "0.0",
             "define": "USE_UNITY_LOGGING"
+        },
+        {
+            "name": "Unity",
+            "expression": "6000.1.0a1",
+            "define": "HOSTNAME_RESOLUTION_AVAILABLE"
         }
-    ]
+    ],
+    "noEngineReferences": false
 }

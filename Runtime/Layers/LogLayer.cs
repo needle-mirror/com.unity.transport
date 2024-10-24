@@ -98,7 +98,7 @@ namespace Unity.Networking.Transport
                     }
 
                     var str = new FixedString4096Bytes(Label);
-                    str.Append(FixedString.Format(" {0} bytes [Endpoint: {1}]: ", packetProcessor.Length, packetProcessor.EndpointRef.ToFixedString()));
+                    str.Append(FixedString.Format(" {0} bytes [Endpoint: {1}]: ", packetProcessor.Length, packetProcessor.EndpointRef.ToFixedString512Bytes()));
                     if (AppendPayload(ref str, ref packetProcessor))
                     {
                         UnityEngine.Debug.Log(str);

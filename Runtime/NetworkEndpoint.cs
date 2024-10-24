@@ -76,17 +76,36 @@ namespace Unity.Networking.Transport
 
         private const int k_FamilyOffset = 60;
 
-        /// <summary>Container for the raw address structure.</summary>
-        /// <remarks>
-        /// We're just using this as a raw bunch of bytes, and not as a fixed list. Do not call any
-        /// of the fixed list methods on this as they are likely broken.
-        /// </remarks>
-        private FixedList64Bytes<byte> m_RawAddressContainer;
+        public struct TransferrableData
+        {
+            /// <summary>Container for the raw address structure.</summary>
+            /// <remarks>
+            /// We're just using this as a raw bunch of bytes, and not as a fixed list. Do not call any
+            /// of the fixed list methods on this as they are likely broken.
+            /// </remarks>
+            internal FixedList64Bytes<byte> m_RawAddressContainer;
+        }
+
+        public TransferrableData Transferrable;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private FixedString512Bytes m_AddressAsString;
+
+        internal NetworkEndpoint(FixedString512Bytes addressAsString)
+        {
+            Transferrable = default;
+            m_AddressAsString = addressAsString;
+            Family = NetworkFamily.Custom;
+        }
+#endif
 
         // Helper to construct from the baselib structure.
         internal NetworkEndpoint(Binding.Baselib_NetworkAddress baselibAddress)
         {
-            m_RawAddressContainer = default;
+            Transferrable = default; 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            m_AddressAsString = default;
+#endif
 
             if (baselibAddress.family == (byte)Binding.Baselib_NetworkAddress_Family.IPv4)
                 Family = NetworkFamily.Ipv4;
@@ -99,7 +118,7 @@ namespace Unity.Networking.Transport
         internal unsafe byte* RawAddressPtr
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => (byte*)UnsafeUtility.AddressOf(ref m_RawAddressContainer);
+            get => (byte*)UnsafeUtility.AddressOf(ref Transferrable.m_RawAddressContainer);
         }
 
         internal unsafe Binding.Baselib_NetworkAddress* BaselibAddressPtr
@@ -276,9 +295,20 @@ namespace Unity.Networking.Transport
         /// <param name="port">Port number to parse.</param>
         /// <param name="endpoint">Return value for the endpoint if successfully parsed.</param>
         /// <param name="family">Address family of the provided address.</param>
-        /// <returns>True if endpoint could be parsed successfully, false otherwise.</return>
-        public static bool TryParse(string address, ushort port, out NetworkEndpoint endpoint, NetworkFamily family = NetworkFamily.Ipv4)
+        /// <returns>True if endpoint could be parsed successfully, false otherwise.</returns>
+        public static bool TryParse(string address, ushort port, out NetworkEndpoint endpoint, NetworkFamily family = NetworkFamily.Invalid)
         {
+            if (family == NetworkFamily.Invalid)
+            {
+                endpoint = default;
+
+                if (TryParse(address, port, out endpoint, NetworkFamily.Ipv4))
+                {
+                    return true;
+                }
+
+                return TryParse(address, port, out endpoint, NetworkFamily.Ipv6);
+            }
             endpoint = default;
 
             if (family != NetworkFamily.Ipv4 && family != NetworkFamily.Ipv6)
@@ -333,7 +363,7 @@ namespace Unity.Networking.Transport
         /// <param name="port">Port number to parse.</param>
         /// <param name="family">Address family of the provided address.</param>
         /// <returns>Parsed endpoint, or a default value if couldn't parse successfully.</returns>
-        public static NetworkEndpoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Ipv4)
+        public static NetworkEndpoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Invalid)
         {
             return TryParse(address, port, out var endpoint, family) ? endpoint : default;
         }
@@ -342,9 +372,34 @@ namespace Unity.Networking.Transport
         /// Get a fixed string representation of the endpoint. Useful for contexts where managed
         /// types (like <see cref="string"/>) can't be used (e.g. Burst-compiled code).
         /// </summary>
+        /// <remarks>This method is limited to 125 bytes, but on WebGL, NetworkEndpoint supports encapsulating
+        /// 512-byte URLs. In this situation, if your URL exceeds 125 bytes, you need to use
+        /// <see cref="ToFixedString512Bytes"/> instead.</remarks>
         /// <returns>Fixed string representation of the endpoint.</returns>
         public FixedString128Bytes ToFixedString()
         {
+            var result = ToFixedString512Bytes();
+            if (result.Length > FixedString128Bytes.UTF8MaxLengthInBytes)
+            {
+                throw new Exception("Endpoint URL is too long. Use ToFixedString512Bytes instead.");
+            }
+
+            return new FixedString128Bytes(result);
+        }
+        
+        /// <summary>
+        /// Get a fixed string representation of the endpoint. Useful for contexts where managed
+        /// types (like <see cref="string"/>) can't be used (e.g. Burst-compiled code).
+        /// </summary>
+        /// <returns>Fixed string representation of the endpoint.</returns>
+        public FixedString512Bytes ToFixedString512Bytes()
+        { 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (m_AddressAsString != default)
+            {
+                return m_AddressAsString;
+            }
+#endif
             var str = default(FixedString128Bytes);
             var temp = default(FixedString32Bytes);
 
@@ -386,6 +441,55 @@ namespace Unity.Networking.Transport
 
             return str;
         }
+        
+        /// <summary>
+        /// Get a fixed string representation of the endpoint. Useful for contexts where managed
+        /// types (like <see cref="string"/>) can't be used (e.g. Burst-compiled code).
+        /// </summary>
+        /// <returns>Fixed string representation of the endpoint.</returns>
+        public FixedString512Bytes ToFixedStringNoPort()
+        { 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (Family == NetworkFamily.Custom)
+            {
+                return m_AddressAsString;
+            }
+#endif
+            var str = default(FixedString128Bytes);
+            var temp = default(FixedString32Bytes);
+
+            var ptr = RawAddressPtr;
+
+            switch (Family)
+            {
+                case NetworkFamily.Ipv4:
+                    str = $"{ptr[0]}.{ptr[1]}.{ptr[2]}.{ptr[3]}";
+                    break;
+                case NetworkFamily.Ipv6:
+                    str.Append('[');
+                    for (int i = 0; i < k_Ipv6Length; i += 2)
+                    {
+                        temp = $"{ptr[i]:x2}{ptr[i+1]:x2}:";
+                        str.Append(temp);
+                    }
+                    str.Length -= 1;
+                    str.Append(']');
+                    break;
+                case NetworkFamily.Custom:
+                    str = "custom:0x";
+                    for (int i = 0; i < k_CustomLength; i++)
+                    {
+                        temp = $"{ptr[i]:x2}";
+                        str.Append(temp);
+                    }
+                    break;
+                case NetworkFamily.Invalid:
+                default:
+                    return "invalid";
+            }
+
+            return str;
+        }
 
         /// <summary>String representation of the endpoint. Same as <see cref="ToString"/>.</summary>
         /// <value>Endpoint represented as a string.</value>
@@ -393,7 +497,7 @@ namespace Unity.Networking.Transport
 
         public override string ToString()
         {
-            return ToFixedString().ToString();
+            return ToFixedString512Bytes().ToString();
         }
 
         public override int GetHashCode()

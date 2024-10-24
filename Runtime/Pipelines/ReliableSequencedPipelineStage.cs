@@ -138,8 +138,6 @@ namespace Unity.Networking.Transport
 
             if (inboundBuffer.buffer != null)
             {
-                reliable->LastSentTime = ctx.timestamp;
-
                 if (ReliableUtility.Write(ctx, inboundBuffer, ref header) < 0)
                 {
                     // We failed to store the packet for possible later resends, abort and report this as a send error
@@ -150,7 +148,6 @@ namespace Unity.Networking.Transport
 
                 ctx.header.Clear();
                 ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
-                reliable->PreviousTimestamp = ctx.timestamp;
                 return (int)Error.StatusCode.Success;
             }
 
@@ -158,7 +155,6 @@ namespace Unity.Networking.Transport
 
             if (reliable->Resume != ReliableUtility.NullEntry)
             {
-                reliable->LastSentTime = ctx.timestamp;
                 inboundBuffer = ReliableUtility.ResumeSend(ctx, out header);
 
                 // Check if we need to resume again after this packet.
@@ -168,7 +164,6 @@ namespace Unity.Networking.Transport
 
                 ctx.header.Clear();
                 ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
-                reliable->PreviousTimestamp = ctx.timestamp;
                 return (int)Error.StatusCode.Success;
             }
 
@@ -181,12 +176,9 @@ namespace Unity.Networking.Transport
 
             if (ReliableUtility.ShouldSendAck(ctx))
             {
-                reliable->LastSentTime = ctx.timestamp;
-
                 ReliableUtility.WriteAckPacket(ctx, ref header);
 
                 ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
-                reliable->PreviousTimestamp = ctx.timestamp;
 
                 // TODO: Sending dummy byte over since the pipeline won't send an empty payload (ignored on receive)
                 inboundBuffer.bufferWithHeadersLength = inboundBuffer.headerPadding + 1;
@@ -195,7 +187,6 @@ namespace Unity.Networking.Transport
                 return (int)Error.StatusCode.Success;
             }
 
-            reliable->PreviousTimestamp = ctx.timestamp;
             return (int)Error.StatusCode.Success;
         }
 

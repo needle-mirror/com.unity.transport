@@ -235,8 +235,6 @@ namespace Unity.Networking.Transport.Utilities
             public int IndexPtrOffset;
             public int DataStride;
             public int DataPtrOffset;
-            public long LastSentTime;
-            public long PreviousTimestamp;
         }
 
         /// <summary>Parameters for the <see cref="ReliableSequencedPipelineStage"/>.</summary>
@@ -985,16 +983,12 @@ namespace Unity.Networking.Transport.Utilities
             var reliable = (Context*)ctx.internalProcessBuffer;
             var shared = (SharedContext*)ctx.internalSharedProcessBuffer;
 
-            // If more than one full frame (timestamp - prevTimestamp = one frame) has elapsed then send ack packet
-            // and if the last received sequence ID has not been acked yet, or the set of acked packet in the window
+            // If the last received sequence ID has not been acked yet, or the set of acked packet in the window
             // changed without the sequence ID updating (can happen when receiving out of order packets), or we've
             // received a lot of duplicates since last sending a ACK.
-            if (reliable->LastSentTime < reliable->PreviousTimestamp &&
-                (shared->ReceivedPackets.Acked < shared->ReceivedPackets.Sequence ||
-                 shared->ReceivedPackets.AckMask != shared->ReceivedPackets.LastAckMask ||
-                 shared->DuplicatesSinceLastAck >= MaxDuplicatesSinceLastAck))
-                return true;
-            return false;
+            return shared->ReceivedPackets.Acked < shared->ReceivedPackets.Sequence ||
+                shared->ReceivedPackets.AckMask != shared->ReceivedPackets.LastAckMask ||
+                shared->DuplicatesSinceLastAck >= MaxDuplicatesSinceLastAck;
         }
 
         /// <summary>

@@ -51,7 +51,13 @@ namespace Unity.Networking.Transport
             /// <summary>Obsolete. Will never be returned by the API.</summary>
             [EditorBrowsable(EditorBrowsableState.Never)]
             [Obsolete("Value is not in use anymore and nothing will return it.")]
-            Count
+            Count                         = 8,
+
+            /// <summary>
+            /// When connecting using a hostname instead of an IP, this indicates the host
+            /// could not be found.
+            /// </summary>
+            HostNotFound                  = 9,
         }
 
         /// <summary>

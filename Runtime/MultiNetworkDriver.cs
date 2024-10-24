@@ -421,6 +421,20 @@ namespace Unity.Networking.Transport
         {
             CheckDriverId(driverId);
 
+            var connection = this.GetDriverRef(driverId).Connect(endpoint, payload);
+            if (connection != default)
+            {
+                connection.DriverId = driverId;
+            }
+
+            return connection;
+        }
+
+        /// <inheritdoc cref="Connect(int, NetworkEndpoint, NativeArray{byte})"/>
+        public NetworkConnection Connect(int driverId, NetworkEndpoint endpoint)
+        {
+            CheckDriverId(driverId);
+
             var connection = this.GetDriverRef(driverId).Connect(endpoint);
             if (connection != default)
             {
@@ -430,11 +444,38 @@ namespace Unity.Networking.Transport
             return connection;
         }
 
-        /// <inheritdoc cref="Connect"/>
-        public NetworkConnection Connect(int driverId, NetworkEndpoint endpoint)
+#if HOSTNAME_RESOLUTION_AVAILABLE
+        /// <inheritdoc cref="NetworkDriver.Connect(FixedString512Bytes, ushort, NativeArray{byte})"/>
+        /// <param name="driverId">
+        /// ID of the driver to connect, as obtained with <see cref="AddDriver"/>.
+        /// </param>
+        public NetworkConnection Connect(int driverId, FixedString512Bytes address, ushort port, NativeArray<byte> payload)
         {
-            return Connect(driverId, endpoint, default);
+            CheckDriverId(driverId);
+
+            var connection = this.GetDriverRef(driverId).Connect(address, port, payload);
+            if (connection != default)
+            {
+                connection.DriverId = driverId;
+            }
+
+            return connection;
         }
+
+        /// <inheritdoc cref="Connect(int, FixedString512Bytes, ushort)"/>
+        public NetworkConnection Connect(int driverId, FixedString512Bytes address, ushort port)
+        {
+            CheckDriverId(driverId);
+
+            var connection = this.GetDriverRef(driverId).Connect(address, port);
+            if (connection != default)
+            {
+                connection.DriverId = driverId;
+            }
+
+            return connection;
+        }
+#endif
 
         /// <inheritdoc cref="NetworkDriver.Disconnect"/>
         /// <exception cref="ArgumentException">

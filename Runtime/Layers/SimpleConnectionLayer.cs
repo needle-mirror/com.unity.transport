@@ -504,7 +504,7 @@ namespace Unity.Networking.Transport
                             }
 
                             // Get the connect payload, if any.
-                            if (packetProcessor.Length > SimpleConnectionLayer.k_HandshakeSize + sizeof(ushort))
+                            if (packetProcessor.Length > sizeof(ushort))
                             {
                                 var length = packetProcessor.RemoveFromPayloadStart<ushort>();
                                 if (length != packetProcessor.Length)

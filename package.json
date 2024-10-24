@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "unity": "2022.3",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
@@ -13,16 +13,16 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### New features\n* The global network simulator (configurable through `NetworkSettings.WithNetworkSimulatorParameters`) now supports delay, jitter and packet duplication, but only in the send direction. Currently users are still recommended to use the `SimulatorPipelineStage` for their network simulation needs until the global network simulator gains in maturity.\n\n### Changes\n* Updated Burst dependency to 1.8.12.\n\n### Fixes\n* Fixed an issue where `NetworkEndpoint.IsAny` and `NetworkEndpoint.IsLoopback` would throw an exception for endpoints where the network family is `NetworkFamily.Custom`. These properties will now return false for custom endpoints.\n* Fixed an issue where an error about resetting the event queue with pending events could be logged even if the connection with pending events was closed.\n* Made the failure mode more obvious when there is a mismatch between the Relay configuration and the choice of network interface.\n* Fixed a rare issue where a sequence ID collision from ushort overflow in certain very specific conditions can result in an old packet being erroneously returned instead of waiting for a new one, causing corruption."
+    "changelog": "### New features\n* Connections can now be made using strings representing domain names or IPs. Hostname resolution will be performed automatically as part of the connection process. (Requires Unity 6000.18f1 or later.)\n\n### Changes\n* ACKs for the `ReliableSequencedPipelineStage` will now be sent a little more aggressively, which should improve throughput of reliable traffic.\n\n### Fixes\n\n* Fixed MultiNetworkDriver not passing the connect payload to the NetworkDriver when calling MultiNetworkDriver.Connect()\n* Added a workaround for a burst compile error that caused iOS player builds not to function properly when burst compile was enabled."
   },
   "upmCi": {
-    "footprint": "59ff3f339c684bd4b2fbb8d1add1458be9e49ae6"
+    "footprint": "7128d666be3423681d6515e4144ae47e7f3c997d"
   },
-  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.3/manual/index.html",
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.4/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "a19910e4bc903acabe37806a2ef43b3735ba7dc8"
+    "revision": "27ba0ea65b2d90483f4c9447971b84421df32aea"
   },
   "samples": [
     {

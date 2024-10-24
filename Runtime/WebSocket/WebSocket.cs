@@ -65,7 +65,7 @@ namespace Unity.Networking.Transport
             handshake.Append(end);
             FixedString128Bytes host = "Host: ";
             handshake.Append(host);
-            handshake.Append(remoteEndpoint.ToFixedString());
+            handshake.Append(remoteEndpoint.ToFixedString512Bytes());
             handshake.Append(end);
             handshake.Append(end);
 

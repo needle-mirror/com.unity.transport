@@ -1,5 +1,18 @@
 # Change log
 
+## [2.4.0] - 2024-10-24
+
+### New features
+* Connections can now be made using strings representing domain names or IPs. Hostname resolution will be performed automatically as part of the connection process. (Requires Unity 6000.18f1 or later.)
+
+### Changes
+* ACKs for the `ReliableSequencedPipelineStage` will now be sent a little more aggressively, which should improve throughput of reliable traffic.
+
+### Fixes
+
+* Fixed MultiNetworkDriver not passing the connect payload to the NetworkDriver when calling MultiNetworkDriver.Connect()
+* Added a workaround for a burst compile error that caused iOS player builds not to function properly when burst compile was enabled.
+
 ## [2.3.0] - 2024-06-21
 
 ### New features
