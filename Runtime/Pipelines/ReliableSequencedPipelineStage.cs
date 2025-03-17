@@ -16,7 +16,7 @@ namespace Unity.Networking.Transport
     /// <para>
     /// Note that a consequence of these guarantees is that if a packet is lost, subsequent packets
     /// will not be delivered until the lost packet has been resent and delivered. This is called
-    /// <see href="https://en.wikipedia.org/wiki/Head-of-line_blocking">head-of-line blocking</see>
+    /// <a href="https://en.wikipedia.org/wiki/Head-of-line_blocking">head-of-line blocking</a>
     /// and can add significant latency to delivered packets when it occurs. For this reason, only
     /// send through this pipeline traffic which must absolutely be delivered in order (e.g. RPCs
     /// or player actions). State updates that will be resent later anyway (e.g. snapshots) should

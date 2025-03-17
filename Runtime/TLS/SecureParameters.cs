@@ -32,13 +32,17 @@ namespace Unity.Networking.Transport.TLS
         /// <summary>Client authentication policy (server only, defaults to optional).</summary>
         public SecureClientAuthPolicy ClientAuthenticationPolicy;
 
+        /// <inheritdoc/>
         public bool Validate() => true;
     }
 
+    /// <summary>Extensions to <see cref="NetworkSettings"/> for secure parameters.</summary>
     public static class SecureParameterExtensions
     {
         /// <summary>Set client security parameters (for WebSocket usage).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="serverName">Hostname of the server to connect to.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedString512Bytes     serverName)
@@ -58,7 +62,9 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (for WebSocket usage).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="serverName">Hostname of the server to connect to.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             string                      serverName)
@@ -78,8 +84,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (server authentication only).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    caCertificate,
@@ -100,8 +108,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (server authentication only).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedPEMString          caCertificate,
@@ -122,8 +132,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (server authentication only).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             string                      caCertificate,
@@ -144,10 +156,12 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (for client authentication).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Client's certificate (PEM format).</param>
         /// <param name="privateKey">Client's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    certificate,
@@ -170,10 +184,12 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (for client authentication).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Client's certificate (PEM format).</param>
         /// <param name="privateKey">Client's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             ref FixedPEMString          certificate,
@@ -196,10 +212,12 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set client security parameters (for client authentication).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Client's certificate (PEM format).</param>
         /// <param name="privateKey">Client's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the server's certificate (PEM format).</param>
         /// <param name="serverName">Common name (CN) in the server certificate.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureClientParameters(
             ref this NetworkSettings    settings,
             string                      certificate,
@@ -222,8 +240,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (server authentication only).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    certificate,
@@ -244,8 +264,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (server authentication only).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             ref FixedPEMString          certificate,
@@ -266,8 +288,10 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (server authentication only).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             string                      certificate,
@@ -288,11 +312,13 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (for client authentication).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the client certificates (PEM format).</param>
         /// <param name="clientName">Common name (CN) in the client certificates.</param>
         /// <param name="clientAuthenticationPolicy">Client authentication policy.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             ref FixedString4096Bytes    certificate,
@@ -316,11 +342,13 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (for client authentication).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the client certificates (PEM format).</param>
         /// <param name="clientName">Common name (CN) in the client certificates.</param>
         /// <param name="clientAuthenticationPolicy">Client authentication policy.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             ref FixedPEMString          certificate,
@@ -344,11 +372,13 @@ namespace Unity.Networking.Transport.TLS
         }
 
         /// <summary>Set server security parameters (for client authentication).</summary>
+        /// <param name="settings">Settings to modify.</param>
         /// <param name="certificate">Server's certificate chain (PEM format).</param>
         /// <param name="privateKey">Server's private key (PEM format).</param>
         /// <param name="caCertificate">CA certificate that signed the client certificates (PEM format).</param>
         /// <param name="clientName">Common name (CN) in the client certificates.</param>
         /// <param name="clientAuthenticationPolicy">Client authentication policy.</param>
+        /// <returns>Modified network settings.</returns>
         public static ref NetworkSettings WithSecureServerParameters(
             ref this NetworkSettings    settings,
             string                      certificate,
@@ -371,6 +401,9 @@ namespace Unity.Networking.Transport.TLS
             return ref settings;
         }
 
+        /// <summary>Get the security parameters structure from the given network settings.</summary>
+        /// <param name="settings">Settings to get the parameters from.</param>
+        /// <returns>Security parameters structure.</returns>
         public static SecureNetworkProtocolParameter GetSecureParameters(ref this NetworkSettings settings)
         {
             if (!settings.TryGet<SecureNetworkProtocolParameter>(out var parameters))

@@ -1,6 +1,7 @@
 using System;
 using Unity.Collections;
 using Unity.Networking.Transport.Logging;
+using UnityEngine.Serialization;
 
 namespace Unity.Networking.Transport
 {
@@ -86,6 +87,7 @@ namespace Unity.Networking.Transport
 
         internal const int InitialEventQueueSize = 100;
         internal const int AbsoluteMaxMessageSize = 1500 - 20 - 8; // Ethernet MTU minus IPv4 and UDP headers.
+        internal const int AbsoluteMinimumMtuSize = 1024;
     }
 
     /// <summary>
@@ -184,6 +186,18 @@ namespace Unity.Networking.Transport
         /// </summary>
         // <value>Size in bytes.</value>
         public int maxMessageSize;
+
+        /// <summary>
+        /// Whether or not to perform Path MTU discovery.
+        /// If this is false, the connection's path MTU will always be <see cref="maxMessageSize"/>.
+        /// If true, then during the connection handshake, a path MTU discovery pass will be performed.
+        /// If the discovered MTU is smaller than <see cref="maxMessageSize"/>, the max message size for
+        /// that connection will be reduced accordingly, but if larger, it will never exceed
+        /// <see cref="maxMessageSize"/>. This process is only done once during connection; we do not
+        /// attempt to discover changes in the Path MTU during gameplay, as many gameplay systems are not
+        /// built to be able to adapt to such changes.
+        /// </summary>
+        public bool performPathMtuDiscovery;
 
         /// <inheritdoc/>
         public bool Validate()
@@ -319,6 +333,16 @@ namespace Unity.Networking.Transport
         /// which means the actual maximum message size that can be sent by a user is slightly less
         /// than this value.
         /// </param>
+        /// <param name="performPathMtuDiscovery">
+        /// Whether or not to perform Path MTU discovery.
+        /// If this is false, the connection's path MTU will always be <see cref="maxMessageSize"/>.
+        /// If true, then during the connection handshake, a path MTU discovery pass will be performed.
+        /// If the discovered MTU is smaller than <see cref="maxMessageSize"/>, the max message size for
+        /// that connection will be reduced accordingly, but if larger, it will never exceed
+        /// <see cref="maxMessageSize"/>. This process is only done once during connection; we do not
+        /// attempt to discover changes in the Path MTU during gameplay, as many gameplay systems are not
+        /// built to be able to adapt to such changes.
+        /// </param>
         /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithNetworkConfigParameters(
             ref this NetworkSettings settings,
@@ -331,7 +355,8 @@ namespace Unity.Networking.Transport
             int fixedFrameTimeMS        = 0,
             int receiveQueueCapacity    = NetworkParameterConstants.ReceiveQueueCapacity,
             int sendQueueCapacity       = NetworkParameterConstants.SendQueueCapacity,
-            int maxMessageSize          = NetworkParameterConstants.MaxMessageSize
+            int maxMessageSize          = NetworkParameterConstants.MaxMessageSize,
+            bool performPathMtuDiscovery = true
         )
         {
             var parameter = new NetworkConfigParameter
@@ -346,6 +371,7 @@ namespace Unity.Networking.Transport
                 receiveQueueCapacity = receiveQueueCapacity,
                 sendQueueCapacity = sendQueueCapacity,
                 maxMessageSize = maxMessageSize,
+                performPathMtuDiscovery = performPathMtuDiscovery
             };
 
             settings.AddRawParameterStruct(ref parameter);
@@ -365,7 +391,8 @@ namespace Unity.Networking.Transport
             int maxFrameTimeMS,
             int fixedFrameTimeMS,
             int receiveQueueCapacity,
-            int sendQueueCapacity
+            int sendQueueCapacity,
+            bool performPathMtuDiscovery
         )
         {
             var parameter = new NetworkConfigParameter
@@ -380,6 +407,7 @@ namespace Unity.Networking.Transport
                 receiveQueueCapacity = receiveQueueCapacity,
                 sendQueueCapacity = sendQueueCapacity,
                 maxMessageSize = NetworkParameterConstants.MaxMessageSize,
+                performPathMtuDiscovery = performPathMtuDiscovery
             };
 
             settings.AddRawParameterStruct(ref parameter);
@@ -406,6 +434,7 @@ namespace Unity.Networking.Transport
                 parameters.maxFrameTimeMS        = 0;
                 parameters.fixedFrameTimeMS      = 0;
                 parameters.maxMessageSize        = NetworkParameterConstants.MaxMessageSize;
+                parameters.performPathMtuDiscovery = true;
             }
 
             return parameters;

@@ -206,6 +206,7 @@ namespace Unity.Networking.Transport
             return buffersList;
         }
 
+        /// <inheritdoc/>
         public unsafe void Dispose()
         {
             CloseSocket(m_InternalState.Value.Socket);
@@ -563,6 +564,16 @@ namespace Unity.Networking.Transport
                 DebugLog.ErrorBaselibBind(error, endpoint.Port);
                 return (int)Error.StatusCode.NetworkSocketError;
             }
+
+#if DONT_FRAGMENT_BIT_AVAILABLE
+            if (endpoint.Family == NetworkFamily.Ipv4)
+            {
+                error = default(ErrorState);
+                Binding.Baselib_RegisteredNetwork_Socket_UDP_SetIPv4DontFragHeader(socket, true, &error);
+                // Ignore the error - this isn't supported on all platforms, and it's kind of a nice-to-have anyway.
+                // If it fails, nothing will break, performance may just be slightly less optimal.
+            }
+#endif
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AllSockets.OpenSockets.Add(new SocketList.SocketId { socket = socket });

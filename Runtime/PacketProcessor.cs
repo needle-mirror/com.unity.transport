@@ -227,6 +227,7 @@ namespace Unity.Networking.Transport
         /// removes the data from the packet).
         /// </summary>
         /// <param name="destinationPtr">Pointer to the buffer data will be copied to.</param>
+        /// <param name="size">Size of the destination buffer.</param>
         /// <returns>Ammount of bytes copied.</returns>
         /// <exception cref="ArgumentException">
         /// If the buffer is larger than the packet. Only thrown when collections checks are enabled

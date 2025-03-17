@@ -171,6 +171,7 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             if (IsCreated)
@@ -202,7 +203,7 @@ namespace Unity.Networking.Transport
         /// Gets the packet processor for the packet at the given index.
         /// </summary>
         /// <param name="packetIndex">Index of the packet in the queue.</param>
-        /// <returns>Packet processor for the packet at the provided index.</returns>
+        /// <value>Packet processor for the packet at the provided index.</value>
         /// <exception cref="IndexOutOfRangeException">If the index is not valid.</exception>
         public PacketProcessor this[int packetIndex]
         {

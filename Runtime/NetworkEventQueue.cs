@@ -6,6 +6,10 @@ using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Networking.Transport
 {
+    /// <summary>
+    /// Structure representing a network event. The structure itself is only meant for internal
+    /// use. Its only public use is as a namespace for the <see cref="NetworkEvent.Type"/> enum.
+    /// </summary>
     [StructLayout(LayoutKind.Explicit)]
     public struct NetworkEvent
     {

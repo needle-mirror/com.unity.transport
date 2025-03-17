@@ -335,15 +335,6 @@ namespace Unity.Networking.Transport.Logging
 #endif
         }
 
-        public static void DriverTooManyUpdates(int updateCount)
-        {
-#if USE_UNITY_LOGGING
-            Unity.Logging.Log.Warning("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {UpdateCount}", updateCount);
-#else
-            UnityEngine.Debug.LogWarning(FixedString.Format("A lot of pipeline updates have been queued, possibly too many being scheduled in pipeline logic, queue count: {0}", updateCount));
-#endif
-        }
-
         public static void ErrorConnectPayloadTooLarge(int size, int maxSize)
         {
 #if USE_UNITY_LOGGING

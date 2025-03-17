@@ -24,7 +24,9 @@ namespace Unity.Networking.Transport
     /// </para>
     /// </summary>
     /// <example>
+    /// <para>
     /// This example code establishes an in-process communication channel between two drivers:
+    /// </para>
     /// <code>
     ///     var driver1 = NetworkDriver.Create(new IPCNetworkInterface());
     ///     driver1.Bind(NetworkEndpoint.LoopbackIpv4.WithPort(1));
@@ -60,6 +62,7 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             m_LocalEndpoint.Dispose();

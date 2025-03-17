@@ -10,6 +10,7 @@ namespace Unity.Networking.Transport
     /// <see cref="ManagedNetworkInterfaceExtensions.WrapToUnmanaged"/> to obtain an instance. Do
     /// not create one manually.
     /// </summary>
+    /// <typeparam name="T">Type of the network interface to wrap.</typeparam>
     public unsafe struct NetworkInterfaceUnmanagedWrapper<T> : INetworkInterface where T : INetworkInterface
     {
         private static ManagedCallWrapper s_LocalEndpoint_FPtr;
@@ -108,6 +109,7 @@ namespace Unity.Networking.Transport
             arguments.InterfaceReference.Element.Dispose();
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             var arguments = new Dispose_Arguments

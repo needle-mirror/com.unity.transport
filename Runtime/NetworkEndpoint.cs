@@ -52,8 +52,10 @@ namespace Unity.Networking.Transport
     /// <c>System.Net.Dns.GetHostEntryAsync"</c> for example.
     /// </remarks>
     /// <example>
+    /// <para>
     /// The code below shows how to obtain endpoint structures for different IP addresses and port
     /// combinations (noted in comments in the <c>IP_ADDRESS:PORT</c> format):
+    /// </para>
     /// <code>
     ///     // 127.0.0.1:7777
     ///     NetworkEndpoint.LoopbackIpv4.WithPort(7777);
@@ -76,16 +78,22 @@ namespace Unity.Networking.Transport
 
         private const int k_FamilyOffset = 60;
 
+        /// <summary>
+        /// Container for the raw address structure. There are no public members to this structure
+        /// and it should be viewed as an opaque buffer of bytes.
+        /// </summary>
         public struct TransferrableData
         {
-            /// <summary>Container for the raw address structure.</summary>
-            /// <remarks>
-            /// We're just using this as a raw bunch of bytes, and not as a fixed list. Do not call any
-            /// of the fixed list methods on this as they are likely broken.
-            /// </remarks>
+            // We're just using this as a raw bunch of bytes, and not as a fixed list. Do not call
+            // any of the fixed list methods on this as they are likely broken.
             internal FixedList64Bytes<byte> m_RawAddressContainer;
         }
 
+        /// <summary>
+        /// Raw representation of the address. This value is only useful if implementing your own
+        /// <see cref="INetworkInterface"/> and you need access to the underlying data backing the
+        /// endpoint. Otherwise there is no reason to access this field.
+        /// </summary>
         public TransferrableData Transferrable;
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -237,7 +245,7 @@ namespace Unity.Networking.Transport
         {
             CheckRawAddressLength(bytes.Length, family);
 
-            var length = math.min(bytes.Length, Length);
+            var length = math.min(bytes.Length, k_CustomLength);
             UnsafeUtility.MemCpy(RawAddressPtr, bytes.GetUnsafeReadOnlyPtr(), length);
             Family = family;
         }
@@ -495,33 +503,39 @@ namespace Unity.Networking.Transport
         /// <value>Endpoint represented as a string.</value>
         public string Address => ToString();
 
+        /// <inheritdoc/>
         public override string ToString()
         {
             return ToFixedString512Bytes().ToString();
         }
 
+        /// <inheritdoc/>
         public override int GetHashCode()
         {
             var size = UnsafeUtility.SizeOf<FixedList64Bytes<byte>>();
             return (int)CollectionHelper.Hash(RawAddressPtr, size);
         }
 
+        /// <inheritdoc/>
         public bool Equals(NetworkEndpoint other)
         {
             var size = UnsafeUtility.SizeOf<FixedList64Bytes<byte>>();
             return UnsafeUtility.MemCmp(RawAddressPtr, other.RawAddressPtr, size) == 0;
         }
 
+        /// <inheritdoc/>
         public override bool Equals(object other)
         {
             return this.Equals((NetworkEndpoint)other);
         }
 
+        /// <inheritdoc/>
         public static bool operator==(NetworkEndpoint lhs, NetworkEndpoint rhs)
         {
             return lhs.Equals(rhs);
         }
 
+        /// <inheritdoc/>
         public static bool operator!=(NetworkEndpoint lhs, NetworkEndpoint rhs)
         {
             return !lhs.Equals(rhs);
@@ -560,6 +574,7 @@ namespace Unity.Networking.Transport
     [Obsolete("Use NetworkEndpoint instead.", true)]
     public struct NetworkInterfaceEndPoint : IEquatable<NetworkInterfaceEndPoint>
     {
+        /// <inheritdoc/>
         public bool Equals(NetworkInterfaceEndPoint other)
         {
             throw new NotImplementedException();

@@ -20,7 +20,10 @@ namespace Unity.Networking.Transport
         {
             Default = 0,
             AwaitingAccept,
+            PathMtuDiscovery,
+            PathMtuDiscoveryStageTwo,
             Established,
+            Disconnected,
         }
 
         internal enum HandshakeType : byte
@@ -34,6 +37,8 @@ namespace Unity.Networking.Transport
             Data = 1,
             Disconnect = 2,
             Heartbeat = 3,
+            MtuCheck = 4,
+            MtuAck = 5,
         }
 
         internal struct SimpleConnectionData
@@ -43,7 +48,9 @@ namespace Unity.Networking.Transport
             public ConnectionState State;
             public long LastReceiveTime;
             public long LastSendTime;
+            public long LastMtuSendTime;
             public int ConnectionAttempts;
+            public bool IsLocal;
         }
 
         private ConnectionList m_ConnectionList;
@@ -56,9 +63,13 @@ namespace Unity.Networking.Transport
         private int m_DisconnectTimeout;
         private int m_HeartbeatTimeout;
         private int m_MaxConnectionAttempts;
+        private int m_MaxMessageSize;
+        private bool m_PerformMtuDiscovery;
+        private int m_DownStreamPacketPadding;
 
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {
+            m_DownStreamPacketPadding = packetPadding;
             packetPadding += k_HeaderSize;
 
             var networkConfigParameters = settings.GetNetworkConfigParameters();
@@ -75,6 +86,8 @@ namespace Unity.Networking.Transport
             m_ConnectionsData = new ConnectionDataMap<SimpleConnectionData>(1, default(SimpleConnectionData), Collections.Allocator.Persistent);
             m_TokensHashMap = new NativeHashMap<ConnectionToken, ConnectionId>(1, Allocator.Persistent);
             m_DeferredSends = new PacketsQueue(k_DeferredSendsQueueSize, networkConfigParameters.maxMessageSize);
+            m_MaxMessageSize = networkConfigParameters.maxMessageSize;
+            m_PerformMtuDiscovery = networkConfigParameters.performPathMtuDiscovery;
 
             return 0;
         }
@@ -115,6 +128,9 @@ namespace Unity.Networking.Transport
             job.MaxConnectionAttempts = m_MaxConnectionAttempts;
             job.DisconnectTimeout = m_DisconnectTimeout;
             job.HeartbeatTimeout = m_HeartbeatTimeout;
+            job.MaxMessageSize = m_MaxMessageSize;
+            job.PerformMtuDiscovery = m_PerformMtuDiscovery;
+            job.DownStreamPadding = m_DownStreamPacketPadding;
 
             return job.Schedule(dependency);
         }
@@ -200,6 +216,9 @@ namespace Unity.Networking.Transport
             public int DisconnectTimeout;
             public int HeartbeatTimeout;
             public int MaxConnectionAttempts;
+            public int MaxMessageSize;
+            public bool PerformMtuDiscovery;
+            public int DownStreamPadding;
 
             public void Execute()
             {
@@ -260,18 +279,19 @@ namespace Unity.Networking.Transport
                 var connectionData = ConnectionsData[connectionId];
 
                 // If we're disconnecting on an established connection, send a disconnect.
-                if (connectionData.State == ConnectionState.Established)
+                if (connectionData.State == ConnectionState.Established || connectionData.State == ConnectionState.PathMtuDiscovery || connectionData.State == ConnectionState.PathMtuDiscoveryStageTwo)
                 {
+                    connectionData.State = ConnectionState.Disconnected;
                     EnqueueDeferredMessage(connectionId, MessageType.Disconnect, ref connectionData.Token);
-                    connectionData.State = ConnectionState.Default;
-                    ConnectionsData[connectionId] = connectionData;
                 }
                 else
                 {
+                    connectionData.State = ConnectionState.Disconnected;
                     UnderlyingConnections.Disconnect(ref connectionData.UnderlyingConnection);
                     Connections.FinishDisconnecting(ref connectionId);
                     TokensHashMap.Remove(connectionData.Token);
                 }
+                ConnectionsData[connectionId] = connectionData;
             }
 
             private void ProcessConnecting(ref ConnectionId connectionId)
@@ -279,7 +299,38 @@ namespace Unity.Networking.Transport
                 var connectionData = ConnectionsData[connectionId];
                 var connectionState = connectionData.State;
 
-                if (connectionState == ConnectionState.Default)
+                if (connectionState == ConnectionState.PathMtuDiscovery)
+                {
+                    if (Time - connectionData.LastMtuSendTime > 300)
+                    {
+                        SendMtuDiscoveryMessages(connectionId, ref connectionData);
+                        connectionData.State = ConnectionState.PathMtuDiscoveryStageTwo;
+                        ConnectionsData[connectionId] = connectionData;
+                    }
+                    ProcessConnected(ref connectionId);
+                }
+                else if (connectionState == ConnectionState.PathMtuDiscoveryStageTwo)
+                {
+                    if (Time - connectionData.LastMtuSendTime > 300)
+                    {
+                        connectionData.State = ConnectionState.Established;
+                        if (connectionData.IsLocal)
+                        {
+                            Connections.FinishConnectingFromLocal(ref connectionId);
+                            ConnectionPayloads.Remove(connectionId);
+                        }
+                        else
+                        {
+                            Connections.FinishConnectingFromRemote(ref connectionId);
+                        }
+
+                        connectionData.LastReceiveTime = Time;
+
+                        ConnectionsData[connectionId] = connectionData;
+                        ProcessConnected(ref connectionId);
+                    }
+                }
+                else if (connectionState == ConnectionState.Default)
                 {
                     var endpoint = Connections.GetConnectionEndpoint(connectionId);
 
@@ -343,6 +394,38 @@ namespace Unity.Networking.Transport
                 }
             }
 
+            private unsafe void SendMtuDiscoveryMessages(ConnectionId connectionId, ref SimpleConnectionData connectionData)
+            {
+                connectionData.LastSendTime = Time;
+                connectionData.LastMtuSendTime = Time;
+                var payload = new ConnectionPayload();
+                UnsafeUtility.MemClear(payload.Data, NetworkParameterConstants.AbsoluteMaxMessageSize);
+                
+                var checkSize = NetworkParameterConstants.AbsoluteMinimumMtuSize + k_HeaderSize;
+                for (; checkSize < MaxMessageSize - k_HeaderSize; checkSize += 32)
+                {
+                    payload.Length = checkSize - DownStreamPadding - sizeof(MessageType) - sizeof(ConnectionToken) - sizeof(ushort) - k_HeaderSize;
+                    EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
+                }
+                payload.Length = MaxMessageSize - DownStreamPadding - sizeof(MessageType) - sizeof(ConnectionToken) - sizeof(ushort) - k_HeaderSize;
+                EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
+            }
+
+            private unsafe void SendMtuAck(ConnectionId connectionId, ushort size)
+            {
+                size += k_HeaderSize;
+                size += (ushort)DownStreamPadding;
+                size += sizeof(ushort);
+
+                var connectionData = ConnectionsData[connectionId];
+                connectionData.LastSendTime = Time;
+                var payload = new ConnectionPayload();
+                UnsafeUtility.MemClear(payload.Data, NetworkParameterConstants.AbsoluteMaxMessageSize);
+                payload.Length = UnsafeUtility.SizeOf<ushort>();
+                UnsafeUtility.MemCpy(payload.Data, &size, UnsafeUtility.SizeOf<ushort>());
+                EnqueueDeferredMessage(connectionId, MessageType.MtuAck, ref connectionData.Token, payload);
+            }
+
             private void ProcessReceivedMessages()
             {
                 var count = ReceiveQueue.Count;
@@ -378,29 +461,115 @@ namespace Unity.Networking.Transport
                     var connectionState = Connections.GetConnectionState(connectionId);
                     var connectionData = ConnectionsData[connectionId];
 
+                    if (connectionData.State == ConnectionState.Disconnected)
+                    {
+                        packetProcessor.Drop();
+                        continue;
+                    }
+
                     // If we were still waiting on an accept message and receive any message for the
                     // connection, consider the connection accepted. This way we won't drop messages
                     // sent by the server if the accept is lost.
                     if (connectionState == NetworkConnection.State.Connecting &&
                         connectionData.State == ConnectionState.AwaitingAccept)
                     {
-                        connectionData.State = ConnectionState.Established;
-                        Connections.FinishConnectingFromLocal(ref connectionId);
-                        ConnectionPayloads.Remove(connectionId);
-                        ConnectionsData[connectionId] = connectionData;
+                        if (MaxMessageSize <= NetworkParameterConstants.AbsoluteMinimumMtuSize || !PerformMtuDiscovery)
+                        {
+                            Connections.SetConnectionPathMtu(connectionId, MaxMessageSize);
+                            connectionData.State = ConnectionState.Established;
+                            if (connectionData.IsLocal)
+                            {
+                                Connections.FinishConnectingFromLocal(ref connectionId);
+                                ConnectionPayloads.Remove(connectionId);
+                            }
+                            else
+                            {
+                                Connections.FinishConnectingFromRemote(ref connectionId);
+                            }
+                            ConnectionsData[connectionId] = connectionData;
+                        }
+                        else
+                        {
+                            connectionData.State = ConnectionState.PathMtuDiscovery;
+                            SendMtuDiscoveryMessages(connectionId, ref connectionData);
+                        }
                     }
                     else if (connectionState != NetworkConnection.State.Connected)
                     {
-                        packetProcessor.Drop();
-                        continue;
+                        if (connectionData.State != ConnectionState.PathMtuDiscovery &&
+                            connectionData.State != ConnectionState.PathMtuDiscoveryStageTwo)
+                        {
+                            packetProcessor.Drop();
+                            continue;
+                        }
                     }
 
                     switch (messageType)
                     {
+                        case MessageType.MtuCheck:
+                        {
+                            if (connectionState == NetworkConnection.State.Disconnecting ||
+                                connectionState == NetworkConnection.State.Disconnected)
+                            {
+                                packetProcessor.Drop();
+                                continue;
+                            }
+                            PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
+                            var size = packetProcessor.RemoveFromPayloadStart<ushort>();
+                            SendMtuAck(connectionId, size);
+                            packetProcessor.Drop();
+                            break;
+                        }
+                        case MessageType.MtuAck:
+                        {
+                            if (connectionState == NetworkConnection.State.Disconnecting ||
+                                connectionState == NetworkConnection.State.Disconnected)
+                            {
+                                packetProcessor.Drop();
+                                continue;
+                            }
+                            PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
+                            // Have to refetch connection data to avoid overwriting the LastReceivedTime set by PreprocessMessage()
+                            connectionData = ConnectionsData[connectionId];
+                            if (connectionData.State == ConnectionState.PathMtuDiscovery ||
+                                connectionData.State == ConnectionState.PathMtuDiscoveryStageTwo)
+                            {
+                                // Account for DownStreamPadding being left out of the payload when it was sent by adding it back in.
+                                var size = packetProcessor.RemoveFromPayloadStart<ushort>();
+                                size = packetProcessor.RemoveFromPayloadStart<ushort>();
+                                if (size == MaxMessageSize - k_HeaderSize)
+                                {
+                                    size = (ushort)MaxMessageSize;
+                                }
+                                var currentSize = Connections.GetConnectionPathMtu(connectionId);
+                                if (size > currentSize)
+                                {
+                                    Connections.SetConnectionPathMtu(connectionId, size);
+                                }
+
+                                if (size == MaxMessageSize)
+                                {
+                                    connectionData.State = ConnectionState.Established;
+                                    if (connectionData.IsLocal)
+                                    {
+                                        Connections.FinishConnectingFromLocal(ref connectionId);
+                                        ConnectionPayloads.Remove(connectionId);
+                                    }
+                                    else
+                                    {
+                                        Connections.FinishConnectingFromRemote(ref connectionId);
+                                    }
+                                    ConnectionsData[connectionId] = connectionData;
+                                }
+                            }
+
+                            packetProcessor.Drop();
+                            break;
+                        }
                         case MessageType.Disconnect:
                         {
                             Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.ClosedByRemote);
-                            connectionData.State = ConnectionState.Default;
+                            connectionData.State = ConnectionState.Disconnected;
                             ConnectionsData[connectionId] = connectionData;
 
                             ProcessDisconnecting(ref connectionId);
@@ -489,18 +658,20 @@ namespace Unity.Networking.Transport
                     {
                         case HandshakeType.ConnectionRequest:
                         {
+                            var send = false;
                             // Whole new connection request for a new connection.
                             if (!connectionId.IsCreated)
                             {
                                 connectionId = Connections.StartConnecting(ref packetProcessor.EndpointRef);
-                                Connections.FinishConnectingFromRemote(ref connectionId);
                                 connectionData = new SimpleConnectionData
                                 {
-                                    State = ConnectionState.Established,
+                                    State = ConnectionState.PathMtuDiscovery,
                                     Token = connectionToken,
                                     UnderlyingConnection = packetProcessor.ConnectionRef,
+                                    IsLocal = false
                                 };
                                 TokensHashMap.Add(connectionToken, connectionId);
+                                send = true;
                             }
 
                             // Get the connect payload, if any.
@@ -517,7 +688,23 @@ namespace Unity.Networking.Transport
                             }
 
                             connectionData.LastSendTime = Time;
+                            ConnectionsData[connectionId] = connectionData;
                             EnqueueDeferredMessage(connectionId, HandshakeType.ConnectionAccept, ref connectionToken);
+                            if(send)
+                            {
+                                if (MaxMessageSize <= NetworkParameterConstants.AbsoluteMinimumMtuSize || !PerformMtuDiscovery)
+                                {
+                                    Connections.SetConnectionPathMtu(connectionId, MaxMessageSize);
+                                    connectionData.State = ConnectionState.Established;
+                                    Connections.FinishConnectingFromRemote(ref connectionId);
+                                    ConnectionsData[connectionId] = connectionData;
+                                }
+                                else
+                                {
+                                    SendMtuDiscoveryMessages(connectionId, ref connectionData);
+                                }
+                                ConnectionsData[connectionId] = connectionData;
+                            }
                             break;
                         }
 
@@ -525,9 +712,21 @@ namespace Unity.Networking.Transport
                         {
                             if (connectionId.IsCreated && connectionData.State == ConnectionState.AwaitingAccept)
                             {
-                                connectionData.State = ConnectionState.Established;
-                                Connections.FinishConnectingFromLocal(ref connectionId);
-                                ConnectionPayloads.Remove(connectionId);
+                                connectionData.State = ConnectionState.PathMtuDiscovery;
+                                connectionData.IsLocal = true;
+                                ConnectionsData[connectionId] = connectionData;
+                                if (MaxMessageSize <= NetworkParameterConstants.AbsoluteMinimumMtuSize || !PerformMtuDiscovery)
+                                {
+                                    Connections.SetConnectionPathMtu(connectionId, MaxMessageSize);
+                                    connectionData.State = ConnectionState.Established;
+                                    Connections.FinishConnectingFromLocal(ref connectionId);
+                                    ConnectionPayloads.Remove(connectionId);
+                                }
+                                else
+                                {
+                                    SendMtuDiscoveryMessages(connectionId, ref connectionData);
+                                }
+                                ConnectionsData[connectionId] = connectionData;
                             }
                             else
                             {
@@ -543,6 +742,7 @@ namespace Unity.Networking.Transport
                             return true;
                     }
 
+                    connectionData = ConnectionsData[connectionId];
                     connectionData.LastReceiveTime = Time;
                     ConnectionsData[connectionId] = connectionData;
                     return true;
@@ -577,6 +777,18 @@ namespace Unity.Networking.Transport
                     packetProcessor.ConnectionRef = connection;
                     packetProcessor.AppendToPayload(type);
                     packetProcessor.AppendToPayload(token);
+                }
+            }
+
+            private unsafe void EnqueueDeferredMessage(ConnectionId connection, MessageType type, ref ConnectionToken token, ConnectionPayload payload)
+            {
+                if (DeferredSends.EnqueuePacket(out var packetProcessor))
+                {
+                    packetProcessor.ConnectionRef = connection;
+                    packetProcessor.AppendToPayload(type);
+                    packetProcessor.AppendToPayload(token);
+                    packetProcessor.AppendToPayload((ushort)payload.Length);
+                    packetProcessor.AppendToPayload(payload.Data, payload.Length);
                 }
             }
         }

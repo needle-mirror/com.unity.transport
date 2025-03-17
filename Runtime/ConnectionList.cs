@@ -119,6 +119,13 @@ namespace Unity.Networking.Transport
         {
             public NetworkEndpoint Endpoint;
             public NetworkConnection.State State;
+            // TODO: Eventually this field needs to be moved out of ConnectionData and become part of a ConnectionDataMap
+            // in a new PathMTULayer that will sit above SimpleConnectionLayer.
+            // At the current time, this field is populated by SimpleConnectionLayer as the last step of the connection
+            // handshake, and shouldn't be accessed by any other layers. Additionally if any new layer is added above
+            // SimpleConnectionLayer that replaces NetworkDriver's ConnectionList, the data in this field needs to be
+            // propagated from SimpleConnectionList's ConnectionList up to NetworkDriver's.
+            public int PathMtu;
         }
 
         internal struct IncomingDisconnection
@@ -165,6 +172,14 @@ namespace Unity.Networking.Transport
         internal ConnectionId ConnectionAt(int index) => m_Connections.ConnectionAt(index);
         internal NetworkEndpoint GetConnectionEndpoint(ConnectionId connectionId) => m_Connections[connectionId].Endpoint;
         internal NetworkConnection.State GetConnectionState(ConnectionId connectionId) => m_Connections[connectionId].State;
+        
+        internal int GetConnectionPathMtu(ConnectionId connectionId) => m_Connections[connectionId].PathMtu;
+        internal void SetConnectionPathMtu(ConnectionId connectionId, int pathMtu)
+        {
+            var data = m_Connections[connectionId];
+            data.PathMtu = pathMtu;
+            m_Connections[connectionId] = data;
+        }
 
         internal NativeArray<ConnectionId> QueryFinishedConnections(Allocator allocator) => m_FinishedConnections.ToArray(allocator);
         internal NativeArray<ConnectionId> QueryIncomingConnections(Allocator allocator) => m_IncomingConnections.ToArray(allocator);
@@ -177,7 +192,7 @@ namespace Unity.Networking.Transport
 
         private ConnectionList(Allocator allocator)
         {
-            var defaultConnectionData = new ConnectionData { State = NetworkConnection.State.Disconnected };
+            var defaultConnectionData = new ConnectionData { State = NetworkConnection.State.Disconnected, PathMtu = NetworkParameterConstants.AbsoluteMinimumMtuSize };
             m_Connections = new ConnectionDataMap<ConnectionData>(1, defaultConnectionData, allocator);
 #if HOSTNAME_RESOLUTION_AVAILABLE
             m_HostnameLookupTasks = new NativeHashMap<int, HostnameLookupData>(1, allocator);
@@ -191,6 +206,9 @@ namespace Unity.Networking.Transport
         public void Dispose()
         {
             m_Connections.Dispose();
+#if HOSTNAME_RESOLUTION_AVAILABLE
+            m_HostnameLookupTasks.Dispose();
+#endif
             m_IncomingDisconnections.Dispose();
             m_FinishedConnections.Dispose();
             m_IncomingConnections.Dispose();
@@ -229,6 +247,7 @@ namespace Unity.Networking.Transport
             {
                 Endpoint = address,
                 State = NetworkConnection.State.Connecting,
+                PathMtu = NetworkParameterConstants.AbsoluteMinimumMtuSize
             };
 
             return connection;
@@ -257,6 +276,7 @@ namespace Unity.Networking.Transport
                 m_Connections[connection] = new ConnectionData
                 {
                     State = NetworkConnection.State.Connecting,
+                    PathMtu = NetworkParameterConstants.AbsoluteMinimumMtuSize
                 };
                 m_HostnameLookupTasks[connection.Id] = new HostnameLookupData
                 {
@@ -274,6 +294,7 @@ namespace Unity.Networking.Transport
                 {
                     Endpoint = resolvedEndpoint,
                     State = NetworkConnection.State.Connecting,
+                    PathMtu = NetworkParameterConstants.AbsoluteMinimumMtuSize
                 };
                 hostnameLookupFinished = true;
                 disconnectReason = DisconnectReason.Default;

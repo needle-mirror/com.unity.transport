@@ -6,6 +6,7 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
+using UnityEngine.Serialization;
 
 namespace Unity.Networking.Transport
 {
@@ -35,6 +36,8 @@ namespace Unity.Networking.Transport
             set => m_Parameters.Value = value;
         }
 
+        private int m_downStreamPadding;
+
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {
             // Can ignore the result of TryGet since simulator layer is only added if it's true.
@@ -42,6 +45,8 @@ namespace Unity.Networking.Transport
 
             m_Parameters = new NativeReference<NetworkSimulatorParameter>(parameters, Allocator.Persistent);
             m_SendDelayedPackets = new NativeList<PendingPacket>(Allocator.Persistent);
+
+            m_downStreamPadding = packetPadding;
 
             return 0;
         }
@@ -54,7 +59,7 @@ namespace Unity.Networking.Transport
 
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dependency)
         {
-            if (Parameters.ReceivePacketLossPercent == 0.0f)
+            if (Parameters.ReceivePacketLossPercent == 0.0f && Parameters.ReceiveMtu == 0)
                 return dependency;
 
             return new SimulatorJob
@@ -64,9 +69,11 @@ namespace Unity.Networking.Transport
                 PendingPackets = m_SendDelayedPackets,
                 Time = arguments.Time,
                 PacketLoss = Parameters.ReceivePacketLossPercent,
+                Mtu = Parameters.ReceiveMtu,
                 DelayMS = 0,
                 JitterMS = 0,
                 DuplicatePercent = 0.0f,
+                DownStreamPadding = m_downStreamPadding,
             }.Schedule(dependency);
         }
 
@@ -84,6 +91,7 @@ namespace Unity.Networking.Transport
                 DelayMS = Parameters.SendDelayMS,
                 JitterMS = Parameters.SendJitterMS,
                 DuplicatePercent = Parameters.SendDuplicatePercent,
+                DownStreamPadding = m_downStreamPadding,
             }.Schedule(dependency);
         }
 
@@ -102,9 +110,11 @@ namespace Unity.Networking.Transport
             public NativeList<PendingPacket> PendingPackets;
             public long Time;
             public float PacketLoss;
+            public float Mtu;
             public uint DelayMS;
             public uint JitterMS;
             public float DuplicatePercent;
+            public int DownStreamPadding;
 
             public void Execute()
             {
@@ -122,7 +132,13 @@ namespace Unity.Networking.Transport
                     var packetProcessor = Packets[i];
 
                     // Check if we need to drop this packet.
-                    if (random.NextFloat(100.0f) < PacketLoss)
+                    if (PacketLoss > 0.0f && random.NextFloat(100.0f) < PacketLoss)
+                    {
+                        packetProcessor.Drop();
+                        continue;
+                    }
+
+                    if (Mtu > 0 && packetProcessor.Length + DownStreamPadding > Mtu)
                     {
                         packetProcessor.Drop();
                         continue;
@@ -235,6 +251,10 @@ namespace Unity.Networking.Transport
         /// <value>Packet duplicate percentage.</value>
         public float SendDuplicatePercent;
 
+        /// <summary>Maximum packet length to process when receiving messages.</summary>
+        /// <value>Maximum size in bytes.</value>
+        public float ReceiveMtu;
+
         /// <inheritdoc/>
         public bool Validate()
         {
@@ -272,6 +292,7 @@ namespace Unity.Networking.Transport
         /// <param name="sendDelayMS">Milliseconds of delay to add to sent packets.</param>
         /// <param name="sendJitterMS">Milliseconds of delaying variance sending packet.</param>
         /// <param name="sendDuplicatePercent">Percentage of sent packets to duplicate.</param>
+        /// <param name="receiveMtu">Path MTU size to simulate; messages larger than this will be dropped by the receiver.</param>
         /// <returns>Settings structure with modified values.</returns>
         public static ref NetworkSettings WithNetworkSimulatorParameters(
             ref this NetworkSettings settings,
@@ -279,7 +300,8 @@ namespace Unity.Networking.Transport
             float sendPacketLossPercent = 0.0f,
             uint sendDelayMS = 0,
             uint sendJitterMS = 0,
-            float sendDuplicatePercent = 0.0f)
+            float sendDuplicatePercent = 0.0f,
+            int receiveMtu = 0)
         {
             var parameters = new NetworkSimulatorParameter
             {
@@ -287,7 +309,8 @@ namespace Unity.Networking.Transport
                 SendPacketLossPercent = sendPacketLossPercent,
                 SendDelayMS = sendDelayMS,
                 SendJitterMS = sendJitterMS,
-                SendDuplicatePercent = sendDuplicatePercent
+                SendDuplicatePercent = sendDuplicatePercent,
+                ReceiveMtu = receiveMtu
             };
 
             settings.AddRawParameterStruct(ref parameters);

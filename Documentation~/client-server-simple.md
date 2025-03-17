@@ -39,7 +39,7 @@ public class ServerBehaviour : MonoBehaviour {
 
 ### Boilerplate code
 
-As the package only provides a low level API, there is a bit of boilerplate code you might want to setup. This is an architecture design Unity chose to make ensure that you always have full control.
+As the package only provides a low level API, there is a bit of boilerplate code you might want to setup. This is an architecture design Unity chose to make sure that you always have full control.
 
 Replace the contents of the file with the following:
 

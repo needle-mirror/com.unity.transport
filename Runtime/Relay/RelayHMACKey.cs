@@ -16,7 +16,7 @@ namespace Unity.Networking.Transport.Relay
         public fixed byte Value[k_Length];
 
         /// <summary>Convert a raw buffer to an HMAC key.</summary>
-        /// <param name="dataPtr">Raw pointer to buffer to convert.</param>
+        /// <param name="data">Raw pointer to buffer to convert.</param>
         /// <param name="length">Length of the buffer to convert.</param>
         /// <returns>New HMAC key.</returns>
         public static RelayHMACKey FromBytePointer(byte* data, int length)

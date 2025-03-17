@@ -39,6 +39,7 @@ namespace Unity.Networking.Transport
             }
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             m_ErrorCode.Dispose();

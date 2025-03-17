@@ -205,6 +205,8 @@ namespace Unity.Networking.Transport
         static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
         static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
         static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
+
+        /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             SimulatorUtility.Parameters param = settings.GetSimulatorStageParameters();
@@ -326,6 +328,7 @@ namespace Unity.Networking.Transport
         {
         }
 
+        /// <inheritdoc/>
         public int StaticSize => UnsafeUtility.SizeOf<SimulatorUtility.Parameters>();
     }
 }

@@ -60,31 +60,37 @@ namespace Unity.Networking.Transport.Relay
             return endpoint;
         }
 
+        /// <inheritdoc/>
         public static bool operator==(RelayAllocationId lhs, RelayAllocationId rhs)
         {
             return lhs.Compare(rhs) == 0;
         }
 
+        /// <inheritdoc/>
         public static bool operator!=(RelayAllocationId lhs, RelayAllocationId rhs)
         {
             return lhs.Compare(rhs) != 0;
         }
 
+        /// <inheritdoc/>
         public bool Equals(RelayAllocationId other)
         {
             return Compare(other) == 0;
         }
 
+        /// <inheritdoc/>
         public int CompareTo(RelayAllocationId other)
         {
             return Compare(other);
         }
 
+        /// <inheritdoc/>
         public override bool Equals(object other)
         {
             return other != null && this == (RelayAllocationId)other;
         }
 
+        /// <inheritdoc/>
         public override int GetHashCode()
         {
             fixed(byte* p = Value)

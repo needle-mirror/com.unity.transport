@@ -27,7 +27,6 @@ namespace Unity.Networking.Transport
         private struct FragSharedContext
         {
             public int PayloadCapacity;
-            public int MaxMessageSize;
         }
 
         [Flags]
@@ -55,7 +54,7 @@ namespace Unity.Networking.Transport
             int headerCapacity = ctx.header.Capacity;
 
             var systemHeaderCapacity = systemHeaderSize + 1;    // Extra 1 byte is for pipeline id
-            var maxBlockLength = sharedContext->MaxMessageSize - systemHeaderCapacity - inboundBuffer.headerPadding;
+            var maxBlockLength = ctx.maxMessageSize - systemHeaderCapacity - inboundBuffer.headerPadding;
             var maxBlockLengthFirstPacket = maxBlockLength - ctx.accumulatedHeaderCapacity; // The first packet has the headers for all pipeline stages before this one
 
             if (fragContext->endIndex > fragContext->startIndex)
@@ -220,7 +219,6 @@ namespace Unity.Networking.Transport
         {
             var sharedContext = (FragSharedContext*)staticInstanceBuffer;
             sharedContext->PayloadCapacity = settings.GetFragmentationStageParameters().PayloadCapacity;
-            sharedContext->MaxMessageSize = settings.GetNetworkConfigParameters().maxMessageSize;
 
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,

@@ -78,7 +78,7 @@ namespace Unity.Networking.Transport
 
         internal ConnectionId ConnectionAt(int index)
         {
-            if (index < 0 || index > m_List.Length)
+            if (index < 0 || index >= m_List.Length)
                 return default;
 
             return new ConnectionId

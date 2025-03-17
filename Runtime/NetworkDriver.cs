@@ -136,7 +136,7 @@ namespace Unity.Networking.Transport
                 if (m_ConnectionList.GetConnectionState(c) != NetworkConnection.State.Connected)
                     return (int)Error.StatusCode.NetworkStateMismatch;
 
-                var maxMessageSize = m_DriverSender.m_SendQueue.PayloadCapacity;
+                var maxMessageSize = GetMaxSupportedMessageSize(connection);
 
                 var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) + 1 : 0;
                 var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
@@ -305,7 +305,7 @@ namespace Unity.Networking.Transport
                 {
                     var ret = 0;
                     var originalHandle = sendHandle;
-                    var maxMessageSize = m_DriverSender.m_SendQueue.PayloadCapacity;
+                    var maxMessageSize = GetMaxSupportedMessageSize(sendConnection);
                     if ((ret = m_DriverSender.BeginSend(out sendHandle, (uint)math.max(maxMessageSize, originalHandle.size))) != 0)
                     {
                         return ret;
@@ -346,6 +346,29 @@ namespace Unity.Networking.Transport
 
                 var state = m_ConnectionList.GetConnectionState(connection);
                 return state == NetworkConnection.State.Disconnecting ? NetworkConnection.State.Disconnected : state;
+            }
+            
+            /// <summary>
+            /// Retrieves the max supported message size (calculated Path MTU) for a given connection.
+            /// If discovery has not been completed yet, this will return -1.
+            /// </summary>
+            /// <remarks>
+            /// Path MTU discovery is done once as part of the connection handshake.
+            /// Once the system has done the initial Path MTU discovery, it will not update this value if the Path MTU changes.
+            /// In the event the path MTU changes to be smaller, it will require a disconnect and reconnect to update the value
+            /// (which is often better in game contexts than adjusting to a dynamically changing value)
+            /// </remarks>
+            /// <param name="connection">The connection to check</param>
+            /// <returns>The calculated Path MTU size for the connection (clamped to a range of 1024..<see cref="NetworkConfigParameter.maxMessageSize"/>)</returns>
+            public int GetMaxSupportedMessageSize(NetworkConnection connection)
+            {
+                var state = m_ConnectionList.GetConnectionState(connection.ConnectionId);
+                if (state != NetworkConnection.State.Connected)
+                {
+                    return -1;
+                }
+
+                return m_ConnectionList.GetConnectionPathMtu(connection.ConnectionId);
             }
 
             internal NetworkEventQueue.Concurrent m_EventQueue;
@@ -571,16 +594,19 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>Use <see cref="Create"/> to construct <c>NetworkDriver</c> instances.</summary>
+        /// <param name="netIf">Network interface to use.</param>
         [Obsolete("Use NetworkDriver.Create(INetworkInterface networkInterface) instead.", true)]
         public NetworkDriver(INetworkInterface netIf)
             => throw new NotImplementedException();
 
         /// <summary>Use <see cref="Create"/> to construct <c>NetworkDriver</c> instances.</summary>
+        /// <param name="netIf">Network interface to use.</param>
+        /// <param name="settings">Network settings to use.</param>
         [Obsolete("Use NetworkDriver.Create(INetworkInterface networkInterface, NetworkSettings settings) instead.", true)]
         public NetworkDriver(INetworkInterface netIf, NetworkSettings settings)
             => throw new NotImplementedException();
 
-        // interface implementation :::::::::::::::::::::::::::::::::::::::::::
+        /// <inheritdoc/>
         public void Dispose()
         {
             if (!IsCreated)
@@ -739,19 +765,11 @@ namespace Unity.Networking.Transport
         {
             m_PipelineProcessor.Timestamp = LastUpdateTime;
 
-            m_PipelineProcessor.UpdateReceive(ref this, out var updateCount);
-
-            if (updateCount > m_NetworkStack.Connections.Count * 64)
-            {
-                DebugLog.DriverTooManyUpdates(updateCount);
-            }
+            m_PipelineProcessor.UpdateReceive(ref this);
 
             m_DefaultHeaderFlags = UdpCHeader.HeaderFlags.HasPipeline;
-            m_PipelineProcessor.UpdateSend(ToConcurrentSendOnly(), out updateCount);
-            if (updateCount > m_NetworkStack.Connections.Count * 64)
-            {
-                DebugLog.DriverTooManyUpdates(updateCount);
-            }
+            m_PipelineProcessor.UpdateSend(ToConcurrentSendOnly());
+
 #if HOSTNAME_RESOLUTION_AVAILABLE
             for (var i = m_HostnameLookups.Length - 1; i >= 0; --i)
             {
@@ -815,6 +833,7 @@ namespace Unity.Networking.Transport
         /// received packets).
         /// </remarks>
         /// <param name="stages">Array of stages the pipeline should contain.</param>
+        /// <returns>The newly-created pipeline.</returns>
         /// <exception cref="InvalidOperationException">
         /// If called after the driver has established connections or before it is created. Note
         /// this is only thrown if safety checks are enabled (i.e. in the editor).
@@ -847,6 +866,7 @@ namespace Unity.Networking.Transport
         /// </para>
         /// </remarks>
         /// <param name="stages">Array of stage IDs the pipeline should contain.</param>
+        /// <returns>The newly-created pipeline.</returns>
         /// <exception cref="InvalidOperationException">
         /// If called after the driver has established connections or before it is created. Note
         /// this is only thrown if safety checks are enabled (i.e. in the editor).
@@ -899,7 +919,7 @@ namespace Unity.Networking.Transport
         /// <summary>
         /// Set the driver to Listen for incomming connections
         /// </summary>
-        /// <value>Returns 0 on success.</value>
+        /// <returns>Returns 0 on success.</returns>
         /// <exception cref="InvalidOperationException">If the driver is not created properly</exception>
         /// <exception cref="InvalidOperationException">If listen is called more then once on the driver</exception>
         /// <exception cref="InvalidOperationException">If bind has not been called before calling Listen.</exception>
@@ -1263,7 +1283,32 @@ namespace Unity.Networking.Transport
             return state == NetworkConnection.State.Disconnecting ? NetworkConnection.State.Disconnected : state;
         }
 
+        /// <summary>
+        /// Retrieves the max supported message size (calculated Path MTU) for a given connection.
+        /// If discovery has not been completed yet, this will return -1.
+        /// </summary>
+        /// <remarks>
+        /// Path MTU discovery is done once as part of the connection handshake.
+        /// Once the system has done the initial Path MTU discovery, it will not update this value if the Path MTU changes.
+        /// In the event the path MTU changes to be smaller, it will require a disconnect and reconnect to update the value
+        /// (which is often better in game contexts than adjusting to a dynamically changing value)
+        /// </remarks>
+        /// <param name="connection">The connection to check</param>
+        /// <returns>The calculated Path MTU size for the connection (clamped to a range of 1024..<see cref="NetworkConfigParameter.maxMessageSize"/>)</returns>
+        public int GetMaxSupportedMessageSize(NetworkConnection connection)
+        {
+            var state = m_NetworkStack.Connections.GetConnectionState(connection.ConnectionId);
+            if (state != NetworkConnection.State.Connected)
+            {
+                return -1;
+            }
+
+            return m_NetworkStack.Connections.GetConnectionPathMtu(connection.ConnectionId);
+        }
+
         /// <summary>Obsolete. Use <see cref="GetRemoteEndpoint"/> instead.</summary>
+        /// <param name="id">Connection to get the endpoint of.</param>
+        /// <returns>The remote endpoint of the connection.</returns>
         [Obsolete("RemoteEndPoint has been renamed to GetRemoteEndpoint. (UnityUpgradable) -> GetRemoteEndpoint(*)", false)]
         public NetworkEndpoint RemoteEndPoint(NetworkConnection id)
         {
@@ -1289,6 +1334,7 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>Obsolete. Use <see cref="GetLocalEndpoint"/> instead.</summary>
+        /// <returns>The local endpoint of the driver.</returns>
         [Obsolete("LocalEndPoint has been renamed to GetLocalEndpoint. (UnityUpgradable) -> GetLocalEndpoint()", false)]
         public NetworkEndpoint LocalEndPoint()
         {
@@ -1334,7 +1380,6 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>Begin sending data on the given connection (default pipeline).</summary>
-        /// <param name="pipe">Pipeline to send the data on.</param>
         /// <param name="connection">Connection to send the data to.</param>
         /// <param name="writer"><see cref="DataStreamWriter"/> the data can be written to.</param>
         /// <param name="requiredPayloadSize">

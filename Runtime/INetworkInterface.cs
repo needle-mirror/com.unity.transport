@@ -9,6 +9,9 @@ namespace Unity.Networking.Transport
     [Obsolete("Use ReceiveJobArguments.ReceiveQueue instead", true)]
     public struct NetworkPacketReceiver
     {
+        /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
+        /// <param name="dataLen">Amount of memory to allocate.</param>
+        /// <returns>Pointer to allocated memory.</returns>
         public IntPtr AllocateMemory(ref int dataLen)
             => throw new NotImplementedException();
 
@@ -16,19 +19,32 @@ namespace Unity.Networking.Transport
         [Flags]
         public enum AppendPacketMode
         {
+            /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
             None = 0,
+            /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
             NoCopyNeeded = 1
         }
 
+        /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
+        /// <param name="data">Pointer to the packet's data.</param>
+        /// <param name="address">Address to send the packet to.</param>
+        /// <param name="dataLen">Length of the packet's data.</param>
+        /// <param name="mode">Mode in which to append the packet.</param>
+        /// <returns>If packet was appended successfully.</returns>
         public bool AppendPacket(IntPtr data, ref NetworkEndpoint address, int dataLen, AppendPacketMode mode = AppendPacketMode.None)
             => throw new NotImplementedException();
 
+        /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
+        /// <param name="address">Address to check.</param>
+        /// <returns>If the address is used.</returns>
         public bool IsAddressUsed(NetworkEndpoint address)
             => throw new NotImplementedException();
 
+        /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
         public long LastUpdateTime
             => throw new NotImplementedException();
 
+        /// <summary>Obsolete. Part of the old <c>INetworkInterface</c> API.</summary>
         public int ReceiveErrorCode
             => throw new NotImplementedException();
     }

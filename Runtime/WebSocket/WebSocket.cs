@@ -107,7 +107,18 @@ namespace Unity.Networking.Transport
                     ++lineEnd;
 
                 int firstLineEnd = lineEnd;
-                var headerLookup = new NativeParallelHashMap<FixedString512Bytes, FixedString512Bytes>(16, Allocator.Temp);
+                var headerLookup = new NativeParallelHashMap<FixedString128Bytes, FixedString512Bytes>(8, Allocator.Temp);
+
+                // Headers we care about.
+                FixedString128Bytes connectionHeader = "connection";
+                FixedString128Bytes upgradeHeader = "upgrade";
+                FixedString128Bytes protocolHeader = "sec-websocket-protocol";
+                FixedString128Bytes extensionHeader = "sec-websocket-extensions";
+                FixedString128Bytes acceptHeader = "sec-websocket-accept";
+                FixedString128Bytes hostHeader = "host";
+                FixedString128Bytes keyHeader = "sec-websocket-key";
+                FixedString128Bytes versionHeader = "sec-websocket-version";
+
                 while (true)
                 {
                     lineEnd += 2;
@@ -124,7 +135,7 @@ namespace Unity.Networking.Transport
                         ++keyStart;
 
                     int keyEnd = keyStart;
-                    FixedString512Bytes key = default;
+                    FixedString128Bytes key = default;
                     
                     // Not allowing whitespace in keys
                     while (recvHandshake[keyEnd] != ':' && recvHandshake[keyEnd] != ' ' 
@@ -137,6 +148,16 @@ namespace Unity.Networking.Transport
                         key.Add(ch);
                         ++keyEnd;
                     }
+
+                    var isHeaderWeCareAbout = 
+                        key == connectionHeader ||
+                        key == upgradeHeader ||
+                        key == protocolHeader ||
+                        key == extensionHeader ||
+                        key == acceptHeader ||
+                        key == hostHeader ||
+                        key == keyHeader ||
+                        key == versionHeader;
 
                     int valueStart = keyEnd;
                     while (recvHandshake[valueStart] != ':')
@@ -158,6 +179,13 @@ namespace Unity.Networking.Transport
                     int valueEnd = valueStart;
                     while (valueEnd < recvHandshakeLength && recvHandshake[valueEnd] != '\r')
                     {
+                        // Just ignore the value if we don't care about this header.
+                        if (!isHeaderWeCareAbout)
+                        {
+                            ++valueEnd;
+                            continue;
+                        }
+
                         if (value.Length == value.Capacity)
                         {
                             Warn("Received invalid http message for handshake: too large for string buffer.");
@@ -168,16 +196,17 @@ namespace Unity.Networking.Transport
                         ++valueEnd;
                     }
 
-                    // Trim trailing whitespace
-                    while (value.Length > 0 && (value[value.Length - 1] == ' ' || value[value.Length - 1] == '\t'))
-                        value.Length = value.Length - 1;
+                    if (isHeaderWeCareAbout)
+                    {
+                        // Trim trailing whitespace
+                        while (value.Length > 0 && (value[value.Length - 1] == ' ' || value[value.Length - 1] == '\t'))
+                            value.Length = value.Length - 1;
 
-                    headerLookup.TryAdd(key, value);
+                        headerLookup.TryAdd(key, value);
+                    }
                 }
 
                 FixedString128Bytes keyMagic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-                FixedString128Bytes connectionHeader = "connection";
-                FixedString128Bytes upgradeHeader = "upgrade";
                 FixedString512Bytes headerValue;
                 var invalidConnection = !headerLookup.TryGetValue(connectionHeader, out headerValue) || headerValue.Length < 7;
                 // Scan for "upgrade" in a coma separated list
@@ -224,9 +253,6 @@ namespace Unity.Networking.Transport
                         return State.Closed;
                     }
 
-                    FixedString128Bytes protocolHeader = "sec-websocket-protocol";
-                    FixedString128Bytes extensionHeader = "sec-websocket-extensions";
-                    FixedString128Bytes acceptHeader = "sec-websocket-accept";
                     FixedString512Bytes wsKey;
 
                     if (invalidConnection || invalidUpgrade || headerLookup.ContainsKey(protocolHeader) ||
@@ -257,9 +283,6 @@ namespace Unity.Networking.Transport
                 else
                 {
                     FixedString512Bytes handshake;
-                    FixedString128Bytes hostHeader = "host";
-                    FixedString128Bytes keyHeader = "sec-websocket-key";
-                    FixedString128Bytes versionHeader = "sec-websocket-version";
                     var invalidRequestLine = (firstLineEnd < 14 || recvHandshake[0] != 'G' || recvHandshake[1] != 'E' || recvHandshake[2] != 'T' || recvHandshake[3] != ' ' ||
                         recvHandshake[firstLineEnd - 9] != ' ' ||
                         recvHandshake[firstLineEnd - 8] != 'H' || recvHandshake[firstLineEnd - 7] != 'T' || recvHandshake[firstLineEnd - 6] != 'T' || recvHandshake[firstLineEnd - 5] != 'P' ||
@@ -272,7 +295,7 @@ namespace Unity.Networking.Transport
                         invalidVersion || invalidConnection || invalidUpgrade)
                     {
                         WarnIf(invalidRequestLine, "Received handshake with invalid http request line.");
-                        WarnIf (invalidVersion, "Received handshake with invalid or missing sec-websocket-version key.");
+                        WarnIf(invalidVersion, "Received handshake with invalid or missing sec-websocket-version key.");
                         WarnIf(invalidConnection, "Received handshake with invalid or missing Connection key.");
                         WarnIf(invalidUpgrade, "Received handshake with invalid or missing Upgrade key.");
                         WarnIf(!headerLookup.ContainsKey(hostHeader), "Received handshake with a missing host key.");

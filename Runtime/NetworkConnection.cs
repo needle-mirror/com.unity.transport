@@ -231,31 +231,37 @@ namespace Unity.Networking.Transport
             return driver.GetConnectionState(this);
         }
 
+        /// <inheritdoc/>
         public static bool operator==(NetworkConnection lhs, NetworkConnection rhs)
         {
             return lhs.m_ConnectionId == rhs.m_ConnectionId;
         }
 
+        /// <inheritdoc/>
         public static bool operator!=(NetworkConnection lhs, NetworkConnection rhs)
         {
             return lhs.m_ConnectionId != rhs.m_ConnectionId;
         }
 
+        /// <inheritdoc/>
         public override bool Equals(object o)
         {
             return this == (NetworkConnection)o;
         }
 
+        /// <inheritdoc/>
         public bool Equals(NetworkConnection o)
         {
             return this == o;
         }
 
+        /// <inheritdoc/>
         public override int GetHashCode()
         {
             return m_ConnectionId.GetHashCode();
         }
 
+        /// <inheritdoc/>
         public override string ToString()
         {
             return $"NetworkConnection[id{InternalId},v{Version}]";

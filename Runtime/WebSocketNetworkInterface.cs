@@ -7,8 +7,10 @@ namespace Unity.Networking.Transport
 {
     /// <summary>Interface used to establish WebSocket connections.</summary>
     /// <example>
+    /// <para>
     /// This code creates a <see cref="NetworkDriver"/> that will use WebSocket connections, instead
     /// of the default UDP-based connections:
+    /// </para>
     /// <code>
     ///     var driver = NetworkDriver.Create(new WebSocketNetworkInterface());
     ///     // Can then be used just like a UDP-based driver.
@@ -23,6 +25,7 @@ namespace Unity.Networking.Transport
         // is implemented by the browser.
         TCPNetworkInterface tcp;
 
+        /// <summary>Dispose the network interface</summary>
         public void Dispose() => tcp.Dispose();
 
         /// <inheritdoc/>
@@ -176,6 +179,7 @@ namespace Unity.Networking.Transport
             return 0;
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             m_InternalData.Dispose();

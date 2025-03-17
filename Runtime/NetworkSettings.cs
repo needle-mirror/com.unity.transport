@@ -85,6 +85,7 @@ namespace Unity.Networking.Transport
                 m_ParameterOffsets.Add(keys[i], from.m_ParameterOffsets[keys[i]]);
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             // Disposed state is m_Initialized == 1 && m_Parameters.IsCreated == false

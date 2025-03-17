@@ -524,9 +524,7 @@ namespace Unity.Networking.Transport
                     // Detect if the upper layer is requesting to disconnect.
                     if (connectionState == NetworkConnection.State.Disconnecting)
                     {
-                        // Keep the connection alive a bit if we still need to send stuff.
-                        if (!connectionData.HasPendingSends)
-                            Abort(ref connectionId, ref connectionData);
+                        Abort(ref connectionId, ref connectionData);
                         continue;
                     }
 
@@ -641,7 +639,13 @@ namespace Unity.Networking.Transport
 
                     var connectionState = ConnectionList.GetConnectionState(connectionId);
                     if (connectionState == NetworkConnection.State.Disconnected)
+                    {
+                        // Re-enqueue the buffer and drop the packet. We'll never be able to
+                        // actually send this pending send if the connection is down.
+                        SendQueue.EnqueuePacket(bufferIndex, out packetProcessor);
+                        packetProcessor.Drop();
                         continue;
+                    }
 
                     var connectionData = ConnectionMap[connectionId];
 

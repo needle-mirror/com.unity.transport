@@ -30,6 +30,11 @@
             "name": "Unity",
             "expression": "6000.1.0a1",
             "define": "HOSTNAME_RESOLUTION_AVAILABLE"
+        },
+        {
+            "name": "Unity",
+            "expression": "6000.2.0a5",
+            "define": "DONT_FRAGMENT_BIT_AVAILABLE"
         }
     ],
     "noEngineReferences": false

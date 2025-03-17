@@ -1,5 +1,19 @@
 # Change log
 
+## [2.5.0] - 2025-03-17
+
+### New Features
+
+* Added: Added Path MTU discovery support to adjust the maximum packet size for each connection dynamically. The discovered MTU for a client can be queried with `NetworkDriver.GetMaxSupportedMessageSize(connection)`. This value is established as part of the connection handshake and doesn't get recalculated over the lifetime of the connection. This value will also not exceed the NetworkConfig's `MaxMessageSize` value. This value is additionally available to pipelines via `NetworkPipelineContext.maxMessageSize`.
+
+### Fixes
+
+* Fixed an issue where `NetworkEndpoint.SetRawAddressBytes` would use the wrong number of bytes from the provided buffer.
+* Fixed an issue where WebSocket connections would be refused if the client sent large headers (e.g. large cookies).
+* Fixed a WebSocket problem where the send queue could "leak" packets if connections with pending sends were closed. This could eventually cause all sends to fail with the -5 error code (`NetworkSendQueueFull`).
+* Fixed a possible `IndexOutOfRangeException` when using WebSockets and the connection would fail to be established at the TCP level.
+* Fixed a memory leak in the hostname resolution process
+
 ## [2.4.0] - 2024-10-24
 
 ### New features

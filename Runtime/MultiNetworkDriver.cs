@@ -13,8 +13,10 @@ namespace Unity.Networking.Transport
     /// connections). This is useful for cross-play support across different platforms.
     /// </summary>
     /// <example>
+    /// <para>
     /// This code below shows how to create a <c>MultiNetworkDriver</c> that accepts both UDP and
     /// WebSocket connections.
+    /// </para>
     /// <code>
     ///     var udpDriver = NetworkDriver.Create(new UDPNetworkInterface());
     ///     udpDriver.Bind(NetworkEndpoint.AnyIpv4.WithPort(7777)); // UDP port
@@ -28,8 +30,10 @@ namespace Unity.Networking.Transport
     ///     multiDriver.AddDriver(udpDriver);
     ///     multiDriver.AddDriver(wsDriver);
     /// </code>
+    /// <para>
     /// The created <c>MultiNetworkDriver</c> can then be used as one would use a
     /// <see cref="NetworkDriver"/> since they share most of the same APIs.
+    /// </para>
     /// </example>
     public struct MultiNetworkDriver : IDisposable
     {
@@ -209,6 +213,7 @@ namespace Unity.Networking.Transport
             return this.GetDriverRef(connection.DriverId);
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             DriverCount = 0;
