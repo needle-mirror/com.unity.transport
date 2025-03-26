@@ -51,6 +51,7 @@ namespace Unity.Networking.Transport
             public long LastMtuSendTime;
             public int ConnectionAttempts;
             public bool IsLocal;
+            public bool ReceivedMtuAck;
         }
 
         private ConnectionList m_ConnectionList;
@@ -313,6 +314,11 @@ namespace Unity.Networking.Transport
                 {
                     if (Time - connectionData.LastMtuSendTime > 300)
                     {
+                        // For backward compatibility: If we receive NO acks at all, use the configured max size.
+                        if (!connectionData.ReceivedMtuAck)
+                        {
+                            Connections.SetConnectionPathMtu(connectionId, MaxMessageSize);
+                        }
                         connectionData.State = ConnectionState.Established;
                         if (connectionData.IsLocal)
                         {
@@ -531,6 +537,8 @@ namespace Unity.Networking.Transport
                             PreprocessMessage(ref connectionId, ref packetProcessor.EndpointRef);
                             // Have to refetch connection data to avoid overwriting the LastReceivedTime set by PreprocessMessage()
                             connectionData = ConnectionsData[connectionId];
+                            connectionData.ReceivedMtuAck = true;
+                            ConnectionsData[connectionId] = connectionData;
                             if (connectionData.State == ConnectionState.PathMtuDiscovery ||
                                 connectionData.State == ConnectionState.PathMtuDiscoveryStageTwo)
                             {

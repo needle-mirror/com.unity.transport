@@ -43,6 +43,7 @@ namespace Unity.Networking.Transport.Relay
         Ping = 2,
         ConnectRequest = 3,
         Accepted = 6,
+        Rejected = 8,
         Disconnect = 9,
         Relay = 10,
         Error = 12,

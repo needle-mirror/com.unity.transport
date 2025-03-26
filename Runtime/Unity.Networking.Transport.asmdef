@@ -35,6 +35,11 @@
             "name": "Unity",
             "expression": "6000.2.0a5",
             "define": "DONT_FRAGMENT_BIT_AVAILABLE"
+        },
+        {
+            "name": "com.unity.transport.tests",
+            "expression": "0.0",
+            "define": "UNITY_TRANSPORT_ENABLE_PMTUD_BY_DEFAULT"
         }
     ],
     "noEngineReferences": false

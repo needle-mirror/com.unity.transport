@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "unity": "2022.3",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
@@ -13,16 +13,16 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### New Features\n\n* Added: Added Path MTU discovery support to adjust the maximum packet size for each connection dynamically. The discovered MTU for a client can be queried with `NetworkDriver.GetMaxSupportedMessageSize(connection)`. This value is established as part of the connection handshake and doesn't get recalculated over the lifetime of the connection. This value will also not exceed the NetworkConfig's `MaxMessageSize` value. This value is additionally available to pipelines via `NetworkPipelineContext.maxMessageSize`.\n\n### Fixes\n\n* Fixed an issue where `NetworkEndpoint.SetRawAddressBytes` would use the wrong number of bytes from the provided buffer.\n* Fixed an issue where WebSocket connections would be refused if the client sent large headers (e.g. large cookies).\n* Fixed a WebSocket problem where the send queue could \"leak\" packets if connections with pending sends were closed. This could eventually cause all sends to fail with the -5 error code (`NetworkSendQueueFull`).\n* Fixed a possible `IndexOutOfRangeException` when using WebSockets and the connection would fail to be established at the TCP level.\n* Fixed a memory leak in the hostname resolution process"
+    "changelog": "### Changes\n* Changed Path MTU discovery to default to off. It can be enabled using network config parameters.\n\n### Fixes\n* When Path MTU discovery is enabled and a transport connects to a peer that doesn't support it (such as an older version of transport), when discovery times out, it will now revert to previous behavior of using the configured MaxMessageSize rather than using 1024 bytes."
   },
   "upmCi": {
-    "footprint": "e093c6f1fce703b0dfe4185989cb74ad27921cc1"
+    "footprint": "f8e0bf5ef1a0b9fe4abbf890a9d4fcc4a97f7235"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.5/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "93bd0ea88912e8f01d6d20c672afe55dffeac3b0"
+    "revision": "480f597f6f20d8247be3b9e7cc1e6ac41a9e805f"
   },
   "samples": [
     {

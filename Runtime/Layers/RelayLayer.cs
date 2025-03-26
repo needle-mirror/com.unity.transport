@@ -248,6 +248,25 @@ namespace Unity.Networking.Transport
                             packetProcessor.Drop();
                             break;
                         }
+                        case RelayMessageType.Rejected:
+                        {
+                            DebugLog.LogError("Relay allocation maximum connected players limit reached.");
+                            
+                            if (Connections.Count == 1)
+                            {
+                                var connectionId = Connections.ConnectionAt(0);
+                                
+                                if (Connections.GetConnectionState(connectionId) == NetworkConnection.State.Connecting)
+                                {
+                                    Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.ClosedByRemote);
+                                    Connections.FinishDisconnecting(ref connectionId);
+                                    protocolData.ConnectionStatus = RelayConnectionStatus.AllocationInvalid;
+                                }
+                            }
+
+                            packetProcessor.Drop();
+                            break;
+                        }
                         case RelayMessageType.Disconnect:
                         {
                             var disconnectMessage = packetProcessor.GetPayloadDataRef<RelayMessageDisconnect>();
@@ -301,7 +320,6 @@ namespace Unity.Networking.Transport
                         case RelayMessageType.Error:
                         {
                             var errorMessage = packetProcessor.GetPayloadDataRef<RelayMessageError>();
-
                             errorMessage.LogError();
 
                             // ClientPlayerMismatch error means our IP has change and we need to rebind.

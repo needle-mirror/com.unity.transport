@@ -1,5 +1,13 @@
 # Change log
 
+## [2.5.1] - 2025-03-26
+
+### Changes
+* Changed Path MTU discovery to default to off. It can be enabled using network config parameters.
+
+### Fixes
+* When Path MTU discovery is enabled and a transport connects to a peer that doesn't support it (such as an older version of transport), when discovery times out, it will now revert to previous behavior of using the configured MaxMessageSize rather than using 1024 bytes.
+
 ## [2.5.0] - 2025-03-17
 
 ### New Features
