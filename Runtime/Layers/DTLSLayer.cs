@@ -379,7 +379,7 @@ namespace Unity.Networking.Transport
                     return;
 
                 // Check if we have not received anything for too long and we have to reconnect.
-                if (data.LastReceive > 0 && Time - data.LastReceive > ReconnectionTimeout)
+                if (data.LastReceive > 0 && ReconnectionTimeout > 0 && Time - data.LastReceive > ReconnectionTimeout)
                 {
                     data.ReconnectionClientPtr = Binding.unitytls_client_create(Binding.UnityTLSRole_Client, UnityTLSConfig);
                     Binding.unitytls_client_init(data.ReconnectionClientPtr);

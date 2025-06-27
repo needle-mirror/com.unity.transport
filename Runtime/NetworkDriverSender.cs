@@ -108,7 +108,7 @@ namespace Unity.Networking.Transport
                 m_SendQueue.ReleaseBuffer(sendHandle.id);
             }
 
-            public unsafe int EndSend(ref NetworkEndpoint destination, ref NetworkInterfaceSendHandle sendHandle, int padding = 0, ConnectionId connectionId = default)
+            public void EndSend(ref NetworkEndpoint destination, ref NetworkInterfaceSendHandle sendHandle, int padding = 0, ConnectionId connectionId = default)
             {
                 var bufferIndex = sendHandle.id;
 
@@ -135,8 +135,6 @@ namespace Unity.Networking.Transport
                 m_SendQueue.GetEndpointRef(bufferIndex) = destination;
 
                 m_PendingSendQueue.Enqueue(bufferIndex);
-
-                return sendHandle.size;
             }
         }
     }

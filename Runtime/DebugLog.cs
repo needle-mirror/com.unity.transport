@@ -434,30 +434,12 @@ namespace Unity.Networking.Transport.Logging
 #endif
         }
 
-        public static void PipelineCompleteSendFailed(int retval)
+        public static void PipelineSendFailed(int retval)
         {
 #if USE_UNITY_LOGGING
-            Unity.Logging.Log.Warning("CompleteSend failed with the following error code: {ErrorCode}", retval);
+            Unity.Logging.Log.Warning("Sending from within pipeline failed with the following error code: {ErrorCode}", retval);
 #else
-            UnityEngine.Debug.LogWarning(FixedString.Format("CompleteSend failed with the following error code: {0}", retval));
-#endif
-        }
-
-        public static void PipelineEndSendFailed(int retval)
-        {
-#if USE_UNITY_LOGGING
-            Unity.Logging.Log.Warning("An error occurred during EndSend. ErrorCode: {ErrorCode}", retval);
-#else
-            UnityEngine.Debug.LogWarning(FixedString.Format("An error occurred during EndSend. ErrorCode: {0}", retval));
-#endif
-        }
-
-        public static void PipelineProcessSendFailed(int result)
-        {
-#if USE_UNITY_LOGGING
-            Unity.Logging.Log.Warning("ProcessPipelineSend failed with the following error code {ErrorCode}.", result);
-#else
-            UnityEngine.Debug.LogWarning(FixedString.Format("ProcessPipelineSend failed with the following error code {0}.", result));
+            UnityEngine.Debug.LogWarning(FixedString.Format("Sending from within pipeline failed with the following error code: {0}", retval));
 #endif
         }
 

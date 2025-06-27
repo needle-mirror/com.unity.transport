@@ -4,7 +4,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Logging;
-using Unity.Networking.Transport.Protocols;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
@@ -51,10 +50,8 @@ namespace Unity.Networking.Transport
             var sharedContext = (FragSharedContext*)ctx.staticInstanceBuffer;
 
             FragFlags flags = FragFlags.First;
-            int headerCapacity = ctx.header.Capacity;
 
-            var systemHeaderCapacity = systemHeaderSize + 1;    // Extra 1 byte is for pipeline id
-            var maxBlockLength = ctx.maxMessageSize - systemHeaderCapacity - inboundBuffer.headerPadding;
+            var maxBlockLength = ctx.maxMessageSize - systemHeaderSize - inboundBuffer.headerPadding;
             var maxBlockLengthFirstPacket = maxBlockLength - ctx.accumulatedHeaderCapacity; // The first packet has the headers for all pipeline stages before this one
 
             if (fragContext->endIndex > fragContext->startIndex)

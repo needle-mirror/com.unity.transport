@@ -4,7 +4,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Protocols;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport

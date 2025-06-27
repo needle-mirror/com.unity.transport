@@ -15,6 +15,7 @@ namespace Unity.Networking.Transport
         internal const int k_HandshakeSize = 4 + k_HeaderSize;
         internal const uint k_ProtocolSignatureAndVersion = 0x00505455 | (k_ProtocolVersion << 24); // Reversed for endianness
         private const int k_DeferredSendsQueueSize = 64;
+        private const int k_MtuDiscoverySizeIncrement = 32;
 
         internal enum ConnectionState
         {
@@ -192,6 +193,11 @@ namespace Unity.Networking.Transport
 
                         packetProcessor.ConnectionRef = connectionData.UnderlyingConnection;
                         packetProcessor.EndpointRef = Connections.GetConnectionEndpoint(connection);
+
+                        // Remove the header from the offset, since our deferred packet already
+                        // includes it. Without this we can't defer MTU-sized packets.
+                        packetProcessor.SetUnsafeMetadata(0, packetProcessor.Offset - k_HeaderSize);
+
                         packetProcessor.AppendToPayload(deferredPacketProcessor);
 
                         connectionData.LastSendTime = Time;
@@ -387,7 +393,7 @@ namespace Unity.Networking.Transport
                 var connectionData = ConnectionsData[connectionId];
 
                 // Check for the disconnect timeout.
-                if (Time - connectionData.LastReceiveTime > DisconnectTimeout)
+                if (DisconnectTimeout > 0 && Time - connectionData.LastReceiveTime > DisconnectTimeout)
                 {
                     Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.Timeout);
                     ProcessDisconnecting(ref connectionId);
@@ -407,13 +413,14 @@ namespace Unity.Networking.Transport
                 var payload = new ConnectionPayload();
                 UnsafeUtility.MemClear(payload.Data, NetworkParameterConstants.AbsoluteMaxMessageSize);
                 
-                var checkSize = NetworkParameterConstants.AbsoluteMinimumMtuSize + k_HeaderSize;
-                for (; checkSize < MaxMessageSize - k_HeaderSize; checkSize += 32)
+                var checkSize = NetworkParameterConstants.AbsoluteMinimumMtuSize;
+                for (; checkSize < MaxMessageSize; checkSize += k_MtuDiscoverySizeIncrement)
                 {
-                    payload.Length = checkSize - DownStreamPadding - sizeof(MessageType) - sizeof(ConnectionToken) - sizeof(ushort) - k_HeaderSize;
+                    payload.Length = checkSize - DownStreamPadding - sizeof(ushort) - k_HeaderSize;
                     EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
                 }
-                payload.Length = MaxMessageSize - DownStreamPadding - sizeof(MessageType) - sizeof(ConnectionToken) - sizeof(ushort) - k_HeaderSize;
+
+                payload.Length = MaxMessageSize - DownStreamPadding - sizeof(ushort) - k_HeaderSize;
                 EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
             }
 
@@ -542,13 +549,8 @@ namespace Unity.Networking.Transport
                             if (connectionData.State == ConnectionState.PathMtuDiscovery ||
                                 connectionData.State == ConnectionState.PathMtuDiscoveryStageTwo)
                             {
-                                // Account for DownStreamPadding being left out of the payload when it was sent by adding it back in.
-                                var size = packetProcessor.RemoveFromPayloadStart<ushort>();
-                                size = packetProcessor.RemoveFromPayloadStart<ushort>();
-                                if (size == MaxMessageSize - k_HeaderSize)
-                                {
-                                    size = (ushort)MaxMessageSize;
-                                }
+                                packetProcessor.RemoveFromPayloadStart<ushort>(); // Scrap the payload size.
+                                var size = packetProcessor.RemoveFromPayloadStart<ushort>(); // Read the MTU value.
                                 var currentSize = Connections.GetConnectionPathMtu(connectionId);
                                 if (size > currentSize)
                                 {

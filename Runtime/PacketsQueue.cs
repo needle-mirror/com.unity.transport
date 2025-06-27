@@ -222,11 +222,12 @@ namespace Unity.Networking.Transport
 
         internal PacketProcessor GetPacketProcessor(int bufferIndex)
         {
-            return new PacketProcessor
-            {
-                m_Queue = this,
-                m_BufferIndex = bufferIndex,
-            };
+            return new PacketProcessor(m_Buffers[bufferIndex]);
+        }
+
+        internal int GetPacketBufferIndex(int packetIndex)
+        {
+            return m_Queue[packetIndex];
         }
 
         /// <summary>

@@ -224,11 +224,6 @@ namespace Unity.Networking.Transport
             public int BufferIndex;
         }
 
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-        private NativeList<NetworkSocket> m_SocketsPendingAdd;
-        private NativeList<NetworkSocket> m_SocketsPendingRemove;
-#endif
-
         private NativeReference<InternalData> m_InternalData;
 
         // Maps a connection id from the connection list to its connection data.
@@ -296,10 +291,6 @@ namespace Unity.Networking.Transport
             m_ConnectionMap = new ConnectionDataMap<ConnectionData>(1, default, Allocator.Persistent);
             m_PendingSends = new NativeList<PendingSend>(1, Allocator.Persistent);
 
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            m_SocketsPendingAdd = new NativeList<NetworkSocket>(Allocator.Persistent);
-            m_SocketsPendingRemove = new NativeList<NetworkSocket>(Allocator.Persistent);
-#endif
             return 0;
         }
 
@@ -360,40 +351,16 @@ namespace Unity.Networking.Transport
             m_ConnectionMap.Dispose();
             m_ConnectionList.Dispose();
             m_PendingSends.Dispose();
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            m_SocketsPendingAdd.Dispose();
-            m_SocketsPendingRemove.Dispose();
-#endif
         }
 
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dep)
         {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            // Remove closed sockets from the list of sockets to be closed in a domain reload.
-            // This is here because we can't use managed AllSockets to track sockets from within burst compiled jobs.
-            for (int i = 0; i < m_SocketsPendingRemove.Length; i++)
-                AllSockets.Remove(m_SocketsPendingRemove[i]);
-            m_SocketsPendingRemove.Clear();
-
-            // Add connecting sockets to the list of sockets to be closed in a domain reload.
-            // This is here because we can't use managed AllSockets to track sockets from within burst compiled jobs.
-            for (int i = 0; i < m_SocketsPendingAdd.Length; i++)
-                AllSockets.Add(m_SocketsPendingAdd[i]);
-            m_SocketsPendingAdd.Clear();
-#endif
-
             return new ReceiveJob
             {
                 ReceiveQueue = arguments.ReceiveQueue,
                 InternalData = m_InternalData,
                 ConnectionList = m_ConnectionList,
                 ConnectionMap = m_ConnectionMap,
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                SocketsPendingAdd = m_SocketsPendingAdd,
-                SocketsPendingRemove = m_SocketsPendingRemove,
-
-#endif
                 Time = arguments.Time,
             }.Schedule(dep);
         }
@@ -416,23 +383,11 @@ namespace Unity.Networking.Transport
 
             public long Time;
 
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            public NativeList<NetworkSocket> SocketsPendingRemove;
-            public NativeList<NetworkSocket> SocketsPendingAdd;
-
-            private void AllSocketsDeferredAdd(NetworkSocket socket) => SocketsPendingAdd.Add(socket);
-            private void AllSocketsDeferredRemove(NetworkSocket socket) => SocketsPendingRemove.Add(socket);
-#else
-            private void AllSocketsDeferredAdd(NetworkSocket socket) {}
-            private void AllSocketsDeferredRemove(NetworkSocket socket) {}
-#endif
-
             private void Abort(ref ConnectionId connectionId, ref ConnectionData connectionData)
             {
                 ConnectionList.FinishDisconnecting(ref connectionId);
                 ConnectionMap.ClearData(ref connectionId);
                 TCPSocket.Close(connectionData.Socket);
-                AllSocketsDeferredRemove(connectionData.Socket);
             }
 
             public unsafe void Execute()
@@ -443,8 +398,6 @@ namespace Unity.Networking.Transport
                     var acceptedSocket = TCPSocket.Accept(InternalData.Value.ListenSocket, out var localEndpoint);
                     if (IsValid(acceptedSocket))
                     {
-                        AllSocketsDeferredAdd(acceptedSocket);
-
                         var connectionId = ConnectionList.StartConnecting(ref localEndpoint);
                         ConnectionList.FinishConnectingFromRemote(ref connectionId);
                         ConnectionMap[connectionId] = new ConnectionData
@@ -493,8 +446,6 @@ namespace Unity.Networking.Transport
                             if (!IsValid(connectionData.Socket))
                             {
                                 connectionData.Socket = TCPSocket.Connect(remoteEndpoint);
-                                if (IsValid(connectionData.Socket))
-                                    AllSocketsDeferredAdd(connectionData.Socket);
                             }
 
                             connectionData.LastConnectAttempt++;
@@ -512,7 +463,6 @@ namespace Unity.Networking.Transport
                                 // If something went wrong trying to complete the connection just close this socket
                                 // and in the next attempt we'll create a new one.
                                 TCPSocket.Close(connectionData.Socket);
-                                AllSocketsDeferredRemove(connectionData.Socket);
                                 connectionData.Socket = InvalidSocket;
                             }
                         }
@@ -589,9 +539,6 @@ namespace Unity.Networking.Transport
                 ConnectionMap = m_ConnectionMap,
                 ConnectionList = m_ConnectionList,
                 PendingSends = m_PendingSends,
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                SocketsPendingRemove = m_SocketsPendingRemove,
-#endif
             }.Schedule(dep);
         }
 
@@ -606,14 +553,6 @@ namespace Unity.Networking.Transport
             // See the comment in ReceiveJob
             [NativeDisableUnsafePtrRestriction]
             public ConnectionDataMap<ConnectionData> ConnectionMap;
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            public NativeList<NetworkSocket> SocketsPendingRemove;
-
-            private void AllSocketsDeferredRemove(NetworkSocket socket) => SocketsPendingRemove.Add(socket);
-#else
-            private void AllSocketsDeferredRemove(NetworkSocket socket) {}
-#endif
 
             public void Execute()
             {
@@ -767,7 +706,6 @@ namespace Unity.Networking.Transport
                 ConnectionList.FinishDisconnecting(ref connectionId);
                 ConnectionMap.ClearData(ref connectionId);
                 TCPSocket.Close(connectionData.Socket);
-                AllSocketsDeferredRemove(connectionData.Socket);
             }
         }
     }

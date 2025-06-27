@@ -112,7 +112,8 @@ namespace Unity.Networking.Transport
         /// Inactivity timeout for a connection. If nothing is received on a connection for this
         /// amount of time, it is disconnected (a <see cref="NetworkEvent.Type.Disconnect"/> event
         /// will be generated). To prevent this from happenning when the game session is simply
-        /// quiet, set <see cref="heartbeatTimeoutMS"/> to a positive non-zero value.
+        /// quiet, set <see cref="heartbeatTimeoutMS"/> to a positive non-zero value. A value of 0
+        /// will disable the feature entirely, i.e. connections will never timeout.
         /// </summary>
         /// <value>Timeout in milliseconds.</value>
         public int disconnectTimeoutMS;
@@ -130,7 +131,11 @@ namespace Unity.Networking.Transport
         /// peer. This is used to re-establish connections for example when a peer's IP address
         /// changes (e.g. mobile roaming scenarios). To be effective, should be less than
         /// <see cref="disconnectTimeoutMS"/> but greater than <see cref="heartbeatTimeoutMS"/>. A
-        /// value of 0 will disable this functionality.
+        /// value of 0 will disable this functionality. Note that this is only supported on
+        /// connections using DTLS (with or without Relay) at the moment. Roaming is automatically
+        /// supported for UDP non-DTLS connections without a need for this setting. WebSockets
+        /// currently don't support roaming scenarios at all (except for what could be provided by
+        /// the browser).
         /// </summary>
         /// <value>Timeout in milliseconds.</value>
         public int reconnectionTimeoutMS;
@@ -285,7 +290,8 @@ namespace Unity.Networking.Transport
         /// Inactivity timeout for a connection. If nothing is received on a connection for this
         /// amount of time, it is disconnected (a <see cref="NetworkEvent.Type.Disconnect"/> event
         /// will be generated). To prevent this from happenning when the game session is simply
-        /// quiet, set <c>heartbeatTimeoutMS</c> to a positive non-zero value.
+        /// quiet, set <c>heartbeatTimeoutMS</c> to a positive non-zero value. A value of 0
+        /// will disable the feature entirely, i.e. connections will never timeout.
         /// </param>
         /// <param name="heartbeatTimeoutMS">
         /// Time after which if nothing from a peer is received, a heartbeat message will be sent
@@ -297,7 +303,10 @@ namespace Unity.Networking.Transport
         /// peer. This is used to re-establish connections for example when a peer's IP address
         /// changes (e.g. mobile roaming scenarios). To be effective, should be less than
         /// <c>disconnectTimeoutMS</c> but greater than <c>heartbeatTimeoutMS</c>. A value of 0 will
-        /// disable this functionality.
+        /// disable this functionality. Note that this is only supported on connections using DTLS
+        /// (with or without Relay) at the moment. Roaming is automatically supported for UDP
+        /// non-DTLS connections without a need for this setting. WebSockets currently don't support
+        /// roaming scenarios at all (except for what could be provided by the browser).
         /// </param>
         /// <param name="maxFrameTimeMS">
         /// Maximum amount of time a single frame can advance timeout values. In this scenario, a

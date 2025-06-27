@@ -1,5 +1,19 @@
 # Change log
 
+## [2.5.2] - 2025-06-27
+
+### Added
+* Setting a disconnection timeout of 0 (through the `disconnectionTimeoutMs` parameter) will now disable the feature entirely. That is, with a value of 0 connections will not timeout anymore, no matter for how long nothing has been received from the remote peer. This is useful for debugging when a process is stopped by a debugger.
+
+### Changes
+* The fallback mechanism to close sockets when `NetworkDriver.Dispose` is not called has been removed. This editor-only mechanism would track open sockets and automatically close them in cases where they had not been closed manually. This was meant as a safety net for buggy code, but had a performance cost. Starting with this version, this mechanism is removed. It is now necessary to call `NetworkDriver.Dispose` to close sockets. We recommend calling it in cleanup methods like `OnDestroy`. This change is not expected to impact most users, since failure to dispose of the driver would also cause a memory leak that would have generated its own set of warnings. If you don't see these warnings, then you are not impacted by this change.
+
+### Fixes
+* Fixed an issue where MTU discovery could end up with a value that was higher than the actual path MTU.
+* Fixed an issue where a `reconnectionTimeoutMs` of 0 would be ignored if using DTLS.
+* Fixed an issue where `NetworkEndpoint.IsAny` and `NetworkEndpoint.IsLoopback` would throw an exception for endpoints where the network family is `NetworkFamily.Custom`. These properties will now return false for custom endpoints.
+* Fixed an issue where scheduling multiple update or send jobs in the same job chain would result in safety exceptions being thrown when using WebSockets.
+
 ## [2.5.1] - 2025-03-26
 
 ### Changes
@@ -25,7 +39,7 @@
 ## [2.4.0] - 2024-10-24
 
 ### New features
-* Connections can now be made using strings representing domain names or IPs. Hostname resolution will be performed automatically as part of the connection process. (Requires Unity 6000.18f1 or later.)
+* Connections can now be made using strings representing domain names or IPs. Hostname resolution will be performed automatically as part of the connection process. (Requires Unity 6000.1.0a1 or later.)
 
 ### Changes
 * ACKs for the `ReliableSequencedPipelineStage` will now be sent a little more aggressively, which should improve throughput of reliable traffic.

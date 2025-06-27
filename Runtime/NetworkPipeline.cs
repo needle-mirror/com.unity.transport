@@ -497,8 +497,8 @@ namespace Unity.Networking.Transport
                 var inboundBuffer = default(InboundSendBuffer);
                 if (!inUpdateCall)
                 {
-                    inboundBuffer.bufferWithHeaders = (byte*)sendHandle.data + initialHeaderSize + 1;
-                    inboundBuffer.bufferWithHeadersLength = sendHandle.size - initialHeaderSize - 1;
+                    inboundBuffer.bufferWithHeaders = (byte*)sendHandle.data + initialHeaderSize;
+                    inboundBuffer.bufferWithHeadersLength = sendHandle.size - initialHeaderSize;
                     inboundBuffer.buffer = inboundBuffer.bufferWithHeaders + p.headerCapacity;
                     inboundBuffer.bufferLength = inboundBuffer.bufferWithHeadersLength - p.headerCapacity;
                 }
@@ -603,7 +603,7 @@ namespace Unity.Networking.Transport
 
                     if (inboundBuffer.bufferLength != 0)
                     {
-                        if (sendHandle.data != IntPtr.Zero && inboundBuffer.bufferWithHeaders == (byte*)sendHandle.data + initialHeaderSize + 1)
+                        if (sendHandle.data != IntPtr.Zero && inboundBuffer.bufferWithHeaders == (byte*)sendHandle.data + initialHeaderSize)
                         {
                             // Actually send the data - after collapsing it again
                             if (inboundBuffer.buffer != inboundBuffer.bufferWithHeaders)
@@ -611,34 +611,40 @@ namespace Unity.Networking.Transport
                                 UnsafeUtility.MemMove(inboundBuffer.bufferWithHeaders, inboundBuffer.buffer, inboundBuffer.bufferLength);
                                 inboundBuffer.buffer = inboundBuffer.bufferWithHeaders;
                             }
-                            ((byte*)sendHandle.data)[initialHeaderSize] = (byte)pipeline.Id;
-                            int sendSize = initialHeaderSize + 1 + inboundBuffer.bufferLength;
+                            int sendSize = initialHeaderSize + inboundBuffer.bufferLength;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                             if (sendSize > sendHandle.size)
                                 throw new InvalidOperationException("Pipeline increased the data in the buffer, this is not allowed");
 #endif
                             sendHandle.size = sendSize;
-                            if ((retval = driver.CompleteSend(connection, sendHandle, true)) < 0)
+                            if ((retval = driver.CompleteSend(connection, ref sendHandle)) < 0)
                             {
-                                DebugLog.PipelineCompleteSendFailed(retval);
+                                DebugLog.PipelineSendFailed(retval);
                             }
+                            driver.PrependPipelineByte(sendHandle, (byte)pipeline.Id);
                             sendHandle = default;
                         }
                         else
                         {
-                            // TODO: This sends the packet directly, bypassing the pipeline process. The problem is that in that way
-                            // we can't set the hasPipeline flag in the headers. There is a workaround for now.
-                            // Sending without pipeline, the correct pipeline will be added by the default flags when this is called
-
+                            // We send as if there was no pipeline because we already have added the
+                            // pipeline headers to the payload, so there's no need for BeginSend to
+                            // reserve space for those.
                             if (driver.BeginSend(connection, out var writer) == 0)
                             {
-                                writer.WriteByte((byte)pipeline.Id);
                                 writer.WriteBytesUnsafe(inboundBuffer.buffer, inboundBuffer.bufferLength);
 
-                                if ((retval = driver.EndSend(writer)) <= 0)
+                                // We basically do what EndSend is doing, but we prepend our own
+                                // pipeline ID (EndSend would prepent the value 0 which is wrong).
+                                retval = driver.ExtractPendingSendFromWriter(writer, out var pendingSend);
+                                if (retval == 0)
                                 {
-                                    DebugLog.PipelineEndSendFailed(retval);
+                                    pendingSend.SendHandle.size = initialHeaderSize + writer.Length;
+                                    retval = driver.CompleteSend(connection, ref pendingSend.SendHandle);
+                                    driver.PrependPipelineByte(pendingSend.SendHandle, (byte)pipeline.Id);
                                 }
+
+                                if (retval < 0)
+                                    DebugLog.PipelineSendFailed(retval);
                             }
                         }
                     }
@@ -1020,10 +1026,10 @@ namespace Unity.Networking.Transport
             NativeParallelHashSet<UpdatePipeline> currentUpdates = new NativeParallelHashSet<UpdatePipeline>(128, Allocator.Temp);
 
             while (m_SendStageNeedsUpdateRead.TryDequeue(out var update))
-                ProcessSendUpdate(ref concurrent, ref driver, update, currentUpdates);
+                ProcessSendUpdate(ref concurrent, ref driver, update, currentUpdates, m_MaxPacketHeaderSize);
 
             foreach (var sendUpdate in m_SendStageNeedsUpdate)
-                ProcessSendUpdate(ref concurrent, ref driver, sendUpdate, currentUpdates);
+                ProcessSendUpdate(ref concurrent, ref driver, sendUpdate, currentUpdates, m_MaxPacketHeaderSize);
 
             m_SendStageNeedsUpdate.Clear();
 
@@ -1031,14 +1037,14 @@ namespace Unity.Networking.Transport
                 m_SendStageNeedsUpdateRead.Enqueue(currentUpdate);
         }
 
-        private static void ProcessSendUpdate(ref Concurrent self, ref NetworkDriver.Concurrent driver, UpdatePipeline update, NativeParallelHashSet<UpdatePipeline> currentUpdates)
+        private static void ProcessSendUpdate(ref Concurrent self, ref NetworkDriver.Concurrent driver, UpdatePipeline update, NativeParallelHashSet<UpdatePipeline> currentUpdates, int headerSize)
         {
             if (driver.GetConnectionState(update.connection) == NetworkConnection.State.Connected)
             {
-                var result = self.ProcessPipelineSend(driver, update.stage, update.pipeline, update.connection, default, 0, currentUpdates);
+                var result = self.ProcessPipelineSend(driver, update.stage, update.pipeline, update.connection, default, headerSize, currentUpdates);
                 if (result < 0)
                 {
-                    DebugLog.PipelineProcessSendFailed(result);
+                    DebugLog.PipelineSendFailed(result);
                 }
             }
         }

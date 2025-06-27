@@ -12,18 +12,13 @@ namespace Unity.Networking.Transport
     /// </summary>
     public unsafe struct PacketProcessor
     {
-        internal PacketsQueue m_Queue;
-
-        internal int m_BufferIndex;
-
-        private ref PacketMetadata PacketMetadataRef => ref m_Queue.GetMetadataRef(m_BufferIndex);
-        private PacketBuffer PacketBuffer => m_Queue.GetPacketBuffer(m_BufferIndex);
+        private readonly PacketBuffer m_PacketBuffer;
 
         /// <summary>
         /// Whether the packet processor was obtained from a valid <see cref="PacketsQueue"/>.
         /// </summary>
         /// <value>True if obtained from a valid queue, false otherwise.</value>
-        public bool IsCreated => m_Queue.IsCreated;
+        public bool IsCreated => m_PacketBuffer.Payload != IntPtr.Zero;
 
         /// <summary>Size of the packet's data inside the buffer.</summary>
         /// <value>Size in bytes.</value>
@@ -52,9 +47,16 @@ namespace Unity.Networking.Transport
         /// newly-enqueued packets.
         /// </summary>
         /// <value>Endpoint associated with the packet.</value>
-        public ref NetworkEndpoint EndpointRef => ref *((NetworkEndpoint*)PacketBuffer.Endpoint);
+        public ref NetworkEndpoint EndpointRef => ref *((NetworkEndpoint*)m_PacketBuffer.Endpoint);
 
         internal ref ConnectionId ConnectionRef => ref PacketMetadataRef.Connection;
+
+        private ref PacketMetadata PacketMetadataRef => ref *((PacketMetadata*)m_PacketBuffer.Metadata);
+
+        internal PacketProcessor(PacketBuffer packetBuffer)
+        {
+            m_PacketBuffer = packetBuffer;
+        }
 
         /// <summary>Get a reference to the payload data reinterpreted to the type T.</summary>
         /// <typeparam name="T">Type of the data.</typeparam>
@@ -95,7 +97,7 @@ namespace Unity.Networking.Transport
                 return;
 #endif
             }
-            UnsafeUtility.MemCpy(((byte*)PacketBuffer.Payload) + Offset + Length, dataPtr, size);
+            UnsafeUtility.MemCpy(((byte*)m_PacketBuffer.Payload) + Offset + Length, dataPtr, size);
             PacketMetadataRef.DataLength += size;
         }
 
@@ -133,7 +135,7 @@ namespace Unity.Networking.Transport
                 return;
 #endif
             }
-            UnsafeUtility.MemCpy(((byte*)PacketBuffer.Payload + Offset + Length), &value, size);
+            UnsafeUtility.MemCpy(((byte*)m_PacketBuffer.Payload + Offset + Length), &value, size);
             PacketMetadataRef.DataLength += size;
         }
 
@@ -160,7 +162,7 @@ namespace Unity.Networking.Transport
 #endif
             }
 
-            UnsafeUtility.MemCpy((byte*)PacketBuffer.Payload + Offset - size, &value, size);
+            UnsafeUtility.MemCpy((byte*)m_PacketBuffer.Payload + Offset - size, &value, size);
             PacketMetadataRef.DataOffset -= size;
             PacketMetadataRef.DataLength += size;
         }
@@ -216,7 +218,7 @@ namespace Unity.Networking.Transport
 #endif
             }
 
-            UnsafeUtility.MemCpy(ptr, ((byte*)PacketBuffer.Payload) + Offset, size);
+            UnsafeUtility.MemCpy(ptr, ((byte*)m_PacketBuffer.Payload) + Offset, size);
             PacketMetadataRef.DataOffset += size;
             PacketMetadataRef.DataLength -= size;
         }
@@ -258,16 +260,23 @@ namespace Unity.Networking.Transport
                 throw new OverflowException("Packet data overflows packet capacity");
 #endif
 
-            UnsafeUtility.MemCpy(destinationPtr, ((byte*)PacketBuffer.Payload) + Offset, copiedBytes);
+            UnsafeUtility.MemCpy(destinationPtr, ((byte*)m_PacketBuffer.Payload) + Offset, copiedBytes);
 
             return copiedBytes;
         }
 
         /// <summary>Get a raw pointer to the packet data.</summary>
+        /// <remarks>
+        /// Despite what the name of the method implies, this actually gets a pointer to the
+        /// underlying packet buffer of the packet processor, and not the payload itself. The
+        /// payload will be placed further inside the buffer if <see cref="Offset"/> is non-zero.
+        /// If you want a pointer to the payload itself, you must thus add <see cref="Offset"/> to
+        /// the pointer returned by this method.
+        /// </remarks>
         /// <returns>A pointer to the packet data.</returns>
         public void* GetUnsafePayloadPtr()
         {
-            return (byte*)PacketBuffer.Payload;
+            return (byte*)m_PacketBuffer.Payload;
         }
 
         /// <summary>

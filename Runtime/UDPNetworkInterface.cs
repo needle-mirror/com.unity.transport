@@ -26,26 +26,6 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     public struct UDPNetworkInterface : INetworkInterface
     {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-        private class SocketList
-        {
-            public struct SocketId
-            {
-                public NetworkSocket socket;
-            }
-            public List<SocketId> OpenSockets = new List<SocketId>();
-
-            ~SocketList()
-            {
-                foreach (var socket in OpenSockets)
-                {
-                    Binding.Baselib_RegisteredNetwork_Socket_UDP_Close(socket.socket);
-                }
-            }
-        }
-        private static SocketList AllSockets = new SocketList();
-#endif
-
         // Array size to use when batching send/receive requests. We need to batch these requests
         // because the array is stack-allocated, and using the send/receive queue sizes could lead
         // to a stack overflow.
@@ -249,7 +229,7 @@ namespace Unity.Networking.Transport
                     if (packetProcessor.Length == 0)
                         continue;
 
-                    var request = GetRequest(packetProcessor.m_BufferIndex, ref SendBuffers, ref PacketBufferLayout);
+                    var request = GetRequest(SendQueue.GetPacketBufferIndex(i), ref SendBuffers, ref PacketBufferLayout);
 
                     request.payload.offset += (uint)packetProcessor.Offset;
                     request.payload.data += packetProcessor.Offset;
@@ -389,7 +369,7 @@ namespace Unity.Networking.Transport
                 var pollCount = 0;
                 var status = default(Binding.Baselib_RegisteredNetwork_ProcessStatus);
                 while ((status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(socket, &error)) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending
-                       && pollCount++ < ReceiveQueue.Capacity) {}
+                       && pollCount++ < ReceiveQueue.Capacity) { }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (status == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
@@ -464,12 +444,11 @@ namespace Unity.Networking.Transport
             private void ConvertEndpointsToGeneric()
             {
                 var count = ReceiveQueue.Count;
-                for (int i = 0; i < ReceiveQueue.Count; i++)
+                for (int i = 0; i < count; i++)
                 {
-                    var packetProcessor = ReceiveQueue[i];
-                    var request = GetRequest(packetProcessor.m_BufferIndex, ref ReceiveBuffers, ref PacketBufferLayout);
+                    var request = GetRequest(ReceiveQueue.GetPacketBufferIndex(i), ref ReceiveBuffers, ref PacketBufferLayout);
                     if (!ConvertEndpointBufferToGeneric(request.remoteEndpoint.slice))
-                        packetProcessor.Drop();
+                        ReceiveQueue[i].Drop();
                 }
             }
         }
@@ -477,9 +456,9 @@ namespace Unity.Networking.Transport
         /// <inheritdoc/>
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dep)
         {
-            // TODO: Move this inside the receive job (requires MTT-3703).
+            // TODO: Move this inside the job once MTT-12436 is addressed.
             if (m_InternalState.Value.SocketStatus == SocketStatus.SocketNeedsRecreate)
-                RecreateSocket(arguments.Time, ref arguments.ReceiveQueue);
+                RecreateSocket(arguments.Time);
 
             if (m_InternalState.Value.SocketStatus == SocketStatus.SocketFailed)
             {
@@ -574,25 +553,16 @@ namespace Unity.Networking.Transport
                 // If it fails, nothing will break, performance may just be slightly less optimal.
             }
 #endif
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            AllSockets.OpenSockets.Add(new SocketList.SocketId { socket = socket });
-#endif
             return 0;
         }
 
         private static void CloseSocket(NetworkSocket socket)
         {
             if (socket.handle != IntPtr.Zero)
-            {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                AllSockets.OpenSockets.Remove(new SocketList.SocketId { socket = socket });
-#endif
                 Binding.Baselib_RegisteredNetwork_Socket_UDP_Close(socket);
-            }
         }
 
-        private void RecreateSocket(long updateTime, ref PacketsQueue receiveQueue)
+        private void RecreateSocket(long updateTime)
         {
             var state = m_InternalState.Value;
 

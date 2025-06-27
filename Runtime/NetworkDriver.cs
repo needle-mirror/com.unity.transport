@@ -3,7 +3,6 @@ using System.Threading;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Networking.Transport.Protocols;
 using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -34,7 +33,6 @@ namespace Unity.Networking.Transport
                 m_EventQueue = m_EventQueue.ToConcurrent(),
                 m_ConnectionList = m_NetworkStack.Connections,
                 m_PipelineProcessor = m_PipelineProcessor.ToConcurrent(),
-                m_DefaultHeaderFlags = m_DefaultHeaderFlags,
                 m_DriverSender = m_DriverSender.ToConcurrent(),
                 m_DriverReceiver = m_DriverReceiver,
                 m_PacketPadding = m_NetworkStack.PacketPadding,
@@ -52,7 +50,6 @@ namespace Unity.Networking.Transport
                 m_EventQueue = default,
                 m_ConnectionList = m_NetworkStack.Connections,
                 m_PipelineProcessor = m_PipelineProcessor.ToConcurrent(),
-                m_DefaultHeaderFlags = m_DefaultHeaderFlags,
                 m_DriverSender = m_DriverSender.ToConcurrent(),
                 m_DriverReceiver = m_DriverReceiver,
                 m_PacketPadding = m_NetworkStack.PacketPadding,
@@ -112,7 +109,6 @@ namespace Unity.Networking.Transport
                 public NetworkPipeline Pipeline;
                 public NetworkConnection Connection;
                 public NetworkInterfaceSendHandle SendHandle;
-                public int headerSize;
             }
 
             /// <inheritdoc cref="NetworkDriver.BeginSend(NetworkConnection, out DataStreamWriter, int)"/>
@@ -138,7 +134,7 @@ namespace Unity.Networking.Transport
 
                 var maxMessageSize = GetMaxSupportedMessageSize(connection);
 
-                var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) + 1 : 0;
+                var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) : 0;
                 var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
 
                 // If the pipeline doesn't have an explicity payload capacity, then use whatever
@@ -205,7 +201,6 @@ namespace Unity.Networking.Transport
                     Pipeline = pipe,
                     Connection = connection,
                     SendHandle = sendHandle,
-                    headerSize = m_PacketPadding,
                 };
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 m_PendingBeginSend[m_ThreadIndex * JobsUtility.CacheLineSize / 4] = m_PendingBeginSend[m_ThreadIndex * JobsUtility.CacheLineSize / 4] + 1;
@@ -216,11 +211,42 @@ namespace Unity.Networking.Transport
             /// <inheritdoc cref="NetworkDriver.EndSend"/>
             public unsafe int EndSend(DataStreamWriter writer)
             {
+                var ret = ExtractPendingSendFromWriter(writer, out var pendingSend);
+                if (ret != 0)
+                    return ret;
+
+                if (writer.HasFailedWrites)
+                {
+                    AbortSend(pendingSend.SendHandle);
+                    // DataStreamWriter can only have failed writes if we overflow its capacity.
+                    return (int)Error.StatusCode.NetworkPacketOverflow;
+                }
+
+                pendingSend.SendHandle.size = m_PacketPadding + writer.Length;
+
+                if (pendingSend.Pipeline.Id > 0)
+                {
+                    pendingSend.SendHandle.size += m_PipelineProcessor.SendHeaderCapacity(pendingSend.Pipeline);
+                    ret = m_PipelineProcessor.Send(this, pendingSend.Pipeline, pendingSend.Connection, pendingSend.SendHandle, m_PacketPadding);
+                }
+                else
+                {
+                    ret = CompleteSend(pendingSend.Connection, ref pendingSend.SendHandle);
+                    PrependPipelineByte(pendingSend.SendHandle, (byte)0);
+                }
+
+                return ret < 0 ? ret : writer.Length;
+            }
+
+            internal unsafe int ExtractPendingSendFromWriter(DataStreamWriter writer, out PendingSend pendingSend)
+            {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                // Just here to trigger a safety check on the writer
+                // Need this first to trigger a safety check on the writer.
                 if (writer.Capacity == 0)
-                    throw new InvalidOperationException("EndSend without matching BeginSend");
+                    throw new InvalidOperationException("EndSend/AbortSend without matching BeginSend.");
 #endif
+                pendingSend = default;
+
                 PendingSend* pendingSendPtr = (PendingSend*)writer.m_SendHandleData;
                 if (pendingSendPtr == null || pendingSendPtr->Connection == default)
                 {
@@ -240,91 +266,52 @@ namespace Unity.Networking.Transport
 #endif
                 }
 
-                if (writer.HasFailedWrites)
-                {
-                    AbortSend(writer);
-                    // DataStreamWriter can only have failed writes if we overflow its capacity.
-                    return (int)Error.StatusCode.NetworkPacketOverflow;
-                }
+                pendingSend = *pendingSendPtr;
 
-                PendingSend pendingSend = *(PendingSend*)writer.m_SendHandleData;
+                // Make sure reusing that writer will cause an error.
                 pendingSendPtr->Connection = default;
+
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 m_PendingBeginSend[m_ThreadIndex * JobsUtility.CacheLineSize / 4] = m_PendingBeginSend[m_ThreadIndex * JobsUtility.CacheLineSize / 4] - 1;
 #endif
+                return 0;
+            }
 
-                pendingSend.SendHandle.size = pendingSend.headerSize + writer.Length;
-                int retval = 0;
-                if (pendingSend.Pipeline.Id > 0)
+            internal unsafe int CompleteSend(NetworkConnection connection, ref NetworkInterfaceSendHandle sendHandle)
+            {
+                if (0 != (sendHandle.flags & SendHandleFlags.AllocatedByDriver))
                 {
-                    pendingSend.SendHandle.size += m_PipelineProcessor.SendHeaderCapacity(pendingSend.Pipeline) + 1;
-                    var oldHeaderFlags = m_DefaultHeaderFlags;
-                    m_DefaultHeaderFlags = UdpCHeader.HeaderFlags.HasPipeline;
-                    retval = m_PipelineProcessor.Send(this, pendingSend.Pipeline, pendingSend.Connection, pendingSend.SendHandle, pendingSend.headerSize);
-                    m_DefaultHeaderFlags = oldHeaderFlags;
+                    var originalHandle = sendHandle;
+                    var packetSize = math.max(GetMaxSupportedMessageSize(connection), originalHandle.size);
+
+                    var ret = m_DriverSender.BeginSend(out sendHandle, (uint)packetSize);
+                    if (ret != 0)
+                        return ret;
+
+                    UnsafeUtility.MemCpy((void*)sendHandle.data, (void*)originalHandle.data, originalHandle.size);
+                    sendHandle.size = originalHandle.size;
                 }
-                else
-                    // TODO: Is there a better way we could set the hasPipeline value correctly?
-                    // this case is when the message is sent from the pipeline directly, "without a pipeline" so the hasPipeline flag is set in m_DefaultHeaderFlags
-                    // allowing us to capture it here
-                    retval = CompleteSend(pendingSend.Connection, pendingSend.SendHandle, (m_DefaultHeaderFlags & UdpCHeader.HeaderFlags.HasPipeline) != 0);
-                if (retval <= 0)
-                    return retval;
-                return writer.Length;
+
+                var endpoint = m_ConnectionList.GetConnectionEndpoint(connection.ConnectionId);
+                sendHandle.size -= m_PacketPadding;
+                m_DriverSender.EndSend(ref endpoint, ref sendHandle, m_PacketPadding, connection.ConnectionId);
+
+                return 0;
+            }
+
+            internal void PrependPipelineByte(NetworkInterfaceSendHandle sendHandle, byte pipeline)
+            {
+                var packetProcessor = m_DriverSender.m_SendQueue.GetPacketProcessor(sendHandle.id);
+                packetProcessor.PrependToPayload(pipeline);
             }
 
             /// <inheritdoc cref="NetworkDriver.AbortSend"/>
             public unsafe void AbortSend(DataStreamWriter writer)
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                // Just here to trigger a safety check on the writer
-                if (writer.Capacity == 0)
-                    throw new InvalidOperationException("EndSend without matching BeginSend");
-#endif
-                PendingSend* pendingSendPtr = (PendingSend*)writer.m_SendHandleData;
-                if (pendingSendPtr == null || pendingSendPtr->Connection == default)
-                {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    throw new InvalidOperationException("AbortSend without matching BeginSend");
-#else
-                    DebugLog.LogError("AbortSend without matching BeginSend");
-                    return;
-#endif
-                }
-                PendingSend pendingSend = *(PendingSend*)writer.m_SendHandleData;
-                pendingSendPtr->Connection = default;
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                m_PendingBeginSend[m_ThreadIndex * JobsUtility.CacheLineSize / 4] = m_PendingBeginSend[m_ThreadIndex * JobsUtility.CacheLineSize / 4] - 1;
-#endif
+                if (ExtractPendingSendFromWriter(writer, out var pendingSend) != 0)
+                    DebugLog.LogError("Invalid call to AbortSend. Either there is no matching BeginSend call or the connection was closed since.");
+
                 AbortSend(pendingSend.SendHandle);
-            }
-
-            internal unsafe int CompleteSend(NetworkConnection sendConnection, NetworkInterfaceSendHandle sendHandle, bool hasPipeline)
-            {
-                if (0 != (sendHandle.flags & SendHandleFlags.AllocatedByDriver))
-                {
-                    var ret = 0;
-                    var originalHandle = sendHandle;
-                    var maxMessageSize = GetMaxSupportedMessageSize(sendConnection);
-                    if ((ret = m_DriverSender.BeginSend(out sendHandle, (uint)math.max(maxMessageSize, originalHandle.size))) != 0)
-                    {
-                        return ret;
-                    }
-                    UnsafeUtility.MemCpy((void*)sendHandle.data, (void*)originalHandle.data, originalHandle.size);
-                    sendHandle.size = originalHandle.size;
-                }
-
-                var endpoint = m_ConnectionList.GetConnectionEndpoint(sendConnection.ConnectionId);
-                sendHandle.size -= m_PacketPadding;
-                var result = m_DriverSender.EndSend(ref endpoint, ref sendHandle, m_PacketPadding, sendConnection.ConnectionId);
-
-                // TODO: We temporarily add always a pipeline id (even if it's 0) when using new Layers
-                if (!hasPipeline)
-                {
-                    var packetProcessor = m_DriverSender.m_SendQueue.GetPacketProcessor(sendHandle.id);
-                    packetProcessor.PrependToPayload((byte)0);
-                }
-                return result;
             }
 
             internal void AbortSend(NetworkInterfaceSendHandle sendHandle)
@@ -375,7 +362,6 @@ namespace Unity.Networking.Transport
 
             [ReadOnly] internal ConnectionList m_ConnectionList;
             internal NetworkPipelineProcessor.Concurrent m_PipelineProcessor;
-            internal UdpCHeader.HeaderFlags m_DefaultHeaderFlags;
             internal NetworkDriverSender.Concurrent m_DriverSender;
             [ReadOnly] internal NetworkDriverReceiver m_DriverReceiver;
             internal int m_PacketPadding;
@@ -414,7 +400,6 @@ namespace Unity.Networking.Transport
         private NativeReference<InternalState> m_InternalState;
 
         private NetworkPipelineProcessor m_PipelineProcessor;
-        private UdpCHeader.HeaderFlags m_DefaultHeaderFlags;
 
         [ReadOnly] internal NetworkSettings m_NetworkSettings;
 
@@ -568,8 +553,6 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             driver.m_PendingBeginSend = new NativeArray<int>(JobsUtility.MaxJobThreadCount * JobsUtility.CacheLineSize / 4, Allocator.Persistent);
 #endif
-
-            driver.m_DefaultHeaderFlags = 0;
 
             driver.m_EventQueue = new NetworkEventQueue(NetworkParameterConstants.InitialEventQueueSize);
 
@@ -767,7 +750,6 @@ namespace Unity.Networking.Transport
 
             m_PipelineProcessor.UpdateReceive(ref this);
 
-            m_DefaultHeaderFlags = UdpCHeader.HeaderFlags.HasPipeline;
             m_PipelineProcessor.UpdateSend(ToConcurrentSendOnly());
 
 #if HOSTNAME_RESOLUTION_AVAILABLE
@@ -779,8 +761,6 @@ namespace Unity.Networking.Transport
                 }
             }
 #endif
-
-            m_DefaultHeaderFlags = 0;
 
             // Drop incoming connections if not listening. If we're bound but are not listening
             // (say because the user never called Listen or because they called StopListening),

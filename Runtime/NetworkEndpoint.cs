@@ -287,13 +287,13 @@ namespace Unity.Networking.Transport
         /// <value>True if the address is 0.0.0.0 or ::.</value>
         public bool IsAny =>
             (Family == NetworkFamily.Ipv4 || Family == NetworkFamily.Ipv6) &&
-            (this == AnyIpv4.WithPort(Port)) || (this == AnyIpv6.WithPort(Port));
+            (this == AnyIpv4.WithPort(Port) || this == AnyIpv6.WithPort(Port));
 
         /// <summary>Whether the endpoint is for a loopback address.</summary>
         /// <value>True if the address is 127.0.0.1 or ::1.</value>
         public bool IsLoopback =>
             (Family == NetworkFamily.Ipv4 || Family == NetworkFamily.Ipv6) &&
-            (this == LoopbackIpv4.WithPort(Port)) || (this == LoopbackIpv6.WithPort(Port));
+            (this == LoopbackIpv4.WithPort(Port) || this == LoopbackIpv6.WithPort(Port));
 
         /// <summary>
         /// Attempt to parse the provided IP address and port. Prefer this method when parsing IP
@@ -558,7 +558,7 @@ namespace Unity.Networking.Transport
                 throw new ArgumentException($"Raw IPv6 addresses must be {k_Ipv4Length} bytes long (got {length}).");
 
             if (family == NetworkFamily.Custom && length > k_CustomLength)
-                throw new ArgumentException($"Raw custom addresses must be at least {k_CustomLength} bytes long (got {length}).");
+                throw new ArgumentException($"Raw custom addresses must be no greater than {k_CustomLength} bytes long (got {length}).");
 
             if (family == NetworkFamily.Invalid)
                 throw new ArgumentException("Can't set raw address if family is invalid.");
