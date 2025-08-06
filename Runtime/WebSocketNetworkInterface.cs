@@ -244,6 +244,11 @@ namespace Unity.Networking.Transport
                         {
                             var socket = ++WebSocket.s_NextSocketId;
                             var url = GetServerURL(connectionId);
+
+                            #if UNITY_TRANSPORT_TESTS_INSTALLED
+                            DebugLog.Log(FixedString.Format("WebSocket: Connecting to {0}.", url));
+                            #endif
+
                             WebSocket.Create(socket, (IntPtr)url.GetUnsafePtr(), url.Length);
 
                             connectionData.ConnectStartTime = Time;
@@ -320,21 +325,32 @@ namespace Unity.Networking.Transport
                 }
             }
 
-            // Get the address to connect to for the given connection. If not using TLS, then this
-            // is just "ws://{address}:{port}" where address/port are taken from the connection's
-            // endpoint in the connection list. But if using TLS, then the hostname provided in the
-            // secure parameters overrides the address, and we connect to "wss://{hostname}:{port}"
-            // (with the port still taken from the connection's endpoint in the connection list).
+            // Get the address to connect to for the given connection.
             private FixedString512Bytes GetServerURL(ConnectionId connection)
             {
                 var endpoint = ConnectionList.GetConnectionEndpoint(connection);
                 var secureHostname = InternalData.Value.SecureHostname;
-                var path = InternalData.Value.Path;
 
-                if (secureHostname.IsEmpty)
-                    return FixedString.Format("ws://{0}{1}", endpoint.ToFixedString(), path);
+                // If provided a secure hostname, then we're connecting over WSS.
+                FixedString512Bytes url = secureHostname.IsEmpty ? "ws://" : "wss://";
+
+                // If the address family is custom, we can assume that the user called the Connect
+                // method that performs hostname resolution and thus the endpoint contains the
+                // entire hostname plus the port. Also if a secure hostname was not provided, then
+                // we can just grab the endpoint as is.
+                if (endpoint.Family == NetworkFamily.Custom || secureHostname.IsEmpty)
+                {
+                    url.Append(endpoint.ToFixedString512Bytes());
+                }
                 else
-                    return FixedString.Format("wss://{0}:{1}{2}", secureHostname, endpoint.Port, path);
+                {
+                    url.Append(secureHostname);
+                    url.Append(':');
+                    url.Append(endpoint.Port);
+                }
+
+                url.Append(InternalData.Value.Path);
+                return url;
             }
         }
 

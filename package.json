@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.5.2",
+  "version": "2.5.3",
   "unity": "2022.3",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
@@ -13,16 +13,16 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### Added\n* Setting a disconnection timeout of 0 (through the `disconnectionTimeoutMs` parameter) will now disable the feature entirely. That is, with a value of 0 connections will not timeout anymore, no matter for how long nothing has been received from the remote peer. This is useful for debugging when a process is stopped by a debugger.\n\n### Changes\n* The fallback mechanism to close sockets when `NetworkDriver.Dispose` is not called has been removed. This editor-only mechanism would track open sockets and automatically close them in cases where they had not been closed manually. This was meant as a safety net for buggy code, but had a performance cost. Starting with this version, this mechanism is removed. It is now necessary to call `NetworkDriver.Dispose` to close sockets. We recommend calling it in cleanup methods like `OnDestroy`. This change is not expected to impact most users, since failure to dispose of the driver would also cause a memory leak that would have generated its own set of warnings. If you don't see these warnings, then you are not impacted by this change.\n\n### Fixes\n* Fixed an issue where MTU discovery could end up with a value that was higher than the actual path MTU.\n* Fixed an issue where a `reconnectionTimeoutMs` of 0 would be ignored if using DTLS.\n* Fixed an issue where `NetworkEndpoint.IsAny` and `NetworkEndpoint.IsLoopback` would throw an exception for endpoints where the network family is `NetworkFamily.Custom`. These properties will now return false for custom endpoints.\n* Fixed an issue where scheduling multiple update or send jobs in the same job chain would result in safety exceptions being thrown when using WebSockets."
+    "changelog": "### Fixes\n* Fixed an issue where port 0 would be used when connecting over secure WebSockets (WSS) if using the version of the `NetworkDriver.Connect` method that accepts hostnames."
   },
   "upmCi": {
-    "footprint": "e4256f4ba148080143bb4d750cfc5dd1f487c355"
+    "footprint": "98a279a6ab95874ec516b3618f006abd49ab3b48"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.5/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "9e0fa993857f36ada7eb4f12a937b50d037a640a"
+    "revision": "7d717d279fe4220a52e3f1f9228505392c6dfdf5"
   },
   "samples": [
     {

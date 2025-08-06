@@ -1,5 +1,10 @@
 # Change log
 
+## [2.5.3] - 2025-08-06
+
+### Fixes
+* Fixed an issue where port 0 would be used when connecting over secure WebSockets (WSS) if using the version of the `NetworkDriver.Connect` method that accepts hostnames.
+
 ## [2.5.2] - 2025-06-27
 
 ### Added

@@ -39,7 +39,7 @@
         {
             "name": "com.unity.transport.tests",
             "expression": "0.0",
-            "define": "UNITY_TRANSPORT_ENABLE_PMTUD_BY_DEFAULT"
+            "define": "UNITY_TRANSPORT_TESTS_INSTALLED"
         }
     ],
     "noEngineReferences": false

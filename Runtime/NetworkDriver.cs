@@ -890,6 +890,15 @@ namespace Unity.Networking.Transport
                 throw new InvalidOperationException(
                     "Bind cannot be called after establishing connections");
 #endif
+
+            // If using Relay, you usually want to bind to an ephemeral port since we'll be acting
+            // as a client even if we're the server. Binding to hardcoded ports has caused issues
+            // before when say two peers on the same machine were attempting to bind to the port
+            // provided by the Relay service. It's not an error though so just warn about it.
+            var usingRelay = m_NetworkStack.TryGetLayer<RelayLayer>(out _);
+            if (usingRelay && endpoint.Port != 0)
+                DebugLog.LogWarning("When using Unity Relay, NetworkDriver should be bound to 0.0.0.0:0 (i.e. NetworkEndpoint.AnyIpv4).");
+
             var result = m_NetworkStack.Bind(ref endpoint);
             Bound = result == 0;
 

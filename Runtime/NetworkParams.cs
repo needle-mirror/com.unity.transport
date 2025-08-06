@@ -365,7 +365,7 @@ namespace Unity.Networking.Transport
             int receiveQueueCapacity    = NetworkParameterConstants.ReceiveQueueCapacity,
             int sendQueueCapacity       = NetworkParameterConstants.SendQueueCapacity,
             int maxMessageSize          = NetworkParameterConstants.MaxMessageSize,
-#if UNITY_TRANSPORT_ENABLE_PMTUD_BY_DEFAULT
+#if UNITY_TRANSPORT_TESTS_INSTALLED
             bool performPathMtuDiscovery = true
 #else
             bool performPathMtuDiscovery = false
@@ -447,7 +447,7 @@ namespace Unity.Networking.Transport
                 parameters.maxFrameTimeMS        = 0;
                 parameters.fixedFrameTimeMS      = 0;
                 parameters.maxMessageSize        = NetworkParameterConstants.MaxMessageSize;
-#if UNITY_TRANSPORT_ENABLE_PMTUD_BY_DEFAULT
+#if UNITY_TRANSPORT_TESTS_INSTALLED
                 parameters.performPathMtuDiscovery = true;
 #else
                 parameters.performPathMtuDiscovery = false;
