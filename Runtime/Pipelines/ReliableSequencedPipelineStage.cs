@@ -41,14 +41,16 @@ namespace Unity.Networking.Transport
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             ReliableUtility.Parameters param = settings.GetReliableStageParameters();
+            param.WindowSize = (param.WindowSize + 7) & ~7; // Ensure window size is a multiple of 8.
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
+
             return new NetworkPipelineStage(
                 Receive: ReceiveFunctionPointer,
                 Send: SendFunctionPointer,
                 InitializeConnection: InitializeConnectionFunctionPointer,
                 ReceiveCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 SendCapacity: ReliableUtility.ProcessCapacityNeeded(param),
-                HeaderCapacity: ReliableUtility.PacketHeaderWireSize(param.WindowSize),
+                HeaderCapacity: ReliableUtility.MaxPacketHeaderWireSize(param.WindowSize),
                 SharedStateCapacity: ReliableUtility.SharedCapacityNeeded(param)
             );
         }
@@ -63,36 +65,35 @@ namespace Unity.Networking.Transport
             // Request a send update to see if a queued packet needs to be resent later or if an ack packet should be sent
             requests = NetworkPipelineStage.Requests.SendUpdate;
 
-            var header = new ReliableUtility.PacketHeader();
             var reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
             var shared = (ReliableUtility.SharedContext*)ctx.internalSharedProcessBuffer;
 
             // We've received a packet (i.e. not a resume call).
             if (inboundBuffer.buffer != null)
             {
-                var inboundArray = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(inboundBuffer.buffer, inboundBuffer.bufferLength, Allocator.Invalid);
+                var bufferSpan = new ReadOnlySpan<byte>(inboundBuffer.buffer, inboundBuffer.bufferLength);
+                var headerSize = ReliableUtility.ReadHeader(bufferSpan, out var header, out var mask, shared->WindowSize);
+                if (headerSize <= 0)
+                {
+                    // Failed to read the header, drop the packet.
+                    inboundBuffer = default;
+                    return;
+                }
 
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                var safetyHandle = AtomicSafetyHandle.GetTempMemoryHandle();
-                NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref inboundArray, safetyHandle);
-#endif
-
-                var reader = new DataStreamReader(inboundArray);
-                reader.ReadBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
-                var packetWithoutHeader = inboundBuffer.Slice(ReliableUtility.PacketHeaderWireSize(ctx));
+                var packetWithoutHeader = inboundBuffer.Slice(headerSize);
 
                 // Drop the packet. We'll set it back if it was expected.
                 inboundBuffer = default;
 
-                if (header.Type == (ushort)ReliableUtility.PacketType.Ack)
+                if (header.Type == (byte)ReliableUtility.PacketType.Ack)
                 {
                     // Packet is just an ACK.
-                    ReliableUtility.ReadAckPacket(ctx, header);
+                    ReliableUtility.ReadAckPacket(ctx, header, mask);
                 }
                 else
                 {
                     // Packet contains a payload.
-                    var receivedSequenceId = ReliableUtility.Read(ctx, header);
+                    var receivedSequenceId = ReliableUtility.Read(ctx, header, mask);
                     if (receivedSequenceId >= 0)
                     {
                         var nextExpectedSequenceId = (ushort)(reliable->Delivered + 1);
@@ -130,7 +131,6 @@ namespace Unity.Networking.Transport
             // Request an update to see if a queued packet needs to be resent later or if an ack packet should be sent
             requests = NetworkPipelineStage.Requests.Update;
 
-            var header = new ReliableUtility.PacketHeader();
             var reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
 
             // Release any packets that might have been acknowledged since the last call.
@@ -138,7 +138,8 @@ namespace Unity.Networking.Transport
 
             if (inboundBuffer.buffer != null)
             {
-                if (ReliableUtility.Write(ctx, inboundBuffer, ref header) < 0)
+                var sequence = ReliableUtility.Write(ctx, inboundBuffer);
+                if (sequence < 0)
                 {
                     // We failed to store the packet for possible later resends, abort and report this as a send error
                     inboundBuffer = default;
@@ -146,8 +147,9 @@ namespace Unity.Networking.Transport
                     return (int)Error.StatusCode.NetworkSendQueueFull;
                 }
 
-                ctx.header.Clear();
-                ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
+                ReliableUtility.WriteHeader(ref ctx, ReliableUtility.PacketType.Payload, sequence);
+                ReliableUtility.UpdateContextAfterPacketSend(ctx);
+
                 return (int)Error.StatusCode.Success;
             }
 
@@ -155,15 +157,15 @@ namespace Unity.Networking.Transport
 
             if (reliable->Resume != ReliableUtility.NullEntry)
             {
-                inboundBuffer = ReliableUtility.ResumeSend(ctx, out header);
+                inboundBuffer = ReliableUtility.ResumeSend(ctx);
+                ReliableUtility.WriteHeader(ref ctx, ReliableUtility.PacketType.Payload, reliable->Resume);
+                ReliableUtility.UpdateContextAfterPacketSend(ctx);
 
                 // Check if we need to resume again after this packet.
                 reliable->Resume = ReliableUtility.GetNextSendResumeSequence(ctx);
                 if (reliable->Resume != ReliableUtility.NullEntry)
                     requests |= NetworkPipelineStage.Requests.Resume;
 
-                ctx.header.Clear();
-                ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
                 return (int)Error.StatusCode.Success;
             }
 
@@ -176,14 +178,16 @@ namespace Unity.Networking.Transport
 
             if (ReliableUtility.ShouldSendAck(ctx))
             {
-                ReliableUtility.WriteAckPacket(ctx, ref header);
+                ReliableUtility.WriteHeader(ref ctx, ReliableUtility.PacketType.Ack);
+                ReliableUtility.UpdateContextAfterPacketSend(ctx);
 
-                ctx.header.WriteBytesUnsafe((byte*)&header, ReliableUtility.PacketHeaderWireSize(ctx));
-
-                // TODO: Sending dummy byte over since the pipeline won't send an empty payload (ignored on receive)
+                // Pipeline machinery won't accept an empty payload, so send a dummy payload byte
+                // along with our acknowledgement. This will be ignored by the receiver.
+                // TODO: Fix the pipeline machinery to avoid needing to do this.
                 inboundBuffer.bufferWithHeadersLength = inboundBuffer.headerPadding + 1;
                 inboundBuffer.bufferWithHeaders = (byte*)UnsafeUtility.Malloc(inboundBuffer.bufferWithHeadersLength, 8, Allocator.Temp);
                 inboundBuffer.SetBufferFromBufferWithHeaders();
+
                 return (int)Error.StatusCode.Success;
             }
 

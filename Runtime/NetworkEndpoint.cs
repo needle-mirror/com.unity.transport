@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Unity.Collections;
@@ -7,8 +6,8 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Baselib;
 using Unity.Baselib.LowLevel;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -321,14 +320,14 @@ namespace Unity.Networking.Transport
 
             if (family != NetworkFamily.Ipv4 && family != NetworkFamily.Ipv6)
             {
-                DebugLog.LogError("Can only parse addresses that are IPv4 or IPv6.");
+                Debug.LogError("Can only parse addresses that are IPv4 or IPv6.");
                 return false;
             }
 
 #if UNITY_SWITCH
             if (family == NetworkFamily.Ipv6)
             {
-                DebugLog.LogError("IPv6 is not supported on Switch.");
+                Debug.LogError("IPv6 is not supported on Switch.");
                 return false;
             }
 #endif
@@ -336,7 +335,7 @@ namespace Unity.Networking.Transport
 #if (UNITY_PS4 || UNITY_PS5)
             if (family == NetworkFamily.Ipv6)
             {
-                DebugLog.LogError("IPv6 is not supported on PlayStation platforms.");
+                Debug.LogError("IPv6 is not supported on PlayStation platforms.");
                 return false;
             }
 #endif
@@ -541,14 +540,14 @@ namespace Unity.Networking.Transport
             return !lhs.Equals(rhs);
         }
 
-        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        [System.Diagnostics.Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
         private void CheckFamilyIsIPv4OrIPv6()
         {
             if (Family != NetworkFamily.Ipv4 && Family != NetworkFamily.Ipv6)
                 throw new InvalidOperationException($"Trying to access endpoint as IPv4 or IPv6, but family is {Family}.");
         }
 
-        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        [System.Diagnostics.Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
         private static void CheckRawAddressLength(int length, NetworkFamily family)
         {
             if (family == NetworkFamily.Ipv4 && length != k_Ipv4Length)

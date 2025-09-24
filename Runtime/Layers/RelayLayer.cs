@@ -1,8 +1,8 @@
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -241,7 +241,7 @@ namespace Unity.Networking.Transport
                             else
                             {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                                DebugLog.LogError("Received a Relay Accepted message but there is not one connection in the list. One and only one connection is expected when initiating a connection using Relay");
+                                Debug.LogError("Received a Relay Accepted message but there is not one connection in the list. One and only one connection is expected when initiating a connection using Relay");
 #endif
                             }
 
@@ -250,7 +250,7 @@ namespace Unity.Networking.Transport
                         }
                         case RelayMessageType.Rejected:
                         {
-                            DebugLog.LogError("Relay allocation maximum connected players limit reached.");
+                            Debug.LogError("Relay allocation maximum connected players limit reached.");
                             
                             if (Connections.Count == 1)
                             {
@@ -382,7 +382,7 @@ namespace Unity.Networking.Transport
                     {
                         if (Time - protocolData.ConnectStartTime > protocolData.MaxConnectTime)
                         {
-                            DebugLog.LogError("Failed to establish connection with the Relay server (server didn't answer any BIND message).");
+                            Debug.LogError("Failed to establish connection with the Relay server (server didn't answer any BIND message).");
                             protocolData.ConnectionStatus = RelayConnectionStatus.AllocationInvalid;
                         }
                         else if (isFirstConnectAttempt || isAttemptTimeoutExpired)
@@ -451,7 +451,7 @@ namespace Unity.Networking.Transport
                     }
                     else
                     {
-                        DebugLog.LogError("Failed to establish connection with the Relay server.");
+                        Debug.LogError("Failed to establish connection with the Relay server.");
                         protocolData.ConnectionStatus = RelayConnectionStatus.AllocationInvalid;
                     }
                 }
@@ -510,7 +510,7 @@ namespace Unity.Networking.Transport
                 if (Connections.Count > 1)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    DebugLog.LogError("Connect can only be called once when using Relay");
+                    Debug.LogError("Connect can only be called once when using Relay");
 #endif
                     Connections.StartDisconnecting(ref connectionId, Error.DisconnectReason.ProtocolError);
                     Connections.FinishDisconnecting(ref connectionId);

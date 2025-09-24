@@ -53,13 +53,12 @@ namespace Unity.Networking.Transport
 #else
 
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -132,7 +131,7 @@ namespace Unity.Networking.Transport
         {
             get
             {
-                DebugLog.LogWarning("Local endpoint is not available in web browsers.");
+                Debug.LogWarning("Local endpoint is not available in web browsers.");
                 return NetworkEndpoint.AnyIpv4;
             }
         }
@@ -246,7 +245,7 @@ namespace Unity.Networking.Transport
                             var url = GetServerURL(connectionId);
 
                             #if UNITY_TRANSPORT_TESTS_INSTALLED
-                            DebugLog.Log(FixedString.Format("WebSocket: Connecting to {0}.", url));
+                            Debug.Log(FixedString.Format("WebSocket: Connecting to {0}.", url));
                             #endif
 
                             WebSocket.Create(socket, (IntPtr)url.GetUnsafePtr(), url.Length);

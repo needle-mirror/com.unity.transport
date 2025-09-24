@@ -4,9 +4,8 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 using BurstRuntime = Unity.Burst.BurstRuntime;
 using static Unity.Networking.Transport.NetworkPipelineStage;
 
@@ -453,7 +452,7 @@ namespace Unity.Networking.Transport
                 if (Interlocked.CompareExchange(ref *sendBufferLock, 1, 0) != 0)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    DebugLog.LogError("The parallel network driver needs to process a single unique connection per job, processing a single connection multiple times in a parallel for is not supported.");
+                    Debug.LogError("The parallel network driver needs to process a single unique connection per job, processing a single connection multiple times in a parallel for is not supported.");
 #endif
                     driver.AbortSend(sendHandle);
                     return (int)Error.StatusCode.NetworkDriverParallelForErr;
@@ -515,7 +514,7 @@ namespace Unity.Networking.Transport
                     {
                         if (inboundBuffer.bufferWithHeadersLength > 0)
                         {
-                            DebugLog.LogError("Can't start from a stage with a buffer");
+                            Debug.LogError("Can't start from a stage with a buffer");
                             return (int)Error.StatusCode.NetworkStateMismatch;
                         }
                         for (int i = 0; i < startStage; ++i)
@@ -587,9 +586,10 @@ namespace Unity.Networking.Transport
 #endif
                         if (ctx.header.Length < stageHeaderCapacity)
                         {
-                            int wastedSpace = stageHeaderCapacity - ctx.header.Length;
                             // Remove wasted space in the header
+                            int wastedSpace = stageHeaderCapacity - ctx.header.Length;
                             UnsafeUtility.MemMove(inboundBuffer.buffer - wastedSpace, inboundBuffer.buffer, inboundBuffer.bufferLength);
+                            inboundBuffer.bufferWithHeadersLength -= wastedSpace;
                         }
 
                         // Update the inbound buffer for next iteration
@@ -619,9 +619,12 @@ namespace Unity.Networking.Transport
                             sendHandle.size = sendSize;
                             if ((retval = driver.CompleteSend(connection, ref sendHandle)) < 0)
                             {
-                                DebugLog.PipelineSendFailed(retval);
+                                Debug.LogWarning($"Sending from within pipeline failed with the following error code: {retval}");
                             }
-                            driver.PrependPipelineByte(sendHandle, (byte)pipeline.Id);
+                            else
+                            {
+                                driver.PrependPipelineByte(sendHandle, (byte)pipeline.Id);
+                            }
                             sendHandle = default;
                         }
                         else
@@ -640,11 +643,12 @@ namespace Unity.Networking.Transport
                                 {
                                     pendingSend.SendHandle.size = initialHeaderSize + writer.Length;
                                     retval = driver.CompleteSend(connection, ref pendingSend.SendHandle);
-                                    driver.PrependPipelineByte(pendingSend.SendHandle, (byte)pipeline.Id);
+                                    if (retval >= 0)
+                                        driver.PrependPipelineByte(pendingSend.SendHandle, (byte)pipeline.Id);
                                 }
 
                                 if (retval < 0)
-                                    DebugLog.PipelineSendFailed(retval);
+                                    Debug.LogWarning($"Sending from within pipeline failed with the following error code: {retval}");
                             }
                         }
                     }
@@ -856,7 +860,7 @@ namespace Unity.Networking.Transport
             }
         }
 
-        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        [System.Diagnostics.Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
         private void ValidateStages(NativeArray<NetworkPipelineStageId> stages)
         {
             var reliableIndex = -1;
@@ -1044,7 +1048,7 @@ namespace Unity.Networking.Transport
                 var result = self.ProcessPipelineSend(driver, update.stage, update.pipeline, update.connection, default, headerSize, currentUpdates);
                 if (result < 0)
                 {
-                    DebugLog.PipelineSendFailed(result);
+                    Debug.LogWarning($"Sending from within pipeline failed with the following error code: {result}");
                 }
             }
         }
@@ -1073,7 +1077,7 @@ namespace Unity.Networking.Transport
         {
             if (pipelineId == 0 || pipelineId > m_Pipelines.Length)
             {
-                DebugLog.ErrorPipelineReceiveInvalid(pipelineId, m_Pipelines.Length);
+                Debug.LogError($"Received a packet with an invalid pipeline ({pipelineId}, should be between 1 and {m_Pipelines.Length}). Possible mismatch between pipeline definitions on each end of the connection.");
                 return;
             }
             var p = m_Pipelines[pipelineId - 1];

@@ -3,7 +3,6 @@ using AOT;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
 
 namespace Unity.Networking.Transport
@@ -170,7 +169,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                         throw new InvalidOperationException($"Fragmentation capacity exceeded");
 #else
-                        DebugLog.LogError($"Fragmentation capacity exceeded");
+                        UnityEngine.Debug.LogError($"Fragmentation capacity exceeded");
                         return;
 #endif
                     }

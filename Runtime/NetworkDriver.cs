@@ -7,9 +7,9 @@ using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Networking.Transport.Error;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
 using Unity.Networking.Transport.Utilities;
+using UnityEngine;
 using BurstRuntime = Unity.Burst.BurstRuntime;
 
 namespace Unity.Networking.Transport
@@ -97,8 +97,7 @@ namespace Unity.Networking.Transport
                 var headerSize = m_PipelineProcessor.m_MaxPacketHeaderSize;
                 if (pipe.Id > 0)
                 {
-                    // All headers plus one byte for pipeline id
-                    headerSize += m_PipelineProcessor.SendHeaderCapacity(pipe) + 1;
+                    headerSize += m_PipelineProcessor.SendHeaderCapacity(pipe);
                 }
 
                 return headerSize;
@@ -122,42 +121,17 @@ namespace Unity.Networking.Transport
             {
                 writer = default;
 
-                if (connection.InternalId < 0 || connection.InternalId >= m_ConnectionList.Count)
-                    return (int)Error.StatusCode.NetworkIdMismatch;
-
-                var c = m_ConnectionList.ConnectionAt(connection.InternalId);
-                if (c.Version != connection.Version)
-                    return (int)Error.StatusCode.NetworkVersionMismatch;
-
-                if (m_ConnectionList.GetConnectionState(c) != NetworkConnection.State.Connected)
-                    return (int)Error.StatusCode.NetworkStateMismatch;
-
-                var maxMessageSize = GetMaxSupportedMessageSize(connection);
-
-                var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) : 0;
-                var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
-
-                // If the pipeline doesn't have an explicity payload capacity, then use whatever
-                // will fit inside the MTU (considering protocol and pipeline overhead). If there is
-                // an explicity pipeline payload capacity we use that directly. Right now only
-                // fragmented pipelines have an explicity capacity, and we want users to be able to
-                // rely on this configured value.
-                var payloadCapacity = pipelinePayloadCapacity == 0
-                    ? maxMessageSize - m_PacketPadding - pipelineHeader
-                    : pipelinePayloadCapacity;
-
-                // Total capacity is the full size of the buffer we'll allocate. Without an explicit
-                // pipeline payload capacity, this is the MTU. Otherwise it's the pipeline payload
-                // capacity plus whatever overhead we need to transmit the packet.
-                var totalCapacity = pipelinePayloadCapacity == 0
-                    ? maxMessageSize
-                    : pipelinePayloadCapacity + m_PacketPadding + pipelineHeader;
+                var payloadCapacity = GetMaxSupportedPayloadSize(connection, pipe);
+                if (payloadCapacity < 0)
+                    return payloadCapacity;
 
                 // Check if we can accomodate the user's required payload size.
                 if (payloadCapacity < requiredPayloadSize)
-                {
                     return (int)Error.StatusCode.NetworkPacketOverflow;
-                }
+
+                // Total capacity is the full size of the buffer we'll allocate.
+                var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) : 0;
+                var totalCapacity = payloadCapacity + m_PacketPadding + pipelineHeader;
 
                 // Allocate less memory if user doesn't require our full capacity.
                 if (requiredPayloadSize > 0 && payloadCapacity > requiredPayloadSize)
@@ -168,7 +142,7 @@ namespace Unity.Networking.Transport
                 }
 
                 var sendHandle = default(NetworkInterfaceSendHandle);
-                if (totalCapacity > maxMessageSize)
+                if (totalCapacity > GetMaxSupportedMessageSize(connection))
                 {
                     sendHandle.data = (IntPtr)UnsafeUtility.Malloc(totalCapacity, 8, Allocator.Temp);
                     sendHandle.capacity = totalCapacity;
@@ -309,7 +283,7 @@ namespace Unity.Networking.Transport
             public unsafe void AbortSend(DataStreamWriter writer)
             {
                 if (ExtractPendingSendFromWriter(writer, out var pendingSend) != 0)
-                    DebugLog.LogError("Invalid call to AbortSend. Either there is no matching BeginSend call or the connection was closed since.");
+                    Debug.LogError("Invalid call to AbortSend. Either there is no matching BeginSend call or the connection was closed since.");
 
                 AbortSend(pendingSend.SendHandle);
             }
@@ -334,28 +308,44 @@ namespace Unity.Networking.Transport
                 var state = m_ConnectionList.GetConnectionState(connection);
                 return state == NetworkConnection.State.Disconnecting ? NetworkConnection.State.Disconnected : state;
             }
-            
-            /// <summary>
-            /// Retrieves the max supported message size (calculated Path MTU) for a given connection.
-            /// If discovery has not been completed yet, this will return -1.
-            /// </summary>
-            /// <remarks>
-            /// Path MTU discovery is done once as part of the connection handshake.
-            /// Once the system has done the initial Path MTU discovery, it will not update this value if the Path MTU changes.
-            /// In the event the path MTU changes to be smaller, it will require a disconnect and reconnect to update the value
-            /// (which is often better in game contexts than adjusting to a dynamically changing value)
-            /// </remarks>
-            /// <param name="connection">The connection to check</param>
-            /// <returns>The calculated Path MTU size for the connection (clamped to a range of 1024..<see cref="NetworkConfigParameter.maxMessageSize"/>)</returns>
+
+            /// <inheritdoc cref="NetworkDriver.GetMaxSupportedMessageSize"/>
             public int GetMaxSupportedMessageSize(NetworkConnection connection)
             {
+                if (connection.InternalId < 0 || connection.InternalId >= m_ConnectionList.Count)
+                    return (int)Error.StatusCode.NetworkIdMismatch;
+
+                var c = m_ConnectionList.ConnectionAt(connection.InternalId);
+                if (c.Version != connection.Version)
+                    return (int)Error.StatusCode.NetworkVersionMismatch;
+
                 var state = m_ConnectionList.GetConnectionState(connection.ConnectionId);
                 if (state != NetworkConnection.State.Connected)
                 {
-                    return -1;
+                    return (int)Error.StatusCode.NetworkStateMismatch;
                 }
 
                 return m_ConnectionList.GetConnectionPathMtu(connection.ConnectionId);
+            }
+
+            /// <inheritdoc cref="NetworkDriver.GetMaxSupportedPayloadSize"/>
+            public int GetMaxSupportedPayloadSize(NetworkConnection connection, NetworkPipeline pipe)
+            {
+                var maxMessageSize = GetMaxSupportedMessageSize(connection);
+                if (maxMessageSize < 0)
+                    return maxMessageSize;
+
+                var pipelineHeader = (pipe.Id > 0) ? m_PipelineProcessor.SendHeaderCapacity(pipe) : 0;
+                var pipelinePayloadCapacity = m_PipelineProcessor.PayloadCapacity(pipe);
+
+                // If the pipeline doesn't have an explicity payload capacity, then use whatever
+                // will fit inside the MTU (considering protocol and pipeline overhead). If there is
+                // an explicity pipeline payload capacity we use that directly. Right now only
+                // fragmented pipelines have an explicity capacity, and we want users to be able to
+                // rely on this configured value.
+                return pipelinePayloadCapacity == 0
+                    ? maxMessageSize - m_PacketPadding - pipelineHeader
+                    : pipelinePayloadCapacity;
             }
 
             internal NetworkEventQueue.Concurrent m_EventQueue;
@@ -426,12 +416,15 @@ namespace Unity.Networking.Transport
         /// <value>True if the driver is bound, false otherwise.</value>
         public bool Bound
         {
-            get => m_InternalState.Value.Bound;
+            get => IsCreated ? m_InternalState.Value.Bound : false;
             private set
             {
-                var state = m_InternalState.Value;
-                state.Bound = value;
-                m_InternalState.Value = state;
+                if (IsCreated)
+                {
+                    var state = m_InternalState.Value;
+                    state.Bound = value;
+                    m_InternalState.Value = state;
+                }
             }
         }
 
@@ -442,12 +435,15 @@ namespace Unity.Networking.Transport
         /// <value>True if the driver is listening, false otherwise.</value>
         public bool Listening
         {
-            get => m_InternalState.Value.Listening;
+            get => IsCreated ? m_InternalState.Value.Listening : false;
             private set
             {
-                var state = m_InternalState.Value;
-                state.Listening = value;
-                m_InternalState.Value = state;
+                if (IsCreated)
+                {
+                    var state = m_InternalState.Value;
+                    state.Listening = value;
+                    m_InternalState.Value = state;
+                }
             }
         }
 
@@ -512,14 +508,14 @@ namespace Unity.Networking.Transport
 
                 if (relayParameter.ServerData.IsWebSocket == (byte)1 && netifTypeHash != wsTypeHash)
                 {
-                    DebugLog.LogError("Relay is configured to use WebSockets, but NetworkDriver uses UDP. " +
+                    Debug.LogError("Relay is configured to use WebSockets, but NetworkDriver uses UDP. " +
                         "Make sure to pass WebSocketNetworkInterface as the first parameter when calling NetworkDriver.Create().");
                     throw new ArgumentException("Mismatched Relay configuration and network interface.");
                 }
 
                 if (relayParameter.ServerData.IsWebSocket == (byte)0 && netifTypeHash == wsTypeHash)
                 {
-                    DebugLog.LogError("Relay is configured to use UDP, but NetworkDriver was created with WebSocketNetworkInterface." +
+                    Debug.LogError("Relay is configured to use UDP, but NetworkDriver was created with WebSocketNetworkInterface." +
                         "If usage of WebSockets is intended, the Relay allocation should be created with the \"wss\" connection type.");
                     throw new ArgumentException("Mismatched Relay configuration and network interface.");
                 }
@@ -646,7 +642,7 @@ namespace Unity.Networking.Transport
                     var connectionState = connectionList.GetConnectionState(connectionList.ConnectionAt(i));
                     if (conCount != 0 && connectionState != NetworkConnection.State.Disconnected && connectionState != NetworkConnection.State.Disconnecting)
                     {
-                        DebugLog.ErrorResetNotEmptyEventQueue(conCount, i, listenState);
+                        Debug.LogError($"Resetting event queue with pending events (Count={conCount}, ConnectionID={i}) Listening: {listenState}");
                     }
                 }
                 bool didPrint = false;
@@ -657,7 +653,7 @@ namespace Unity.Networking.Transport
                         pendingSend[i * JobsUtility.CacheLineSize / 4] = 0;
                         if (!didPrint)
                         {
-                            DebugLog.LogError("Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
+                            Debug.LogError("Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
                             didPrint = true;
                         }
                     }
@@ -897,7 +893,7 @@ namespace Unity.Networking.Transport
             // provided by the Relay service. It's not an error though so just warn about it.
             var usingRelay = m_NetworkStack.TryGetLayer<RelayLayer>(out _);
             if (usingRelay && endpoint.Port != 0)
-                DebugLog.LogWarning("When using Unity Relay, NetworkDriver should be bound to 0.0.0.0:0 (i.e. NetworkEndpoint.AnyIpv4).");
+                Debug.LogWarning("When using Unity Relay, NetworkDriver should be bound to 0.0.0.0:0 (i.e. NetworkEndpoint.AnyIpv4).");
 
             var result = m_NetworkStack.Bind(ref endpoint);
             Bound = result == 0;
@@ -994,7 +990,7 @@ namespace Unity.Networking.Transport
             var maxSize = m_DriverSender.SendQueue.PayloadCapacity - connectRequestHeaderSize;
             if (payload.Length > maxSize)
             {
-                DebugLog.ErrorConnectPayloadTooLarge(payload.Length, maxSize);
+                Debug.LogError($"Payload provided to Connect() call is too large ({payload.Length} bytes, maximum is {maxSize}). Ignoring.");
             }
             else
             {
@@ -1025,7 +1021,7 @@ namespace Unity.Networking.Transport
                         bindEndpoint = endpoint;
                         break;
                     default:
-                        DebugLog.LogError("Can't connect to endpoint with invalid address family.");
+                        Debug.LogError("Can't connect to endpoint with invalid address family.");
                         return false;
                 }
 
@@ -1245,7 +1241,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new InvalidOperationException("Invalid connection");
 #else
-                DebugLog.LogError("Trying to get pipeline buffers for invalid connection.");
+                Debug.LogError("Trying to get pipeline buffers for invalid connection.");
                 readProcessingBuffer = default;
                 writeProcessingBuffer = default;
                 sharedBuffer = default;
@@ -1273,26 +1269,52 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Retrieves the max supported message size (calculated Path MTU) for a given connection.
-        /// If discovery has not been completed yet, this will return -1.
+        /// Retrieve the maximum supported message size (calculated path MTU) for a given
+        /// connection. If discovery has not been completed yet, this will return
+        /// <see cref="NetworkStateMismatch"/> (-3).
         /// </summary>
         /// <remarks>
-        /// Path MTU discovery is done once as part of the connection handshake.
-        /// Once the system has done the initial Path MTU discovery, it will not update this value if the Path MTU changes.
-        /// In the event the path MTU changes to be smaller, it will require a disconnect and reconnect to update the value
-        /// (which is often better in game contexts than adjusting to a dynamically changing value)
+        /// <para>
+        /// The returned value is the maximum size of a full message, including headers that could
+        /// be added by Unity Transport (e.g. for pipelines) but exclusing any headers that would be
+        /// added by the OS (e.g. UDP and IP headers). For the more common case of wanting to know
+        /// what the maximum payload on a given connection/pipeline is, use the method
+        /// <see cref="GetMaxSupportedPayloadSize(NetworkConnection, NetworkPipeline)"/>.
+        /// </para>
+        /// <para>
+        /// Path MTU discovery is done once as part of the connection handshake. Once the system has
+        /// done the initial path MTU discovery, it will not update this value if the path MTU
+        /// changes. In the event it changes to be smaller, it will require a disconnect and
+        /// reconnect to update the value (which is often better in game contexts than adjusting to
+        /// a dynamically changing value).
+        /// </para>
         /// </remarks>
-        /// <param name="connection">The connection to check</param>
-        /// <returns>The calculated Path MTU size for the connection (clamped to a range of 1024..<see cref="NetworkConfigParameter.maxMessageSize"/>)</returns>
+        /// <param name="connection">Connection to get the MTU for.</param>
+        /// <returns>The calculated path MTU for the connection, or negative on error.</returns>
         public int GetMaxSupportedMessageSize(NetworkConnection connection)
         {
-            var state = m_NetworkStack.Connections.GetConnectionState(connection.ConnectionId);
-            if (state != NetworkConnection.State.Connected)
-            {
-                return -1;
-            }
+            return ToConcurrentSendOnly().GetMaxSupportedMessageSize(connection);
+        }
 
-            return m_NetworkStack.Connections.GetConnectionPathMtu(connection.ConnectionId);
+        /// <summary>
+        /// Retrieve the maximum supported payload size on a given connection and pipeline. This
+        /// corresponds to the capacity of the <see cref="DataStreamWriter"/> that would be returned
+        /// by <see cref="BeginSend"/> for the same connection and pipeline. If MTU discovery has
+        /// not completed yet, this will return <see cref="NetworkStateMismatch"/> (-3).
+        /// </summary>
+        /// <remarks>
+        /// If the pipeline contains a fragmentation stage, the returned value will take into
+        /// account the maximum payload size that is configured for fragmentation. Thus if calling
+        /// this method on a fragmented pipeline, the returned value will actually be *higher* than
+        /// the underlying path MTU. To obtain the actual path MTU, use the method
+        /// <see cref="GetMaxSupportedMessageSize(NetworkConnection)"/>.
+        /// </remarks>
+        /// <param name="connection">Connection to get the payload size for.</param>
+        /// <param name="pipe">Pipeline to get the payload size for.</param>
+        /// <returns>Calculated maximum payload size, or negative on error.</returns>
+        public int GetMaxSupportedPayloadSize(NetworkConnection connection, NetworkPipeline pipe)
+        {
+            return ToConcurrentSendOnly().GetMaxSupportedPayloadSize(connection, pipe);
         }
 
         /// <summary>Obsolete. Use <see cref="GetRemoteEndpoint"/> instead.</summary>
@@ -1462,7 +1484,7 @@ namespace Unity.Networking.Transport
                 //that corresponds to an underlying Connection that lives in m_NetworkStack.Connections without having obtained it from Accept() first.
                 if (id >= 0 && type == NetworkEvent.Type.Data && !m_NetworkStack.Connections.IsConnectionAccepted(ref connectionId))
                 {
-                    DebugLog.LogWarning("A NetworkEvent.Data event was discarded for a connection that had not been accepted yet. To avoid this, consider calling Accept() prior to PopEvent() in your project's network update loop, or only use PopEventForConnection() in conjunction with Accept().");
+                    Debug.LogWarning("A NetworkEvent.Data event was discarded for a connection that had not been accepted yet. To avoid this, consider calling Accept() prior to PopEvent() in your project's network update loop, or only use PopEventForConnection() in conjunction with Accept().");
                     continue;
                 }
 

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 using Random = Unity.Mathematics.Random;
 
 namespace Unity.Networking.Transport.Utilities
@@ -122,13 +122,13 @@ namespace Unity.Networking.Transport.Utilities
 
             if (currentParams->MaxPacketCount != newParams.MaxPacketCount)
             {
-                DebugLog.LogError("Simulator stage maximum packet count can't be modified.");
+                Debug.LogError("Simulator stage maximum packet count can't be modified.");
                 return;
             }
 
             if (currentParams->MaxPacketSize != newParams.MaxPacketSize)
             {
-                DebugLog.LogError("Simulator stage maximum packet size can't be modified.");
+                Debug.LogError("Simulator stage maximum packet size can't be modified.");
                 return;
             }
 
@@ -393,7 +393,7 @@ namespace Unity.Networking.Transport.Utilities
 
             if (!foundSlot)
             {
-                DebugLog.SimulatorNoSpace(param.MaxPacketCount);
+                Debug.LogWarning($"Simulator has no space left in the delayed packets queue ({param.MaxPacketCount} packets already in queue). Letting packet go through. Increase MaxPacketCount during driver construction.");
                 return false;
             }
 

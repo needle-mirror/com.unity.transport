@@ -2,9 +2,9 @@ using System;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Relay;
 using Unity.Networking.Transport.TLS;
+using UnityEngine;
 using BurstRuntime = Unity.Burst.BurstRuntime;
 
 namespace Unity.Networking.Transport
@@ -241,7 +241,7 @@ namespace Unity.Networking.Transport
 #endif
 
             if (result != 0)
-                DebugLog.ErrorStackInitFailure(typeof(T).ToString(), result);
+                Debug.LogError($"Failed to initialize the NetworkStack. Layer {typeof(T).ToString()} with error code: {result}.");
 
             m_Layers.Add(NetworkLayerWrapper.Create(ref layer));
             m_AccumulatedPacketPadding.Add(m_TotalPacketPadding);
@@ -300,7 +300,7 @@ namespace Unity.Networking.Transport
                     sendQueue.Capacity,
                     networkConfig.sendQueueCapacity));
 #else
-                DebugLog.ErrorStackSendCreateWrongBufferCount(sendQueue.Capacity, networkConfig.sendQueueCapacity);
+                Debug.LogError($"The provided buffers count ({sendQueue.Capacity}) must be equal to the sendQueueCapacity ({networkConfig.sendQueueCapacity})");
 #endif
             }
 
@@ -314,7 +314,7 @@ namespace Unity.Networking.Transport
                     receiveQueue.Capacity,
                     networkConfig.receiveQueueCapacity));
 #else
-                DebugLog.ErrorStackReceiveCreateWrongBufferCount(sendQueue.Capacity, networkConfig.sendQueueCapacity);
+                Debug.LogError($"The provided buffers count ({receiveQueue.Capacity}) must be equal to the receiveQueueCapacity ({networkConfig.receiveQueueCapacity})");
 #endif
             }
         }

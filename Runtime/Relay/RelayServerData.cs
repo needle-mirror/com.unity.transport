@@ -2,7 +2,7 @@ using System;
 using System.Net;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 #if RELAY_SDK_INSTALLED
 using Unity.Services.Relay.Models;
@@ -90,7 +90,7 @@ namespace Unity.Networking.Transport.Relay
 
 #if UNITY_WEBGL
             if (connectionType == "udp" || connectionType == "dtls")
-                DebugLog.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
+                UnityEngine.Debug.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
 #endif
 
             IsWebSocket = connectionType == "ws" || connectionType == "wss" ? (byte)1 : (byte)0;
@@ -120,7 +120,7 @@ namespace Unity.Networking.Transport.Relay
 
 #if UNITY_WEBGL
             if (connectionType == "udp" || connectionType == "dtls")
-                DebugLog.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
+                UnityEngine.Debug.LogWarning($"Relay connection type is set to \"{connectionType}\" which is not valid on WebGL. Use \"wss\" instead.");
 #endif
 
             IsWebSocket = connectionType == "ws" || connectionType == "wss" ? (byte)1 : (byte)0;
@@ -276,7 +276,7 @@ namespace Unity.Networking.Transport.Relay
                 return NetworkEndpoint.Parse(address, port, (NetworkFamily)family);
             }
 
-            DebugLog.ErrorRelayMapHostFailure(host);
+            Debug.LogError($"Couldn't map hostname {host} to an IP address.");
             return default;
 #endif
         }

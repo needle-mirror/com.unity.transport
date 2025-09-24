@@ -1,7 +1,5 @@
 # Integration with `Unity.Logging`
 
-Unity Transport offers an optional integration with the Unity Logging package (`com.unity.logging package`). This package is a flexible alternative to the classic Unity logging mechanism and is particularly useful for production servers.
+The Unity Transport package no longer has special support for the Unity Logging package (`com.unity.logging`). This package is being deprecated in Unity 6.3 and its use is no longer recommended.
 
-Normally, log messages would all go through `UnityEngine.Debug.Log`, but when the logging package is included in a project, Unity Transport will automatically use `Unity.Logging` with the default logger settings. 
-
-Check the [logging package documentation site](https://docs.unity3d.com/Packages/com.unity.logging@latest) for more information on how to adjust specific log settings. 
+Unity Transport now only logs through the default `Debug.Log` mechanism. By default the logs will still be handled by the Unity Logging package if installed, since its default configuration includes handling of all Unity logs. The only loss of functionality in this scenario is that logs emitted from Unity Transport will no longer be properly structured. Very few logs used this capability however, so this should not be noticeable.

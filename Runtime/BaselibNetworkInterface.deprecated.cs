@@ -1,6 +1,6 @@
 using Unity.Jobs;
 using System;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -55,12 +55,12 @@ namespace Unity.Networking.Transport
             if (receiveQueueCapacity <= 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("ReceiveQueueCapacity", receiveQueueCapacity);
+                Debug.LogError($"ReceiveQueueCapacity value ({receiveQueueCapacity}) must be greater than 0");
             }
             if (sendQueueCapacity <= 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("SendQueueCapacity", sendQueueCapacity);
+                Debug.LogError($"SendQueueCapacity value ({sendQueueCapacity}) must be greater than 0");
             }
 
             return valid;

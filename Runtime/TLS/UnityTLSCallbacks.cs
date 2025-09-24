@@ -5,7 +5,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
-using Unity.Networking.Transport.Logging;
 using Unity.TLS.LowLevel;
 using UnityEngine;
 
@@ -114,7 +113,7 @@ namespace Unity.Networking.Transport.TLS
                 var newOffset = packet.Offset - ctx->PacketPadding;
                 if (newOffset < 0)
                 {
-                    DebugLog.ErrorTLSInvalidOffset(packet.Offset, ctx->PacketPadding);
+                    Debug.LogError($"Invalid offset in packet processor ({packet.Offset}, should be >={ctx->PacketPadding}).");
                     // TODO Is this really the correct error code for this situation?
                     return UNITYTLS_ERR_SSL_WANT_WRITE;
                 }
@@ -194,7 +193,7 @@ namespace Unity.Networking.Transport.TLS
             log.Append(message, (int)messageLength.ToUInt32());
 
             // TODO Use the log level to pick the right logging method.
-            DebugLog.Log(log);
+            Debug.Log(log);
         }
 
         // Can't believe we're reimplementing strlen() from C...

@@ -1,6 +1,6 @@
 using System;
 using Unity.Collections;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport.Utilities
 {
@@ -76,13 +76,13 @@ namespace Unity.Networking.Transport.Utilities
                 if (PayloadCapacity <= 0)
                 {
                     valid = false;
-                    DebugLog.ErrorValueIsZeroOrNegative("PayloadCapacity", PayloadCapacity);
+                    Debug.LogError($"{nameof(PayloadCapacity)} value ({PayloadCapacity}) must be greater than 0");
                 }
 
                 if (PayloadCapacity >= k_MaxPayloadCapacity)
                 {
                     valid = false;
-                    DebugLog.ErrorFragmentationMaxPayloadTooLarge(PayloadCapacity, k_MaxPayloadCapacity);
+                    Debug.LogError($"{nameof(PayloadCapacity)} value ({PayloadCapacity}) can't be greater than {k_MaxPayloadCapacity}");
                 }
 
                 return valid;

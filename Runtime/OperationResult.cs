@@ -1,6 +1,6 @@
 using System;
 using Unity.Collections;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -33,7 +33,7 @@ namespace Unity.Networking.Transport
             {
                 if (value != 0)
                 {
-                    DebugLog.ErrorOperation(ref m_Label, value);
+                    Debug.LogError($"Error on {m_Label}, errorCode = {value}");
                 }
                 m_ErrorCode.Value = value;
             }

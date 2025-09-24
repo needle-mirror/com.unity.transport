@@ -3,8 +3,8 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -15,7 +15,6 @@ namespace Unity.Networking.Transport
         internal const int k_HandshakeSize = 4 + k_HeaderSize;
         internal const uint k_ProtocolSignatureAndVersion = 0x00505455 | (k_ProtocolVersion << 24); // Reversed for endianness
         private const int k_DeferredSendsQueueSize = 64;
-        private const int k_MtuDiscoverySizeIncrement = 32;
 
         internal enum ConnectionState
         {
@@ -412,15 +411,30 @@ namespace Unity.Networking.Transport
                 connectionData.LastMtuSendTime = Time;
                 var payload = new ConnectionPayload();
                 UnsafeUtility.MemClear(payload.Data, NetworkParameterConstants.AbsoluteMaxMessageSize);
-                
-                var checkSize = NetworkParameterConstants.AbsoluteMinimumMtuSize;
-                for (; checkSize < MaxMessageSize; checkSize += k_MtuDiscoverySizeIncrement)
+
+                var overheadSize = DownStreamPadding + sizeof(ushort) + k_HeaderSize;
+                var minimumSize = NetworkParameterConstants.AbsoluteMinimumMtuSize;
+
+                // Check the minimum size.
+                payload.Length = minimumSize - overheadSize;
+                EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
+
+                // Check the maximum size minus 100 bytes (if larger than minimum).
+                if (MaxMessageSize - 100 > minimumSize)
                 {
-                    payload.Length = checkSize - DownStreamPadding - sizeof(ushort) - k_HeaderSize;
+                    payload.Length = MaxMessageSize - 100 - overheadSize;
                     EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
                 }
 
-                payload.Length = MaxMessageSize - DownStreamPadding - sizeof(ushort) - k_HeaderSize;
+                // Check the maximum size minus 20 bytes (if larger than minimum).
+                if (MaxMessageSize - 20 > minimumSize)
+                {
+                    payload.Length = MaxMessageSize - 20 - overheadSize;
+                    EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
+                }
+
+                // Check the maximum size.
+                payload.Length = MaxMessageSize - overheadSize;
                 EnqueueDeferredMessage(connectionId, MessageType.MtuCheck, ref connectionData.Token, payload);
             }
 
@@ -600,7 +614,7 @@ namespace Unity.Networking.Transport
                             break;
                         }
                         default:
-                            DebugLog.ReceivedMessageWasNotProcessed(messageType);
+                            Debug.LogWarning($"Received message with type {(byte)messageType} was not processed.");
                             packetProcessor.Drop();
                             break;
                     }
@@ -655,7 +669,7 @@ namespace Unity.Networking.Transport
                     if (protocolVersion != k_ProtocolVersion)
                     {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                        DebugLog.ProtocolMismatch(k_ProtocolVersion, protocolVersion);
+                        Debug.LogWarning($"Simple Connection Protocol version mismatch. This could happen if remote connection UTP version is different. (local: {k_ProtocolVersion}, remote: {protocolVersion})");
 #endif
                         return true;
                     }

@@ -1,6 +1,6 @@
 using System;
 using Unity.Collections;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 using UnityEngine.Serialization;
 
 namespace Unity.Networking.Transport
@@ -212,52 +212,52 @@ namespace Unity.Networking.Transport
             if (connectTimeoutMS < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("connectTimeoutMS", connectTimeoutMS);
+                Debug.LogError($"connectTimeoutMS value ({connectTimeoutMS}) must be greater than or equal to 0");
             }
             if (maxConnectAttempts < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("maxConnectAttempts", maxConnectAttempts);
+                Debug.LogError($"maxConnectAttempts value ({maxConnectAttempts}) must be greater than or equal to 0");
             }
             if (disconnectTimeoutMS < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("disconnectTimeoutMS", disconnectTimeoutMS);
+                Debug.LogError($"disconnectTimeoutMS value ({disconnectTimeoutMS}) must be greater than or equal to 0");
             }
             if (heartbeatTimeoutMS < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("heartbeatTimeoutMS", heartbeatTimeoutMS);
+                Debug.LogError($"heartbeatTimeoutMS value ({heartbeatTimeoutMS}) must be greater than or equal to 0");
             }
             if (reconnectionTimeoutMS < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("reconnectionTimeoutMS", reconnectionTimeoutMS);
+                Debug.LogError($"reconnectionTimeoutMS value ({reconnectionTimeoutMS}) must be greater than or equal to 0");
             }
             if (maxFrameTimeMS < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("maxFrameTimeMS", maxFrameTimeMS);
+                Debug.LogError($"maxFrameTimeMS value ({maxFrameTimeMS}) must be greater than or equal to 0");
             }
             if (fixedFrameTimeMS < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("fixedFrameTimeMS", fixedFrameTimeMS);
+                Debug.LogError($"fixedFrameTimeMS value ({fixedFrameTimeMS}) must be greater than or equal to 0");
             }
             if (receiveQueueCapacity <= 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsZeroOrNegative("receiveQueueCapacity", receiveQueueCapacity);
+                Debug.LogError($"receiveQueueCapacity value ({receiveQueueCapacity}) must be greater than 0");
             }
             if (sendQueueCapacity <= 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsZeroOrNegative("sendQueueCapacity", sendQueueCapacity);
+                Debug.LogError($"sendQueueCapacity value ({sendQueueCapacity}) must be greater than 0");
             }
             if (maxMessageSize <= 0 || maxMessageSize > NetworkParameterConstants.AbsoluteMaxMessageSize)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNotInRange("maxMessageSize", maxMessageSize, 0, NetworkParameterConstants.AbsoluteMaxMessageSize);
+                Debug.LogError($"maxMessageSize value ({maxMessageSize}) must be greater than 0 and less than or equal to {NetworkParameterConstants.AbsoluteMaxMessageSize}");
             }
 
             // Warn if the value is set ridiculously low. Packets 576 bytes long or less are always
@@ -266,7 +266,7 @@ namespace Unity.Networking.Transport
             // 548 instead of 576 to account for IP and UDP headers).
             if (valid && maxMessageSize < 548)
             {
-                DebugLog.WarningMaxMessageSizeTooSmall("maxMessageSize", maxMessageSize);
+                Debug.LogWarning($"maxMessageSize value ({maxMessageSize}) is unnecessarily low. 548 should be safe in all circumstances.");
             }
 
             return valid;

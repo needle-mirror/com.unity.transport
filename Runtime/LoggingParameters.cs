@@ -1,6 +1,6 @@
 using System;
 using Unity.Collections;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport.Logging
 {
@@ -17,7 +17,7 @@ namespace Unity.Networking.Transport.Logging
         {
             if (DriverName.IsEmpty)
             {
-                DebugLog.LogError("The driver name must not be empty.");
+                Debug.LogError("The driver name must not be empty.");
                 return false;
             }
 

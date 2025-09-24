@@ -1,14 +1,13 @@
 #if !UNITY_WEBGL || UNITY_EDITOR
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 
 using Unity.Baselib.LowLevel;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 using ErrorState = Unity.Baselib.LowLevel.Binding.Baselib_ErrorState;
 using ErrorCode = Unity.Baselib.LowLevel.Binding.Baselib_ErrorCode;
 
@@ -109,7 +108,7 @@ namespace Unity.Networking.Transport
                     Binding.Baselib_Socket_GetAddress(acceptedSocket, &address, &error);
                     if (error.code != ErrorCode.Success)
                     {
-                        DebugLog.ErrorBaselib("Failed to get local endpoint.", error);
+                        Debug.LogError($"Baselib operation failed. Failed to get local endpoint. (error {(int)error.code}: {UDPNetworkInterface.GetBaselibErrorMessage(error)})");
                         Binding.Baselib_Socket_Close(acceptedSocket);
                         acceptedSocket = InvalidSocket;
                     }
@@ -318,7 +317,10 @@ namespace Unity.Networking.Transport
             state.ListenSocket = TCPSocket.Listen(ref state.ListenEndpoint, out var error);
             if (error.code != ErrorCode.Success)
             {
-                DebugLog.ErrorBaselibBind(error, state.ListenEndpoint.Port);
+                if (error.code == Binding.Baselib_ErrorCode.AddressInUse)
+                    Debug.LogError($"Failed to listen on TCP socket because the address is already in use. Likely because there is another process listening on port {state.ListenEndpoint.Port}.");
+                else
+                    Debug.LogError($"Baselib operation failed. Failed to listen on TCP socket. (error {(int)error.code}: {UDPNetworkInterface.GetBaselibErrorMessage(error)})");
                 return (int)Error.StatusCode.NetworkSocketError;
             }
 

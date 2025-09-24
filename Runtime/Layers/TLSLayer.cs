@@ -3,7 +3,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 using Unity.Mathematics;
 using Unity.Networking.Transport.TLS;
 using Unity.TLS.LowLevel;
@@ -257,8 +256,9 @@ namespace Unity.Networking.Transport
                     }
                     else if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        // The error will be picked up in CheckForFailedClient.
-                        DebugLog.ErrorTLSDecryptFailed(result);
+                        // The error will be picked up in CheckForFailedClient. We don't log an
+                        // error here because it might be (and probably is) just an alert message
+                        // which UnityTLS unfortunately reports as an error.
                         break;
                     }
 
@@ -403,7 +403,7 @@ namespace Unity.Networking.Transport
                     {
                         // TODO Would be nice to translate the numerical step in a string.
                         var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
-                        DebugLog.ErrorTLSHandshakeFailed(handshakeStep);
+                        Debug.LogError($"TLS handshake failed at step {handshakeStep}. Closing connection.");
                     }
 
                     UnderlyingConnections.StartDisconnecting(ref data.UnderlyingConnection);
@@ -521,7 +521,7 @@ namespace Unity.Networking.Transport
                     var result = Binding.unitytls_client_send_data(clientPtr, packetPtr, new UIntPtr((uint)packetProcessor.Length));
                     if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        DebugLog.ErrorTLSEncryptFailed(result);
+                        Debug.LogError($"Failed to encrypt packet (error: {result}). Likely internal TLS failure. Closing connection.");
                         packetProcessor.Drop();
                     }
                 }

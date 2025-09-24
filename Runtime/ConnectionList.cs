@@ -1,6 +1,5 @@
 using System;
 using Unity.Collections;
-using Unity.Networking.Transport.Logging;
 using Unity.Baselib.LowLevel;
 using Unity.Networking.Transport.Error;
 using UnityEngine;
@@ -306,8 +305,8 @@ namespace Unity.Networking.Transport
         internal bool CheckHostnameLookupStatus(ref ConnectionId connectionId, out NetworkEndpoint resolvedEndpoint, out DisconnectReason disconnectReason)
         {
             var connectionData = m_Connections[connectionId];
-            var hostnameLookupData = m_HostnameLookupTasks[connectionId.Id];
-            if (connectionData.State != NetworkConnection.State.Connecting || !hostnameLookupData.Task.IsCreated)
+            var hasLookupTask = m_HostnameLookupTasks.TryGetValue(connectionId.Id, out var hostnameLookupData);
+            if (connectionData.State != NetworkConnection.State.Connecting || !hasLookupTask || !hostnameLookupData.Task.IsCreated)
             {
                 resolvedEndpoint = default;
                 disconnectReason = DisconnectReason.Default;
@@ -385,7 +384,7 @@ namespace Unity.Networking.Transport
             var connectionState = GetConnectionState(connectionId);
             if (connectionState != NetworkConnection.State.Connected)
             {
-                DebugLog.ConnectionAcceptWrongState(connectionId, connectionState);
+                Debug.LogWarning($"Attempting to accept a connection ({connectionId}) with state '{connectionState}'");
                 return default;
             }
 
@@ -421,7 +420,7 @@ namespace Unity.Networking.Transport
             if (connectionData.State == NetworkConnection.State.Disconnected ||
                 connectionData.State == NetworkConnection.State.Disconnecting)
             {
-                DebugLog.LogWarning("Attempting to disconnect an already disconnected connection");
+                Debug.LogWarning("Attempting to disconnect an already disconnected connection");
                 return;
             }
 
@@ -448,7 +447,7 @@ namespace Unity.Networking.Transport
 
             if (connectionData.State != NetworkConnection.State.Disconnecting)
             {
-                DebugLog.ConnectionFinishWrongState(connectionData.State);
+                Debug.LogWarning($"Attempting to complete a disconnection with state different to Disconnecting ({connectionData.State})");
                 return;
             }
 

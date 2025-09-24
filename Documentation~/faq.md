@@ -150,18 +150,3 @@ The default value for both send and receive queue capacity is 512. Increasing th
 ### If returnd by `EndSend`
 
 This can only happen when sending on a pipeline with a `ReliableSequencedPipelineStage`. It indicates that there already 32 reliable packets in flight, which is the maximum. Refer to the section on [using pipelines](pipelines-usage.md) or to the question below for tips on how to deal with this situation.
-
-## Can I increase the limit of 32 packets in flight for the reliable pipeline?
-
-It is possible to increase it to 64. See the section on [using pipelines](pipelines-usage.md) for details. Unfortunately, it is currently impossible to increase it further than that.
-
-However, if your application has different streams of data that require reliability and sequencing, but the ordering of messages between the streams doesn't matter, then it is possible to somewhat circumvent the limit by creating multiple reliable pipelines. That is because the limit is both per connection *and per pipeline*.
-
-For example, you could create a pipeline for RPCs and another one for chat messages:
-
-```csharp
-var rpcPipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-var chatPipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-```
-
-Each pipeline will have its own limit of 32/64 messages in flight. Note however that ordering between the two pipelines is *not* guaranteed. So sending a message on `rpcPipeline` and then sending a message on `chatPipeline` does not mean that the RPC will be delivered first.

@@ -4,7 +4,7 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Networking.Transport.Utilities;
 using Unity.Burst;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -82,7 +82,7 @@ namespace Unity.Networking.Transport
             var inboundPacketSize = inboundBuffer.headerPadding + inboundBuffer.bufferLength;
             if (inboundPacketSize > param.MaxPacketSize)
             {
-                DebugLog.SimulatorIncomingTooLarge(inboundBuffer.headerPadding + inboundBuffer.bufferLength, param.MaxPacketSize);
+                Debug.LogWarning($"Incoming packet too large for SimulatorPipeline internal storage buffer. Passing through. [buffer={inboundBuffer.headerPadding + inboundBuffer.bufferLength} MaxPacketSize={param.MaxPacketSize}]");
                 return (int)Error.StatusCode.NetworkPacketOverflow;
             }
 
@@ -140,7 +140,7 @@ namespace Unity.Networking.Transport
 
             if (inboundBuffer.bufferLength > param.MaxPacketSize)
             {
-                DebugLog.SimulatorIncomingTooLarge(inboundBuffer.bufferLength, param.MaxPacketSize);
+                Debug.LogWarning($"Incoming packet too large for SimulatorPipeline internal storage buffer. Passing through. [buffer={inboundBuffer.bufferLength} MaxPacketSize={param.MaxPacketSize}]");
                 return;
             }
 
@@ -276,7 +276,7 @@ namespace Unity.Networking.Transport
             var inboundPacketSize = inboundBuffer.headerPadding + inboundBuffer.bufferLength;
             if (inboundPacketSize > param.MaxPacketSize)
             {
-                DebugLog.SimulatorIncomingTooLarge(inboundBuffer.headerPadding + inboundBuffer.bufferLength, param.MaxPacketSize);
+                Debug.LogWarning($"Incoming packet too large for SimulatorPipeline internal storage buffer. Passing through. [buffer={inboundBuffer.headerPadding + inboundBuffer.bufferLength} MaxPacketSize={param.MaxPacketSize}]");
                 return (int)Error.StatusCode.NetworkPacketOverflow;
             }
 

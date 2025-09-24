@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -324,7 +324,7 @@ namespace Unity.Networking.Transport
                 var pendingSendPtr = (NetworkDriver.Concurrent.PendingSend*)writer.m_SendHandleData;
                 if (pendingSendPtr == null)
                 {
-                    DebugLog.LogError("Invalid DataStreamWriter (likely not obtained from BeginSend call).");
+                    UnityEngine.Debug.LogError("Invalid DataStreamWriter (likely not obtained from BeginSend call).");
                     return;
                 }
 
@@ -602,7 +602,7 @@ namespace Unity.Networking.Transport
             var pendingSendPtr = (NetworkDriver.Concurrent.PendingSend*)writer.m_SendHandleData;
             if (pendingSendPtr == null)
             {
-                DebugLog.LogError("Invalid DataStreamWriter (likely not obtained from BeginSend call).");
+                UnityEngine.Debug.LogError("Invalid DataStreamWriter (likely not obtained from BeginSend call).");
                 return;
             }
 

@@ -66,11 +66,11 @@ This is a useful feature, but in a multiplayer game context it should be used sp
 
 ### Maximum number of packets in flight
 
-The reliable stage is limited in the number of packets in flight at any given time. The default limit is 32, but can be increased to 64. This limit is per connection and per pipeline (i.e. it is *not* shared across all connections).
+The reliable stage is limited in the number of packets in flight at any given time. The default limit is 32, but can be increased. This limit is per connection and per pipeline (it's not shared across all connections).
 
-Because of this limitation, we recommend batching reliable messages together as much as possible. For example, instead of sending two reliable messages of 20 bytes each, concatenate them and send a single message of 40 bytes.
+Because of this limitation, it's recommend to batch reliable messages together as much as possible. For example, instead of sending two reliable messages of 20 bytes each, concatenate them and send a single message of 40 bytes.
 
-If attempting to send a new reliable message while there are already 32 in flight, `EndSend` will return error code `NetworkSendQueueFull` (value -5). If this situation is encountered, we recommend storing the message in a queue until it is possible to send again:
+If you attempt to send a new reliable message while there are already the maximum number in flight, `EndSend` will return error code `NetworkSendQueueFull` (value -5). If this happens, you can store the message in a queue until it's possible to send again:
 
 ```csharp
 driver.BeginSend(myReliablePipeline, connection, out var writer);
@@ -83,17 +83,32 @@ if (driver.EndSend(writer) == (int)Error.StatusCode.NetworkSendQueueFull))
 
 ### Increasing the limit
 
-The limit on the number of packets in flights can be modified when creating a `NetworkDriver`:
+It's recommended to use the reliable pipeline only when strictly necessary. The limit of 32 packets in flight should be sufficient for most use cases. However, if you find you need to increase it, this can be done when creating a `NetworkDriver`:
 
 ```csharp
 var settings = new NetworkSettings();
-settings.WithReliableStageParameters(windowSize: 64);
+settings.WithReliableStageParameters(windowSize: 256);
 
 var driver = NetworkDriver.Create(settings);
 var reliablePipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
 ```
 
-The default limit is 32, and the maximum is 64. Any value higher than 32 will cause headers to be slightly large (4 bytes), which leaves that much less space for actual data in the packets.
+The default limit is 32, and the maximum is technically 2040, although a maximum of 256 is the *strongly* recommended value. The reason to avoid going higher is that resend buffers are pre-allocated, thus higher values will result in increased memory usage (especially on servers that handle many connections). Furthermore, since any packet needs to possibly include acknowledgement information for the entire window, high values can also have an impact on bandwidth efficiency (how much useful data can be sent per packet).
+
+Note also that both client and server need to be configured with the same value. Trying to increase the value on only one end of the connection will result in incompatibilities that might prevent reliable traffic from being correctly delivered.
+
+### Circumventing the limit with multiple pipelines
+
+If your application has different streams of data that require reliability and sequencing, but the ordering of messages between the streams doesn't matter, then you can circumvent the limit of packets in flight by creating multiple reliable pipelines (because the limit is both per connection and per pipeline). This can be an alternative (or a supplement) to increasing the window size.
+
+For example, you could create a pipeline for RPCs and another one for chat messages:
+
+```csharp
+var rpcPipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+var chatPipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+```
+
+Each pipeline has its own limit of 32 or more messages in flight. Note, however, that ordering between the two pipelines isn't guaranteed, so sending a message on `rpcPipeline` and then sending a message on `chatPipeline` doesn't mean that the RPC will be delivered first.
 
 ## The simulator pipeline stage
 

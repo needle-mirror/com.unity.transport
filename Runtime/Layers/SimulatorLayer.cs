@@ -4,9 +4,8 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Burst;
 using Unity.Jobs;
 using Unity.Mathematics;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
-using UnityEngine.Serialization;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -16,10 +15,10 @@ namespace Unity.Networking.Transport
     {
         private struct PendingPacket
         {
-            public long PendingUntil;
             public fixed byte Packet[NetworkParameterConstants.AbsoluteMaxMessageSize];
             public ConnectionId ConnectionId;
             public NetworkEndpoint Endpoint;
+            public long PendingUntil;
             public int Length;
             public int Offset;
         }
@@ -27,6 +26,8 @@ namespace Unity.Networking.Transport
         // Need to store parameters in a native reference if they are to be modified since
         // ModifyNetworkSimulatorParameters() only gets a copy of the layer structure.
         private NativeReference<NetworkSimulatorParameter> m_Parameters;
+
+        private NativeReference<Random> m_RNG;
 
         private NativeList<PendingPacket> m_SendDelayedPackets;
 
@@ -36,7 +37,7 @@ namespace Unity.Networking.Transport
             set => m_Parameters.Value = value;
         }
 
-        private int m_downStreamPadding;
+        private int m_DownStreamPadding;
 
         public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
         {
@@ -46,7 +47,10 @@ namespace Unity.Networking.Transport
             m_Parameters = new NativeReference<NetworkSimulatorParameter>(parameters, Allocator.Persistent);
             m_SendDelayedPackets = new NativeList<PendingPacket>(Allocator.Persistent);
 
-            m_downStreamPadding = packetPadding;
+            var randomSeed = parameters.RandomSeed != 0 ? parameters.RandomSeed : (uint)TimerHelpers.GetTicks();
+            m_RNG = new NativeReference<Random>(new Random(randomSeed), Allocator.Persistent);
+
+            m_DownStreamPadding = packetPadding;
 
             return 0;
         }
@@ -55,47 +59,49 @@ namespace Unity.Networking.Transport
         {
             m_Parameters.Dispose();
             m_SendDelayedPackets.Dispose();
+            m_RNG.Dispose();
         }
 
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dependency)
         {
-            if (Parameters.ReceivePacketLossPercent == 0.0f && Parameters.ReceiveMtu == 0)
+            if (ShouldSkipSimulatorInReceive())
                 return dependency;
 
-            return new SimulatorJob
+            return new SimulatorReceiveJob
             {
-                Packets = arguments.ReceiveQueue,
-                // Will not be used, but need to pass something to the job to avoid safety errors.
-                PendingPackets = m_SendDelayedPackets,
-                Time = arguments.Time,
+                ReceiveQueue = arguments.ReceiveQueue,
+                RNG = m_RNG,
                 PacketLoss = Parameters.ReceivePacketLossPercent,
-                Mtu = Parameters.ReceiveMtu,
-                DelayMS = 0,
-                JitterMS = 0,
-                DuplicatePercent = 0.0f,
-                DownStreamPadding = m_downStreamPadding,
+                LimitMTU = (int)Parameters.ReceiveMtu,
+                DownStreamPadding = m_DownStreamPadding,
             }.Schedule(dependency);
         }
 
         public JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dependency)
         {
-            if (ShouldSkipSimulator())
+            if (ShouldSkipSimulatorInSend())
                 return dependency;
 
-            return new SimulatorJob
+            return new SimulatorSendJob
             {
-                Packets = arguments.SendQueue,
+                SendQueue = arguments.SendQueue,
                 PendingPackets = m_SendDelayedPackets,
+                RNG = m_RNG,
                 Time = arguments.Time,
                 PacketLoss = Parameters.SendPacketLossPercent,
                 DelayMS = Parameters.SendDelayMS,
                 JitterMS = Parameters.SendJitterMS,
                 DuplicatePercent = Parameters.SendDuplicatePercent,
-                DownStreamPadding = m_downStreamPadding,
             }.Schedule(dependency);
         }
 
-        private bool ShouldSkipSimulator()
+        private bool ShouldSkipSimulatorInReceive()
+        {
+            return Parameters.ReceivePacketLossPercent == 0.0f
+                && Parameters.ReceiveMtu == 0;
+        }
+
+        private bool ShouldSkipSimulatorInSend()
         {
             return Parameters.SendPacketLossPercent == 0.0f
                 && Parameters.SendDelayMS == 0
@@ -104,32 +110,64 @@ namespace Unity.Networking.Transport
         }
 
         [BurstCompile]
-        private struct SimulatorJob : IJob
+        private struct SimulatorReceiveJob : IJob
         {
-            public PacketsQueue Packets;
-            public NativeList<PendingPacket> PendingPackets;
-            public long Time;
+            public PacketsQueue ReceiveQueue;
+            public NativeReference<Random> RNG;
             public float PacketLoss;
-            public float Mtu;
-            public uint DelayMS;
-            public uint JitterMS;
-            public float DuplicatePercent;
+            public int LimitMTU;
             public int DownStreamPadding;
 
             public void Execute()
             {
-                var random = new Random((uint)TimerHelpers.GetTicks());
+                var random = RNG.Value;
 
-                ProcessPackets(random);
-                EnqueuePendingPackets();
-            }
-
-            private void ProcessPackets(Random random)
-            {
-                var count = Packets.Count;
+                var count = ReceiveQueue.Count;
                 for (int i = 0; i < count; i++)
                 {
-                    var packetProcessor = Packets[i];
+                    var packetProcessor = ReceiveQueue[i];
+
+                    var shouldDropLoss = PacketLoss > 0.0f && random.NextFloat(100.0f) < PacketLoss;
+                    var shouldDropMtu = LimitMTU > 0 && packetProcessor.Length + DownStreamPadding > LimitMTU;
+                    if (shouldDropLoss || shouldDropMtu)
+                    {
+                        packetProcessor.Drop();
+                        continue;
+                    }
+                }
+
+                RNG.Value = random;
+            }
+        }
+
+        [BurstCompile]
+        private struct SimulatorSendJob : IJob
+        {
+            public PacketsQueue SendQueue;
+            public NativeList<PendingPacket> PendingPackets;
+            public NativeReference<Random> RNG;
+            public long Time;
+            public float PacketLoss;
+            public uint DelayMS;
+            public uint JitterMS;
+            public float DuplicatePercent;
+
+            public void Execute()
+            {
+                var random = RNG.Value;
+
+                ProcessPackets(ref random);
+                EnqueuePendingPackets();
+                
+                RNG.Value = random;
+            }
+
+            private void ProcessPackets(ref Random random)
+            {
+                var count = SendQueue.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    var packetProcessor = SendQueue[i];
 
                     // Check if we need to drop this packet.
                     if (PacketLoss > 0.0f && random.NextFloat(100.0f) < PacketLoss)
@@ -138,17 +176,17 @@ namespace Unity.Networking.Transport
                         continue;
                     }
 
-                    if (Mtu > 0 && packetProcessor.Length + DownStreamPadding > Mtu)
-                    {
-                        packetProcessor.Drop();
+                    // If there's no delay, jitter, or duplication, we can just stop here and avoid
+                    // having to deal with the expense of copying the packet to the pending list.
+                    if (DelayMS == 0 && JitterMS == 0 && DuplicatePercent == 0.0f)
                         continue;
-                    }
 
                     // Add delay and jitter. Even if there isn't any, we need to add the packets to
                     // the pending list to avoid messing up the order of duplicated packets.
+                    var delay = DelayMS + math.max(0, random.NextInt(2 * (int)JitterMS) - (int)JitterMS);
                     var pendingPacket = new PendingPacket
                     {
-                        PendingUntil = Time + DelayMS + random.NextUInt(2 * JitterMS) - JitterMS,
+                        PendingUntil = Time + delay,
                         Length = packetProcessor.Length,
                         Offset = packetProcessor.Offset,
                         ConnectionId = packetProcessor.ConnectionRef,
@@ -175,6 +213,7 @@ namespace Unity.Networking.Transport
                 // We try to re-use packets that were dropped instead of always enqueuing new ones.
                 // This variable tracks the index in Packets throughout the loop below.
                 var packetsIndex = 0;
+                var initialCount = SendQueue.Count;
 
                 for (int i = 0; i < PendingPackets.Length; i++)
                 {
@@ -184,12 +223,12 @@ namespace Unity.Networking.Transport
                     if (Time >= pendingPacket.PendingUntil)
                     {
                         // Select a packet processor, either a free one from the list, or a new one.
-                        if (packetsIndex < Packets.Count && Packets[packetsIndex].Length == 0)
+                        if (packetsIndex < initialCount && SendQueue[packetsIndex].Length == 0)
                         {
-                            packetProcessor = Packets[packetsIndex];
+                            packetProcessor = SendQueue[packetsIndex];
                             packetsIndex++;
                         }
-                        else if (!Packets.EnqueuePacket(out packetProcessor))
+                        else if (!SendQueue.EnqueuePacket(out packetProcessor))
                         {
                             // No room in packets queue. No big deal. We'll just wait until next time.
                             return;
@@ -200,18 +239,9 @@ namespace Unity.Networking.Transport
                         packetProcessor.SetUnsafeMetadata(0, pendingPacket.Offset);
                         packetProcessor.AppendToPayload(pendingPacket.Packet, pendingPacket.Length);
 
-                        PendingPackets.RemoveAtSwapBack(i);
-                        i--;
+                        PendingPackets.RemoveAtSwapBack(i--);
                     }
                 }
-            }
-
-            private void UpdatePacketProcessor(PacketProcessor packetProcessor, PendingPacket pendingPacket)
-            {
-                packetProcessor.EndpointRef = pendingPacket.Endpoint;
-                packetProcessor.ConnectionRef = pendingPacket.ConnectionId;
-                packetProcessor.SetUnsafeMetadata(0, pendingPacket.Offset);
-                packetProcessor.AppendToPayload(pendingPacket.Packet, pendingPacket.Length);
             }
         }
     }
@@ -255,24 +285,26 @@ namespace Unity.Networking.Transport
         /// <value>Maximum size in bytes.</value>
         public float ReceiveMtu;
 
+        internal uint RandomSeed;
+
         /// <inheritdoc/>
         public bool Validate()
         {
             if (ReceivePacketLossPercent < 0.0f || ReceivePacketLossPercent > 100.0f)
             {
-                DebugLog.LogError($"{nameof(ReceivePacketLossPercent)} value ({ReceivePacketLossPercent}) must be between 0 and 100.");
+                Debug.LogError($"{nameof(ReceivePacketLossPercent)} value ({ReceivePacketLossPercent}) must be between 0 and 100.");
                 return false;
             }
 
             if (SendPacketLossPercent < 0.0f || SendPacketLossPercent > 100.0f)
             {
-                DebugLog.LogError($"{nameof(SendPacketLossPercent)} value ({SendPacketLossPercent}) must be between 0 and 100.");
+                Debug.LogError($"{nameof(SendPacketLossPercent)} value ({SendPacketLossPercent}) must be between 0 and 100.");
                 return false;
             }
 
             if (SendDuplicatePercent < 0.0f || SendDuplicatePercent > 100.0f)
             {
-                DebugLog.LogError($"{nameof(SendDuplicatePercent)} value ({SendDuplicatePercent}) must be between 0 and 100.");
+                Debug.LogError($"{nameof(SendDuplicatePercent)} value ({SendDuplicatePercent}) must be between 0 and 100.");
                 return false;
             }
 
@@ -328,12 +360,12 @@ namespace Unity.Networking.Transport
         {
             if (!driver.m_NetworkStack.TryGetLayer<SimulatorLayer>(out var layer))
             {
-                DebugLog.LogError("Network simulator not available. Driver must have been configured with " +
+                Debug.LogError("Network simulator not available. Driver must have been configured with " +
                                   "NetworkSettings.WithNetworkSimulatorParameters for network simulator to be available.");
             }
             else if (!newParams.Validate())
             {
-                DebugLog.LogError("Modified network simulator parameters are invalid and were not applied.");
+                Debug.LogError("Modified network simulator parameters are invalid and were not applied.");
             }
             else
             {

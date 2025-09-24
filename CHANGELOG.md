@@ -1,5 +1,27 @@
 # Change log
 
+## [2.6.0] - 2025-09-24
+
+### New Features
+* It is now possible to increase the reliable pipeline window size past 64. The maximum is technically 2040 but it is *strongly* recommended to stick to 256 or below. The [documentation](../manual/pipelines-usage.html#the-reliable-pipeline-stage) has more details on this change.
+* Added a new `NetworkDriver.GetMaxSupportedPayloadSize` method that can be used to find out what the maximum payload size is on a given connection/pipeline. It's equivalent to fetching the `Capacity` property of the `DataStreamWriter` returned by `BeginSend` on the same connection and pipeline, but does not require acquiring a packet buffer like `BeginSend` does.
+
+### Changes
+* Integration with the logging package (`com.unity.logging`) has been removed. Logs are now only written to the default `Debug.Log` mechanism. This should have no impact even to most users of the logging package, since its default configuration forwards `Debug.Log` logs to the default logger.
+* When using the reliable pipeline stage, the configured window size will now always be internally rounded up to the next multiple of 8 (if not already one). This change should be completely transparent to everyone, as the only impact is slightly improved bandwidth if using an atypical window size.
+* `NetworkDriver.GetMaxSupportedMessageSize` can now return different negative values to represent different errors. All values map to the `Error.StatusCode` enum.
+* Updated the Burst package dependency to version 1.8.24.
+* Updated the Mathematics package dependency to version 1.3.2.
+
+### Fixes
+* Fixed an issue where the DF (don't fragment) bit would be set even when MTU discovery was disabled, which could cause problems in environments where the MTU is more limited (like with some VPN providers).
+* Prevented an extraneous error from being logged when a send would fail within a pipeline (which already logs an error).
+* Fixed a bug where `NetworkDriver.CheckHostnameLookupStatus` would throw an exception when checking the status of connections that either did not use hostname lookup at all, or for which the hostname lookup had already finished in a previous driver update.
+* Prevented an error from being shown on Windows when a UDP socket bound to an IPv4 address received IPv6 packets (or vice-versa). Such packets were always discarded anyway, but now they won't generate errors at least.
+* Fixed a bug in `NetworkDriver.MaxHeaderSize` where it would return a size one byte larger than the actual maximum header size.
+* Fixed an issue where TLS alert messages would lead to a decryption failure, leading to an error being logged even in normal disconnection scenarios.
+* `NetworkDriver.Bound` and `NetworkDriver.Listening` will now return false if accessed on a disposed driver, instead of throwing a `NullReferenceException` (or causing an application segfault if safety checks are disabled).
+
 ## [2.5.3] - 2025-08-06
 
 ### Fixes

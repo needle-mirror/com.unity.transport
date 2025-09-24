@@ -1,6 +1,6 @@
 using System;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport.Relay
 {
@@ -77,17 +77,17 @@ namespace Unity.Networking.Transport.Relay
             if (ServerData.Endpoint == default)
             {
                 valid = false;
-                DebugLog.ErrorRelayServerDataEndpoint(ServerData.Endpoint);
+                Debug.LogError($"ServerData.Endpoint value ({ServerData.Endpoint}) must be a valid value");
             }
             if (ServerData.AllocationId == default)
             {
                 valid = false;
-                DebugLog.ErrorRelayServerDataAllocationId(ServerData.AllocationId);
+                Debug.LogError($"ServerData.AllocationId value ({ServerData.AllocationId}) must be a valid value");
             }
             if (RelayConnectionTimeMS < 0)
             {
                 valid = false;
-                DebugLog.ErrorValueIsNegative("RelayConnectionTimeMS", RelayConnectionTimeMS);
+                Debug.LogError($"RelayConnectionTimeMS value ({RelayConnectionTimeMS}) must be greater than or equal to 0");
             }
 
             return valid;

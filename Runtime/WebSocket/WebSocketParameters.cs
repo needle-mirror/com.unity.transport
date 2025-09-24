@@ -1,6 +1,6 @@
 using System;
 using Unity.Collections;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -64,7 +64,7 @@ namespace Unity.Networking.Transport
             if (Path.Length == 0 || Path[0] != '/')
             {
                 valid = false;
-                DebugLog.ErrorWebSocketPathInvalid(Path);
+                Debug.LogError($"WebSocket path \"{Path}\" is invalid");
             }
 
             return valid;

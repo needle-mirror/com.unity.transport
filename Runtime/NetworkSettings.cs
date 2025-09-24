@@ -1,9 +1,8 @@
 using System;
-using System.Diagnostics;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 using BurstRuntime = Unity.Burst.BurstRuntime;
 
 namespace Unity.Networking.Transport
@@ -44,7 +43,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ObjectDisposedException($"The {nameof(NetworkSettings)} has been deallocated, it is not allowed to access it.");
 #else
-                DebugLog.LogError($"The {nameof(NetworkSettings)} has been deallocated, it is not allowed to access it.");
+                Debug.LogError($"The {nameof(NetworkSettings)} has been deallocated, it is not allowed to access it.");
                 return false;
 #endif
             }
@@ -126,7 +125,7 @@ namespace Unity.Networking.Transport
 
             if (m_ReadOnly != 0)
             {
-                DebugLog.LogError("NetworkSettings structure is read-only, modifications are not allowed.");
+                Debug.LogError("NetworkSettings structure is read-only, modifications are not allowed.");
                 return;
             }
 
@@ -188,7 +187,7 @@ namespace Unity.Networking.Transport
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"The provided network parameter ({parameter.GetType().Name}) is not valid");
 #else
-                DebugLog.ErrorParameterIsNotValid(parameter.GetType().Name);
+                Debug.LogError($"The provided network parameter ({parameter.GetType().Name}) is not valid");
 #endif
             }
         }

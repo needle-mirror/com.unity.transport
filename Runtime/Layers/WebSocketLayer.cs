@@ -5,18 +5,18 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.Utilities;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
     internal struct WebSocketLayer : INetworkLayer
     {
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) =>  DebugLog.LogWarning(msg);
+        static void Warn(string msg) =>  UnityEngine.Debug.LogWarning(msg);
 
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void WarnIf(bool condition, string msg) { if (condition) DebugLog.LogWarning(msg); }
+        static void WarnIf(bool condition, string msg) { if (condition) UnityEngine.Debug.LogWarning(msg); }
 
         // Maps a connection id from the connection list to its connection data.
         private ConnectionDataMap<ConnectionData> m_ConnectionMap;

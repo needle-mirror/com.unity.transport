@@ -5,7 +5,6 @@
 ## [Using pipelines](pipelines-usage.md)
 ## [Jobified client and server](client-server-jobs.md)
 ## [Encrypted communications](client-server-secure.md)
-## [Integration with Unity.Logging](logging.md)
 # [Cross-play support](cross-play.md)
 # [WebGL support](websockets.md)
 # [FAQ](faq.md)

@@ -3,7 +3,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 using Unity.Networking.Transport.TLS;
 using Unity.Networking.Transport.Relay;
 using Unity.TLS.LowLevel;
@@ -335,7 +334,7 @@ namespace Unity.Networking.Transport
                     {
                         // TODO Would be nice to translate the numerical step in a string.
                         var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
-                        DebugLog.ErrorDTLSHandshakeFailed(handshakeStep);
+                        Debug.LogError($"DTLS handshake failed at step {handshakeStep}. Closing connection.");
                     }
 
                     Connections.StartDisconnecting(ref connection, Error.DisconnectReason.AuthenticationFailure);
@@ -481,7 +480,7 @@ namespace Unity.Networking.Transport
                     var result = Binding.unitytls_client_send_data(clientPtr, packetPtr, new UIntPtr((uint)packetProcessor.Length));
                     if (result != Binding.UNITYTLS_SUCCESS)
                     {
-                        DebugLog.ErrorDTLSEncryptFailed(result);
+                        Debug.LogError($"Failed to encrypt packet (error: {result}). Likely internal DTLS failure. Closing connection.");
                         packetProcessor.Drop();
                     }
                 }

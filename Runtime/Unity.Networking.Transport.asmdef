@@ -22,11 +22,6 @@
             "define": "RELAY_SDK_INSTALLED"
         },
         {
-            "name": "com.unity.logging",
-            "expression": "0.0",
-            "define": "USE_UNITY_LOGGING"
-        },
-        {
             "name": "Unity",
             "expression": "6000.1.0a1",
             "define": "HOSTNAME_RESOLUTION_AVAILABLE"

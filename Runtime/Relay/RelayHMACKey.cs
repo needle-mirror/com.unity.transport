@@ -1,6 +1,6 @@
 using System;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Networking.Transport.Logging;
+using UnityEngine;
 
 namespace Unity.Networking.Transport.Relay
 {
@@ -26,7 +26,7 @@ namespace Unity.Networking.Transport.Relay
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 throw new ArgumentException($"Provided byte array length is invalid, must be {k_Length} but got {length}.");
 #else
-                DebugLog.ErrorRelayWrongBufferSize(k_Length, length);
+                Debug.LogError($"Provided byte array length is invalid, must be {k_Length} but got {length}.");
                 return default;
 #endif
             }

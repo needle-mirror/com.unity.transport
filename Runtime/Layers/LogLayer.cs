@@ -59,29 +59,7 @@ namespace Unity.Networking.Transport
 
                     if (packetProcessor.Length <= 0)
                         continue;
-                    
-#if USE_UNITY_LOGGING
-                    
-                    static FormatError GetDataAsText<T>(ref T buffer, ref PacketProcessor packetProcessor) where T : unmanaged, INativeList<byte>, IUTF8Bytes
-                    {
-                        var length = packetProcessor.Length;
-                        for (var i = 0; i < length; i++)
-                        {
-                            var value = packetProcessor.GetPayloadDataRef<byte>(i);
-                            FixedString32Bytes temp = $"{value:x2}";
-                            if (buffer.Append(temp) == FormatError.Overflow)
-                                return FormatError.Overflow;
-                            if (buffer.Append(' ') == FormatError.Overflow)
-                                return FormatError.Overflow;
-                        }
-                        return FormatError.None;
-                    }
 
-                    buffer.Length = 0;
-                    GetDataAsText(ref buffer, ref packetProcessor);
-                    
-                    Unity.Logging.Log.Info("{Label} {BytesCount} bytes [Endpoint: {Endpoint}]: {Data}", Label, packetProcessor.Length, packetProcessor.EndpointRef.ToFixedString(), buffer);
-#else
                     static bool AppendPayload(ref FixedString4096Bytes str, ref PacketProcessor packetProcessor)
                     {
                         var length = packetProcessor.Length;
@@ -108,7 +86,6 @@ namespace Unity.Networking.Transport
                         UnityEngine.Debug.Log(str);
                         UnityEngine.Debug.Log("Message truncated");
                     }
-#endif
                 }
             }
         }

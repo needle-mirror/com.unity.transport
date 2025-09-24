@@ -4,7 +4,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using Unity.Networking.Transport.Logging;
 
 namespace Unity.Networking.Transport
 {
@@ -23,7 +22,7 @@ namespace Unity.Networking.Transport
     internal struct StreamSegmentationLayer : INetworkLayer
     {
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
-        static void Warn(string msg) => DebugLog.LogWarning(msg);
+        static void Warn(string msg) => UnityEngine.Debug.LogWarning(msg);
  
         // TODO: Does this need to be configurable?
         const int k_SegmentSize = NetworkParameterConstants.AbsoluteMaxMessageSize / 5;
