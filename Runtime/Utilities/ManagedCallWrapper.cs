@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using AOT;
 using Unity.Collections.LowLevel.Unsafe;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
@@ -21,7 +22,18 @@ namespace Unity.Networking.Transport
         private static void Method(void* functionPtr, void* arguments, int argumentsSize)
             => ((delegate * < void*, int, void >)functionPtr)(arguments, argumentsSize);
 
+        private static GCHandle s_CachedWrapperHandle;
         private static IntPtr s_CachedWrapperPtr;
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod]
+        private static void ResetStaticsOnLoad()
+        {
+            if (s_CachedWrapperHandle.IsAllocated)
+                s_CachedWrapperHandle.Free();
+            s_CachedWrapperPtr = default;
+        }
+#endif
 
         private static void Initialize()
         {
@@ -29,7 +41,7 @@ namespace Unity.Networking.Transport
                 return;
 
             var methodDelegate = new MethodDelegate(Method);
-            GCHandle.Alloc(methodDelegate);
+            s_CachedWrapperHandle = GCHandle.Alloc(methodDelegate);
             s_CachedWrapperPtr = Marshal.GetFunctionPointerForDelegate(methodDelegate);
         }
 

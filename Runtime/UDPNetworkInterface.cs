@@ -241,7 +241,7 @@ namespace Unity.Networking.Transport
                     Binding.Baselib_RegisteredNetwork_Endpoint_Create(&endpoint, request.remoteEndpoint.slice, &error);
                     if (error.code != ErrorCode.Success)
                     {
-                        Debug.LogError($"Baselib operation failed. Unexpected endpoint format. (error {(int)error.code}: {GetBaselibErrorMessage(error)})");
+                        Debug.LogError($"Couldn't create Baselib network endpoint: {GetBaselibErrorMessage(error)}");
                         packetProcessor.Drop();
                         continue;
                     }
@@ -255,7 +255,7 @@ namespace Unity.Networking.Transport
                     InternalState.Value.Socket, requestsPtr, (uint)requests.Length, &error);
                 if (error.code != ErrorCode.Success)
                 {
-                    Debug.LogError($"Baselib operation failed. Couldn't schedule send requests. (error {(int)error.code}: {GetBaselibErrorMessage(error)})");
+                    Debug.LogError($"Baselib operation failed. Couldn't schedule send requests. (native error: {(int)error.nativeErrorCode})");
                     MarkSocketAsNeedingRecreate(ref InternalState);
                     return;
                 }
@@ -278,16 +278,9 @@ namespace Unity.Networking.Transport
 
                 // Logically we'd just loop indefinitely until the status is not pending. But to
                 // avoid any risk of deadlock, limit the number of calls to the queue capacity.
-                for (int i = 0; i < count; i++)
+                while (count-- > 0)
                 {
                     var status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessSend(socket, &error);
-                    if (error.code != ErrorCode.Success)
-                    {
-                        Debug.LogError($"Baselib operation failed. Couldn't process scheduled send request. (error {(int)error.code}: {GetBaselibErrorMessage(error)})");
-                        MarkSocketAsNeedingRecreate(ref InternalState);
-                        return;
-                    }
-
                     if (status != Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
                         break;
                 }
@@ -303,8 +296,7 @@ namespace Unity.Networking.Transport
                     InternalState.Value.Socket, resultsPtr, (uint)results.Length, &error);
                 if (error.code != ErrorCode.Success)
                 {
-                    Debug.LogError($"Baselib operation failed. Couldn't dequeue send results. (error {(int)error.code}: {GetBaselibErrorMessage(error)})");
-                    MarkSocketAsNeedingRecreate(ref InternalState);
+                    Debug.LogError($"Baselib operation failed. Couldn't dequeue send results.");
                     return;
                 }
 
@@ -367,10 +359,14 @@ namespace Unity.Networking.Transport
 
                 var error = default(ErrorState);
 
-                var pollCount = 0;
+                var pollCount = ReceiveQueue.Capacity;
                 var status = default(Binding.Baselib_RegisteredNetwork_ProcessStatus);
-                while ((status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(socket, &error)) == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending
-                       && pollCount++ < ReceiveQueue.Capacity) { }
+                while (pollCount-- > 0)
+                {
+                    status = Binding.Baselib_RegisteredNetwork_Socket_UDP_ProcessRecv(socket, &error);
+                    if (status != Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
+                        break;
+                }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (status == Binding.Baselib_RegisteredNetwork_ProcessStatus.Pending)
@@ -390,11 +386,7 @@ namespace Unity.Networking.Transport
                     // Pop Completed Requests off the CompletionQ
                     var count = (int)Binding.Baselib_RegisteredNetwork_Socket_UDP_DequeueRecv(socket, results, k_RequestsBatchSize, &error);
                     if (error.code != ErrorCode.Success)
-                    {
-                        MarkSocketAsNeedingRecreate(ref InternalState);
-                        Result.ErrorCode = (int)error.code; // TODO should we really return baselib error codes to users?
                         return;
-                    }
 
                     totalCount += count;
 
@@ -426,22 +418,27 @@ namespace Unity.Networking.Transport
                     dequeueAgain = count == (int)k_RequestsBatchSize;
                 }
 
-#if !UNITY_EDITOR_WIN && !UNITY_STANDALONE_WIN && !UNITY_WSA && !UNITY_GAMECORE
                 // All receive requests being marked as failed is as close as we're going to get to
-                // a signal that the socket has failed with the current baselib API, but only if
-                // using the POSIX implementation of the API. On Windows or Windows-like platforms,
-                // we get receive failures when receiving IPv6 packets on a IPv4 socket (and vice-
-                // versa) so we can't fail the socket in that case. Note that we can't do the same
-                // check on send requests, since there might be legitimate scenarios where sends are
-                // failing temporarily without the socket being borked.
+                // a signal that the socket has failed with the current baselib API, but it's not a
+                // sufficient signal to declare the socket as failed. That's because baselib will
+                // flag requests as failed for almost any socket error, including transient ones
+                // that don't mean the socket is closed. And unfortunately baselib doesn't bubble up
+                // the native error codes so we can't determine that here.
+                //
+                // What we can do however is to use that as a signal to do a further check on the
+                // socket status. We do that through fetching the local endpoint of the socket. On
+                // all platforms, this ends up calling getsockname() which will fail if the socket
+                // is in a bad state. Then we know if we need to recreate it or not.
                 if (totalCount > 0 && totalCount == failedCount)
                 {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    Debug.LogError("All socket receive requests were marked as failed, likely because socket itself has failed.");
-#endif
-                    MarkSocketAsNeedingRecreate(ref InternalState);
+                    var address = default(Binding.Baselib_NetworkAddress);
+                    Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(socket, &address, &error);
+                    if (error.code != ErrorCode.Success)
+                    {
+                        // Socket is definitely borked. Best we can do now is try to recreate it.
+                        MarkSocketAsNeedingRecreate(ref InternalState);
+                    }
                 }
-#endif
 
                 ConvertEndpointsToGeneric();
             }
@@ -680,11 +677,10 @@ namespace Unity.Networking.Transport
                 }
 
                 Binding.Baselib_RegisteredNetwork_Socket_UDP_ScheduleRecv(socket, requests, (uint)count, &error);
-
                 if (error.code != ErrorCode.Success)
                 {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    Debug.LogError($"Baselib operation failed. Couldn't schedule receive requests. (error {(int)error.code}: {GetBaselibErrorMessage(error)})");
+                    Debug.LogError($"Baselib operation failed. Couldn't schedule receive requests. (native error: {(int)error.nativeErrorCode})");
 #endif
                     return (int)Error.StatusCode.NetworkSocketError;
                 }

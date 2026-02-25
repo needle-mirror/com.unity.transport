@@ -33,10 +33,6 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     public unsafe struct ReliableSequencedPipelineStage : INetworkPipelineStage
     {
-        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
-        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
-        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-
         /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
@@ -45,9 +41,9 @@ namespace Unity.Networking.Transport
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<ReliableUtility.Parameters>());
 
             return new NetworkPipelineStage(
-                Receive: ReceiveFunctionPointer,
-                Send: SendFunctionPointer,
-                InitializeConnection: InitializeConnectionFunctionPointer,
+                Receive: new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive),
+                Send: new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send),
+                InitializeConnection: new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection),
                 ReceiveCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 SendCapacity: ReliableUtility.ProcessCapacityNeeded(param),
                 HeaderCapacity: ReliableUtility.MaxPacketHeaderWireSize(param.WindowSize),
@@ -132,6 +128,7 @@ namespace Unity.Networking.Transport
             requests = NetworkPipelineStage.Requests.Update;
 
             var reliable = (ReliableUtility.Context*)ctx.internalProcessBuffer;
+            var shared = (ReliableUtility.SharedContext*)ctx.internalSharedProcessBuffer;
 
             // Release any packets that might have been acknowledged since the last call.
             ReliableUtility.ReleaseAcknowledgedPackets(ctx);
@@ -157,8 +154,8 @@ namespace Unity.Networking.Transport
 
             if (reliable->Resume != ReliableUtility.NullEntry)
             {
-                inboundBuffer = ReliableUtility.ResumeSend(ctx);
                 ReliableUtility.WriteHeader(ref ctx, ReliableUtility.PacketType.Payload, reliable->Resume);
+                inboundBuffer = ReliableUtility.ResumeSend(ctx, ctx.header.Length);
                 ReliableUtility.UpdateContextAfterPacketSend(ctx);
 
                 // Check if we need to resume again after this packet.
@@ -180,6 +177,8 @@ namespace Unity.Networking.Transport
             {
                 ReliableUtility.WriteHeader(ref ctx, ReliableUtility.PacketType.Ack);
                 ReliableUtility.UpdateContextAfterPacketSend(ctx);
+
+                shared->stats.AcksSent++;
 
                 // Pipeline machinery won't accept an empty payload, so send a dummy payload byte
                 // along with our acknowledgement. This will be ignored by the receiver.

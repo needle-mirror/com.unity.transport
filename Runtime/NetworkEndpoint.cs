@@ -303,26 +303,18 @@ namespace Unity.Networking.Transport
         /// <param name="endpoint">Return value for the endpoint if successfully parsed.</param>
         /// <param name="family">Address family of the provided address.</param>
         /// <returns>True if endpoint could be parsed successfully, false otherwise.</returns>
-        public static bool TryParse(string address, ushort port, out NetworkEndpoint endpoint, NetworkFamily family = NetworkFamily.Invalid)
+        public static bool TryParse(FixedString128Bytes address, ushort port, out NetworkEndpoint endpoint, NetworkFamily family = NetworkFamily.Invalid)
         {
             if (family == NetworkFamily.Invalid)
             {
-                endpoint = default;
-
-                if (TryParse(address, port, out endpoint, NetworkFamily.Ipv4))
-                {
-                    return true;
-                }
-
-                return TryParse(address, port, out endpoint, NetworkFamily.Ipv6);
+                return TryParse(address, port, out endpoint, NetworkFamily.Ipv4)
+#if !(UNITY_SWITCH || UNITY_PS4 || UNITY_PS5)
+                    || TryParse(address, port, out endpoint, NetworkFamily.Ipv6)
+#endif
+                    ;
             }
+
             endpoint = default;
-
-            if (family != NetworkFamily.Ipv4 && family != NetworkFamily.Ipv6)
-            {
-                Debug.LogError("Can only parse addresses that are IPv4 or IPv6.");
-                return false;
-            }
 
 #if UNITY_SWITCH
             if (family == NetworkFamily.Ipv6)
@@ -342,24 +334,24 @@ namespace Unity.Networking.Transport
 
             endpoint.Family = family;
 
-            var addressBytes = System.Text.Encoding.UTF8.GetBytes(address + '\0');
             var baselibFamily = family == NetworkFamily.Ipv4 ? Binding.Baselib_NetworkAddress_Family.IPv4 : Binding.Baselib_NetworkAddress_Family.IPv6;
             var errorState = default(Binding.Baselib_ErrorState);
 
-            fixed (byte* addressPtr = addressBytes)
-            {
-                Binding.Baselib_NetworkAddress_Encode(endpoint.BaselibAddressPtr, baselibFamily, addressPtr, port, &errorState);
-            }
+            Binding.Baselib_NetworkAddress_Encode(endpoint.BaselibAddressPtr, baselibFamily, (byte*)address.GetUnsafePtr(), port, &errorState);
 
-            if (errorState.code == Binding.Baselib_ErrorCode.Success)
-            {
-                return true;
-            }
-            else
+            if (errorState.code != Binding.Baselib_ErrorCode.Success)
             {
                 endpoint.Family = NetworkFamily.Invalid;
                 return false;
             }
+
+            return true;
+        }
+
+        /// <inheritdoc cref="TryParse(FixedString128Bytes, ushort, out NetworkEndpoint, NetworkFamily)"/>
+        public static bool TryParse(string address, ushort port, out NetworkEndpoint endpoint, NetworkFamily family = NetworkFamily.Invalid)
+        {
+            return TryParse(new FixedString128Bytes(address), port, out endpoint, family);
         }
 
         /// <summary>
@@ -370,9 +362,15 @@ namespace Unity.Networking.Transport
         /// <param name="port">Port number to parse.</param>
         /// <param name="family">Address family of the provided address.</param>
         /// <returns>Parsed endpoint, or a default value if couldn't parse successfully.</returns>
-        public static NetworkEndpoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Invalid)
+        public static NetworkEndpoint Parse(FixedString128Bytes address, ushort port, NetworkFamily family = NetworkFamily.Invalid)
         {
             return TryParse(address, port, out var endpoint, family) ? endpoint : default;
+        }
+
+        /// <inheritdoc cref="Parse(FixedString128Bytes, ushort, NetworkFamily)"/>
+        public static NetworkEndpoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Invalid)
+        {
+            return TryParse(new FixedString128Bytes(address), port, out var endpoint, family) ? endpoint : default;
         }
 
         /// <summary>

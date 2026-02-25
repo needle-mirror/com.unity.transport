@@ -1,5 +1,25 @@
 # Change log
 
+## [2.7.0] - 2026-02-25
+
+### New Features
+* Added `NetworkDriver.GetStatistics` method to get statistics about the current session. These are network-level statistics that can be useful to assess information like bandwidth usage, packet size distribution, etc.
+* Added `NetworkDriver.GetConnectionStatistics` method to get statistics about a specific connection. These are mostly focused around latency ("ping") and other network quality information (packet loss, duplication, etc.).
+* `NetworkEndpoint.Parse` and `NetworkEndpoint.TryParse` now have variants taking `FixedString128Bytes` arguments instead of managed strings. Those can be used in Burst-compiled code.
+* It is now possible to send an arbitrary payload when accepting a connection, similar to how it is possible to send one when establishing a connection. The buffer provided to `NetworkDriver.SetAcceptPayload` will be made available to clients when they pop a `Connect` event. The buffer's content will be in the `DataStreamReader` returned alongside the event.
+
+### Changes
+* `NetworkDriver.CheckHostnameLookupStatus` has been marked as obsolete. It is an implementation detail that shouldn't be called directly by users. Instead, regular connection events (`Connect`/`Disconnect`) can be used to infer the status of the hostname lookup (there is a dedicated `HostNotFound` disconnect reason if a connection couldn't be established because of a hostname lookup failure).
+* All functionality of `TransportFunctionPointer` except constructing one from a Burst-compatible delegate is now deprecated. Mostly this is just cleaning up old unused APIs as using managed delegates in pipeline stages has not been possible for a very long time.
+
+### Fixes
+* Addressed an issue where transient socket errors would be considered as a socket failure on UDP, leading to a useless re-creation of the socket. This would generally manifest as an error about receive requests being marked as failed.
+* Prevented a situation where a write could occur on a closed TCP socket, potentially resulting in a crash on Linux.
+* Fixed a bug when using Relay and DTLS where a disconnection would fail to be reported if the application stopped updating for a while (e.g. was put in the background on mobile) and then started updating again after the Relay allocation had timed out.
+* Fixed a bug when using Relay and DTLS where the driver would fail to reconnect to the server after re-homing (i.e. after the local IP address changes, which can happen when roaming on mobile).
+* Fixed runtime errors on multithreaded WebAssembly builds.
+* Fixed a packet corruption bug in `ReliableSequencedPipelineStage` that would occur if window size was larger than 64 and a packet had to be resent multiple times.
+
 ## [2.6.0] - 2025-09-24
 
 ### New Features

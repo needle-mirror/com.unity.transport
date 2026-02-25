@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Unity.Collections;
+using UnityEngine;
 
 namespace Unity.Networking.Transport.Utilities
 {
@@ -17,7 +18,7 @@ namespace Unity.Networking.Transport.Utilities
             public T Element;
         }
 
-        private static List<ElementSlot> s_ElementList = new List<ElementSlot>();
+        private readonly static List<ElementSlot> s_ElementList = new List<ElementSlot>();
 
         private static int AllocateElement(ref T element)
         {

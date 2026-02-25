@@ -235,12 +235,9 @@ namespace Unity.Networking.Transport
             private void ProcessConnectionStates()
             {
                 // Disconnect if underlying connection is disconnecting.
-                var underlyingDisconnections = UnderlyingConnections.QueryIncomingDisconnections(Allocator.Temp);
-                var count = underlyingDisconnections.Length;
-                for (int i = 0; i < count; i++)
+                var disconnection = default(ConnectionList.IncomingDisconnection);
+                while (UnderlyingConnections.TryGetNextIncomingDisconnection(out disconnection))
                 {
-                    var disconnection = underlyingDisconnections[i];
-
                     var connectionId = FindConnectionByUnderlyingConnection(ref disconnection.Connection);
                     if (!connectionId.IsCreated)
                         continue;
@@ -259,7 +256,7 @@ namespace Unity.Networking.Transport
                     ConnectionsData[connectionId] = connectionData;
                 }
 
-                count = Connections.Count;
+                var count = Connections.Count;
                 for (int i = 0; i < count; i++)
                 {
                     var connectionId = Connections.ConnectionAt(i);
@@ -328,7 +325,6 @@ namespace Unity.Networking.Transport
                         if (connectionData.IsLocal)
                         {
                             Connections.FinishConnectingFromLocal(ref connectionId);
-                            ConnectionPayloads.Remove(connectionId);
                         }
                         else
                         {
@@ -500,6 +496,8 @@ namespace Unity.Networking.Transport
                     if (connectionState == NetworkConnection.State.Connecting &&
                         connectionData.State == ConnectionState.AwaitingAccept)
                     {
+                        ConnectionPayloads.Remove(connectionId);
+
                         if (MaxMessageSize <= NetworkParameterConstants.AbsoluteMinimumMtuSize || !PerformMtuDiscovery)
                         {
                             Connections.SetConnectionPathMtu(connectionId, MaxMessageSize);
@@ -507,7 +505,6 @@ namespace Unity.Networking.Transport
                             if (connectionData.IsLocal)
                             {
                                 Connections.FinishConnectingFromLocal(ref connectionId);
-                                ConnectionPayloads.Remove(connectionId);
                             }
                             else
                             {
@@ -577,7 +574,6 @@ namespace Unity.Networking.Transport
                                     if (connectionData.IsLocal)
                                     {
                                         Connections.FinishConnectingFromLocal(ref connectionId);
-                                        ConnectionPayloads.Remove(connectionId);
                                     }
                                     else
                                     {
@@ -713,6 +709,7 @@ namespace Unity.Networking.Transport
 
                             connectionData.LastSendTime = Time;
                             ConnectionsData[connectionId] = connectionData;
+
                             EnqueueDeferredMessage(connectionId, HandshakeType.ConnectionAccept, ref connectionToken);
                             if(send)
                             {
@@ -739,18 +736,32 @@ namespace Unity.Networking.Transport
                                 connectionData.State = ConnectionState.PathMtuDiscovery;
                                 connectionData.IsLocal = true;
                                 ConnectionsData[connectionId] = connectionData;
+                                ConnectionPayloads.Remove(connectionId);
                                 if (MaxMessageSize <= NetworkParameterConstants.AbsoluteMinimumMtuSize || !PerformMtuDiscovery)
                                 {
                                     Connections.SetConnectionPathMtu(connectionId, MaxMessageSize);
                                     connectionData.State = ConnectionState.Established;
                                     Connections.FinishConnectingFromLocal(ref connectionId);
-                                    ConnectionPayloads.Remove(connectionId);
                                 }
                                 else
                                 {
                                     SendMtuDiscoveryMessages(connectionId, ref connectionData);
                                 }
                                 ConnectionsData[connectionId] = connectionData;
+
+                                // Get the accept payload, if any.
+                                if (packetProcessor.Length > sizeof(ushort))
+                                {
+                                    var length = packetProcessor.RemoveFromPayloadStart<ushort>();
+                                    if (length == packetProcessor.Length)
+                                    {
+                                        var acceptPayload = new ConnectionPayload { Length = length };
+                                        packetProcessor.CopyPayload(acceptPayload.Data, length);
+
+                                        ConnectionPayloads[connectionId] = acceptPayload;
+                                    }
+                                }
+
                             }
                             else
                             {
@@ -784,9 +795,8 @@ namespace Unity.Networking.Transport
                     packetProcessor.AppendToPayload(type);
                     packetProcessor.AppendToPayload(token);
 
-                    if (type == HandshakeType.ConnectionRequest &&
-                        ConnectionPayloads.TryGetValue(connection, out var payload) &&
-                        payload.Length > 0)
+                    var c = type == HandshakeType.ConnectionRequest ? connection : ConnectionId.Invalid;
+                    if (ConnectionPayloads.TryGetValue(c, out var payload) && payload.Length > 0)
                     {
                         packetProcessor.AppendToPayload((ushort)payload.Length);
                         packetProcessor.AppendToPayload(payload.Data, payload.Length);

@@ -89,12 +89,12 @@ namespace Unity.Networking.Transport
             if (!driver.IsCreated)
                 throw new ArgumentException("Invalid driver (driver is not created).");
 
-            // We can't just check the number of connections in the list because that would include
-            // connections that are disconnected, and connections pending an Accept call.
-            var connections = driver.m_NetworkStack.Connections;
-            var pendingAccept = connections.QueryIncomingConnections(Allocator.Temp);
-            if (connections.Count - connections.FreeList.Count - pendingAccept.Length > 0)
-                throw new ArgumentException("Invalid driver (driver already has active connections).");
+            // This is not actually an entirely accurate check since the connection list count
+            // includes connections that have been closed. But we're not overly concerned about this
+            // since users would not typically add drivers with closed connections anyway (the idea
+            // is that you add drivers before you actually start accepting connections).
+            if (driver.m_NetworkStack.Connections.Count > 0)
+                throw new ArgumentException("Invalid driver (driver already has/had active connections).");
 
             // We only care about the number of pipelines of the first (valid) driver we have, since
             // the validation will ensure all other (valid) drivers will have the same number.

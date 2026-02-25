@@ -232,11 +232,10 @@ namespace Unity.Networking.Transport
             // Close and clear data from disconnecting underlying connections.
             void ProcessUnderlyingDisconnections()
             {
-                var disconnectionList = UnderlyingConnectionList.QueryIncomingDisconnections(Allocator.Temp);
-                var count = disconnectionList.Length;
-                for (int i = 0; i < count; i++)
+                var disconnection = default(ConnectionList.IncomingDisconnection);
+                while (UnderlyingConnectionList.TryGetNextIncomingDisconnection(out disconnection))
                 {
-                    var underlyingConnectionId = disconnectionList[i].Connection;
+                    var underlyingConnectionId = disconnection.Connection;
                     var connectionId = UnderlyingConnectionMap[underlyingConnectionId];
                     if (ConnectionList.ConnectionAt(connectionId.Id) == connectionId)
                     {
@@ -248,7 +247,7 @@ namespace Unity.Networking.Transport
                         var state = ConnectionList.GetConnectionState(connectionId);
                         if (state != NetworkConnection.State.Disconnecting && state != NetworkConnection.State.Disconnected)
                         {
-                            ConnectionList.StartDisconnecting(ref connectionId, disconnectionList[i].Reason);
+                            ConnectionList.StartDisconnecting(ref connectionId, disconnection.Reason);
                             ConnectionList.FinishDisconnecting(ref connectionId);
                         }
                     }

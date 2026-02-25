@@ -11,6 +11,7 @@ using UnityEngine;
 namespace Unity.Networking.Transport.TLS
 {
     /// <summary>Callbacks to use with UnityTLS.</summary>
+    [BurstCompile]
     internal unsafe static class UnityTLSCallbacks
     {
         /// <summary>Structure that callbacks expect a pointer to as their user data.</summary>
@@ -36,58 +37,25 @@ namespace Unity.Networking.Transport.TLS
             public ConnectionId NewPacketsConnection;
         }
 
-        // TODO Most of the boilerplate here could be avoided by using C# 9.0 function pointers.
-
-        private static Binding.unitytls_client_data_send_callback s_SendCallbackDelegate;
-        private static Binding.unitytls_client_data_receive_callback s_ReceiveCallbackDelegate;
-        private static Binding.unitytls_client_log_callback s_LogCallbackDelegate;
-
-        private struct FunctionPointersKey {}
-
-        private static readonly SharedStatic<FunctionPointer<Binding.unitytls_client_data_send_callback>>
-            s_SendCallbackPtr = SharedStatic<FunctionPointer<Binding.unitytls_client_data_send_callback>>
-                .GetOrCreate<FunctionPointer<Binding.unitytls_client_data_send_callback>, FunctionPointersKey>();
-
-        private static readonly SharedStatic<FunctionPointer<Binding.unitytls_client_data_receive_callback>>
-            s_ReceiveCallbackPtr = SharedStatic<FunctionPointer<Binding.unitytls_client_data_receive_callback>>
-                .GetOrCreate<FunctionPointer<Binding.unitytls_client_data_receive_callback>, FunctionPointersKey>();
-
-        private static readonly SharedStatic<FunctionPointer<Binding.unitytls_client_log_callback>>
-            s_LogCallbackPtr = SharedStatic<FunctionPointer<Binding.unitytls_client_log_callback>>
-                .GetOrCreate<FunctionPointer<Binding.unitytls_client_log_callback>, FunctionPointersKey>();
-
-        private static bool s_Initialized;
-
-        /// <summary>Function pointer to the send callback.</summary>
-        public static IntPtr SendCallbackPtr => s_Initialized ? s_SendCallbackPtr.Data.Value : IntPtr.Zero;
-
-        /// <summary>Function pointer to the receive callback.</summary>
-        public static IntPtr ReceiveCallbackPtr => s_Initialized ? s_ReceiveCallbackPtr.Data.Value : IntPtr.Zero;
-
-        /// <summary>Function pointer to the log callback.</summary>
-        public static IntPtr LogCallbackPtr => s_Initialized ? s_LogCallbackPtr.Data.Value : IntPtr.Zero;
-
-        /// <summary>Initialize the function pointers of the callbacks.</summary>
-        /// <remarks>Must be called from managed code.</remarks>
-        public static void Initialize()
+        /// <summary>Get a function pointer to the send callback.</summary>
+        public static IntPtr GetSendCallbackPtr()
         {
-            if (!s_Initialized)
-            {
-                s_Initialized = true;
+            var funcPtr = BurstCompiler.CompileFunctionPointer<Binding.unitytls_client_data_send_callback>(SendCallback);
+            return funcPtr.Value;
+        }
 
-                s_SendCallbackDelegate = SendCallback;
-                s_ReceiveCallbackDelegate = ReceiveCallback;
-                s_LogCallbackDelegate = LogCallback;
+        /// <summary>Get a function pointer to the receive callback.</summary>
+        public static IntPtr GetReceiveCallbackPtr()
+        {
+            var funcPtr = BurstCompiler.CompileFunctionPointer<Binding.unitytls_client_data_receive_callback>(ReceiveCallback);
+            return funcPtr.Value;
+        }
 
-                var sendPtr = Marshal.GetFunctionPointerForDelegate(s_SendCallbackDelegate);
-                s_SendCallbackPtr.Data = new FunctionPointer<Binding.unitytls_client_data_send_callback>(sendPtr);
-
-                var recvPtr = Marshal.GetFunctionPointerForDelegate(s_ReceiveCallbackDelegate);
-                s_ReceiveCallbackPtr.Data = new FunctionPointer<Binding.unitytls_client_data_receive_callback>(recvPtr);
-
-                var logPtr = Marshal.GetFunctionPointerForDelegate(s_LogCallbackDelegate);
-                s_LogCallbackPtr.Data = new FunctionPointer<Binding.unitytls_client_log_callback>(logPtr);
-            }
+        /// <summary>Get a function pointer to the log callback.</summary>
+        public static IntPtr GetLogCallbackPtr()
+        {
+            var funcPtr = BurstCompiler.CompileFunctionPointer<Binding.unitytls_client_log_callback>(LogCallback);
+            return funcPtr.Value;
         }
 
         // For some reason UnityTLS doesn't expose those in the bindings...

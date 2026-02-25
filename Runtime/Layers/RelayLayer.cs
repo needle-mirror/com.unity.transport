@@ -543,12 +543,10 @@ namespace Unity.Networking.Transport
 
             private bool UnderlyingConnectionFailed(ref ConnectionId underlyingConnection)
             {
-                var disconnects = UnderlyingConnections.QueryIncomingDisconnections(Allocator.Temp);
-
-                var count = disconnects.Length;
-                for (int i = 0; i < count; i++)
+                var disconnect = default(ConnectionList.IncomingDisconnection);
+                while (UnderlyingConnections.TryGetNextIncomingDisconnection(out disconnect))
                 {
-                    if (disconnects[i].Connection == underlyingConnection)
+                    if (disconnect.Connection == underlyingConnection)
                         return true;
                 }
 

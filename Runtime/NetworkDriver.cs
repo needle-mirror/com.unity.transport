@@ -6,8 +6,10 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
+using Unity.Networking.Transport.Analytics;
 using Unity.Networking.Transport.Error;
 using Unity.Networking.Transport.Relay;
+using Unity.Networking.Transport.TLS;
 using Unity.Networking.Transport.Utilities;
 using UnityEngine;
 using BurstRuntime = Unity.Burst.BurstRuntime;
@@ -61,9 +63,11 @@ namespace Unity.Networking.Transport
         }
 
         /// <summary>
-        /// Structure that can be used to access a <c>NetworkDriver</c> from multiple jobs. Only a
-        /// subset of operations are supported because not all operations are safe to perform
-        /// concurrently. Must be obtained with the <see cref="ToConcurrent"/> method.
+        /// You can use this structure to access a <c>NetworkDriver</c>'s connections from multiple
+        /// jobs to process connections in parallel with <see cref="IJobParallelFor"/> (accessing
+        /// the same connection from multiple parallel jobs isn't supported). Only a subset of
+        /// operations are implemented because not all operations are safe to perform concurrently.
+        /// Must be obtained with the <see cref="ToConcurrent"/> method.
         /// </summary>
         public struct Concurrent
         {
@@ -619,49 +623,40 @@ namespace Unity.Networking.Transport
 
             public void Execute()
             {
+                driver.ClearEventQueue();
                 driver.InternalUpdate();
             }
         }
 
-        [BurstCompile]
-        struct ClearEventQueue : IJob
+        private void ClearEventQueue()
         {
-            public NetworkEventQueue eventQueue;
-            public NetworkDriverReceiver driverReceiver;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            public NativeArray<int> pendingSend;
-            [ReadOnly] public ConnectionList connectionList;
-            public long listenState;
-#endif
-            public void Execute()
+            var connectionList = m_NetworkStack.Connections;
+            for (int i = 0; i < connectionList.Count; ++i)
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                for (int i = 0; i < connectionList.Count; ++i)
+                var conCount = m_EventQueue.GetCountForConnection(i);
+                var connectionState = connectionList.GetConnectionState(connectionList.ConnectionAt(i));
+                if (conCount != 0 && connectionState != NetworkConnection.State.Disconnected && connectionState != NetworkConnection.State.Disconnecting)
                 {
-                    var conCount = eventQueue.GetCountForConnection(i);
-                    var connectionState = connectionList.GetConnectionState(connectionList.ConnectionAt(i));
-                    if (conCount != 0 && connectionState != NetworkConnection.State.Disconnected && connectionState != NetworkConnection.State.Disconnecting)
-                    {
-                        Debug.LogError($"Resetting event queue with pending events (Count={conCount}, ConnectionID={i}) Listening: {listenState}");
-                    }
+                    Debug.LogError($"Resetting event queue with pending events (Count={conCount}, ConnectionID={i})");
                 }
-                bool didPrint = false;
-                for (int i = 0; i < JobsUtility.MaxJobThreadCount; ++i)
-                {
-                    if (pendingSend[i * JobsUtility.CacheLineSize / 4] > 0)
-                    {
-                        pendingSend[i * JobsUtility.CacheLineSize / 4] = 0;
-                        if (!didPrint)
-                        {
-                            Debug.LogError("Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
-                            didPrint = true;
-                        }
-                    }
-                }
-#endif
-                eventQueue.Clear();
-                driverReceiver.ClearStream();
             }
+            bool didPrint = false;
+            for (int i = 0; i < JobsUtility.MaxJobThreadCount; ++i)
+            {
+                if (m_PendingBeginSend[i * JobsUtility.CacheLineSize / 4] > 0)
+                {
+                    m_PendingBeginSend[i * JobsUtility.CacheLineSize / 4] = 0;
+                    if (!didPrint)
+                    {
+                        Debug.LogError("Missing EndSend, calling BeginSend without calling EndSend will result in a memory leak");
+                        didPrint = true;
+                    }
+                }
+            }
+#endif
+            m_EventQueue.Clear();
+            m_DriverReceiver.ClearStream();
         }
 
         private void UpdateLastUpdateTime()
@@ -703,19 +698,7 @@ namespace Unity.Networking.Transport
             {
                 var connections = m_NetworkStack.Connections;
 
-                var clearJob = new ClearEventQueue
-                {
-                    eventQueue = m_EventQueue,
-                    driverReceiver = m_DriverReceiver,
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    pendingSend = m_PendingBeginSend,
-                    connectionList = connections,
-                    listenState = Listening ? 1 : 0,
-#endif
-                };
-
-                var handle = clearJob.Schedule(dependency);
-                handle = updateJob.Schedule(handle);
+                var handle = updateJob.Schedule(dependency);
                 handle = m_NetworkStack.ScheduleReceive(ref m_DriverReceiver, ref connections, ref m_EventQueue, ref m_PipelineProcessor, ref m_ConnectionPayloads, LastUpdateTime, handle);
                 handle = m_NetworkStack.ScheduleSend(ref m_DriverSender, LastUpdateTime, handle);
 
@@ -751,7 +734,7 @@ namespace Unity.Networking.Transport
 #if HOSTNAME_RESOLUTION_AVAILABLE
             for (var i = m_HostnameLookups.Length - 1; i >= 0; --i)
             {
-                if (CheckHostnameLookupStatus(m_HostnameLookups[i]))
+                if (IsHostnameLookupCompleted(m_HostnameLookups[i]))
                 {
                     m_HostnameLookups.RemoveAt(i);
                 }
@@ -895,6 +878,10 @@ namespace Unity.Networking.Transport
             if (usingRelay && endpoint.Port != 0)
                 Debug.LogWarning("When using Unity Relay, NetworkDriver should be bound to 0.0.0.0:0 (i.e. NetworkEndpoint.AnyIpv4).");
 
+            // Binding is the best place to set the OS headers overhead in the analytics layer since
+            // it's the first time we have access to the actual local endpoint being used.
+            AdjustAnalyticsLayerOSOverhead(endpoint);
+
             var result = m_NetworkStack.Bind(ref endpoint);
             Bound = result == 0;
 
@@ -984,7 +971,39 @@ namespace Unity.Networking.Transport
             return Accept(out _);
         }
 
-        internal unsafe void SetPendingPayloadData(NetworkConnection connection, NativeArray<byte> payload)
+        /// <summary>
+        /// Set a payload that will be sent to clients when accepting their connection. This is
+        /// analoguous to the payload provided on the <see cref="Connect"/> call on clients, except
+        /// that instead of the payload being sent by the client when connecting, it's sent by the
+        /// server when accepting the connection. This payload is made available to the client in
+        /// the <see cref="DataStreamReader"/> returned by <see cref="PopEvent"/> and its variants
+        /// when popping the <see cref="NetworkEvent.Type.Connect"/> event.
+        /// </summary>
+        /// <remarks>
+        /// Despite what the description may suggest, this is not actually sent when calling the
+        /// <see cref="Accept"/> method, but rather immediately upon receiving a connection request.
+        /// By the time <see cref="Accept"/> is called, the payload has already been sent to the
+        /// client. Because of this, this mechanism is mostly useful when the server is expected to
+        /// send the same data to all connecting clients.
+        /// </remarks>
+        /// <param name="payload">Payload to send when accepting connections.</param>
+        public unsafe void SetAcceptPayload(NativeArray<byte> payload)
+        {
+            var connectAcceptHeaderSize = m_NetworkStack.PacketPadding + SimpleConnectionLayer.k_HandshakeSize + sizeof(ushort);
+            var maxSize = m_DriverSender.SendQueue.PayloadCapacity - connectAcceptHeaderSize;
+            if (payload.Length > maxSize)
+            {
+                Debug.LogError($"Payload provided to SetAcceptPayload() call is too large ({payload.Length} bytes, maximum is {maxSize}). Ignoring.");
+            }
+            else
+            {
+                var acceptPayload = new ConnectionPayload { Length = payload.Length };
+                UnsafeUtility.MemCpy(acceptPayload.Data, payload.GetUnsafeReadOnlyPtr(), payload.Length);
+                m_ConnectionPayloads[ConnectionId.Invalid] = acceptPayload;
+            }
+        }
+
+        private unsafe void SetConnectPayload(NetworkConnection connection, NativeArray<byte> payload)
         {
             var connectRequestHeaderSize = m_NetworkStack.PacketPadding + SimpleConnectionLayer.k_HandshakeSize + sizeof(ushort);
             var maxSize = m_DriverSender.SendQueue.PayloadCapacity - connectRequestHeaderSize;
@@ -1025,6 +1044,7 @@ namespace Unity.Networking.Transport
                         return false;
                 }
 
+                AdjustAnalyticsLayerOSOverhead(bindEndpoint);
                 var result = m_NetworkStack.Bind(ref bindEndpoint);
                 Bound = result == 0;
 
@@ -1062,7 +1082,7 @@ namespace Unity.Networking.Transport
         public NetworkConnection Connect(NetworkEndpoint endpoint, NativeArray<byte> payload)
         {
             var connection = Connect(endpoint);
-            SetPendingPayloadData(connection, payload);
+            SetConnectPayload(connection, payload);
             return connection;
         }
 
@@ -1104,7 +1124,8 @@ namespace Unity.Networking.Transport
         /// the method. If binding to a separate endpoint is required, call <see cref="Bind"/>
         /// before calling this method.
         /// </remarks>
-        /// <param name="endpoint">Endpoint to connect to.</param>
+        /// <param name="address">Address to connect to.</param>
+        /// <param name="port">Port to connect to.</param>
         /// <param name="payload">
         /// Payload to send to the remote peer along with the connection request. This can be
         /// recovered server-side when calling <see cref="Accept"/>. Payload must fit within a
@@ -1115,13 +1136,18 @@ namespace Unity.Networking.Transport
         public NetworkConnection Connect(FixedString512Bytes address, ushort port, NativeArray<byte> payload)
         {
             var connection = Connect(address, port);
-            SetPendingPayloadData(connection, payload);
+            SetConnectPayload(connection, payload);
             return connection;
         }
 
         /// <inheritdoc cref="Connect(FixedString512Bytes, ushort, NativeArray{byte})" />
         public NetworkConnection Connect(FixedString512Bytes address, ushort port)
-        { 
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (!IsCreated)
+                throw new InvalidOperationException("Driver must be constructed.");
+#endif
+
 #if UNITY_WEBGL && !UNITY_EDITOR
             var addressStr = new FixedString512Bytes();
             addressStr.Append(address);
@@ -1130,10 +1156,29 @@ namespace Unity.Networking.Transport
             var endpoint = new NetworkEndpoint(addressStr);
             return Connect(endpoint);
 #else
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (!IsCreated)
-                throw new InvalidOperationException("Driver must be constructed.");
-#endif
+            // If we're given an IPv4 or IPv6 address, connect directly to that.
+            var address128 = default(FixedString128Bytes);
+            var e = address128.CopyFromTruncated(address);
+            if (e == CopyError.None && NetworkEndpoint.TryParse(address128, port, out var endpoint))
+            {
+                return Connect(endpoint);
+            }
+
+            // Get rid of this once baselib supports resolving both IPv4 and IPv6 addresses. Then
+            // we'll just pass "localhost" to the resolver like any other hostname. We handle it
+            // specially now because we don't want "localhost" to resolve to ::1 by default.
+            var localhost = new FixedString32Bytes("localhost");
+            if (localhost == address)
+            {
+                endpoint = default;
+                endpoint.Family = NetworkFamily.Invalid;
+                LookupLocalhost(out endpoint);
+                if (endpoint.Family != NetworkFamily.Invalid)
+                {
+                    endpoint.Port = port;
+                    return Connect(endpoint);
+                }
+            }
 
             var connectionId = m_NetworkStack.Connections.StartConnecting(address, port, out var hostnameLookupFinished, out var resolvedEndpoint, out var disconnectReason);
             var networkConnection = new NetworkConnection(connectionId);
@@ -1159,10 +1204,43 @@ namespace Unity.Networking.Transport
             }
 
             return networkConnection;
-#endif
+#endif // UNITY_WEBGL && !UNITY_EDITOR
         }
 
-        public bool CheckHostnameLookupStatus(NetworkConnection connection)
+        internal static bool OverrideLocalhostLookup = true;
+
+        // Horrible hack to work around baselib's resolver favoring IPv6 addresses over IPv4.
+        // This is particularly surprising for "localhost" since we usually expect this to
+        // resolve to 127.0.0.1, not ::1, and so we special-case this here. Once baselib supports
+        // returning both IPv4 and IPv6 we'll be able to get rid of this. See MTT-13546.
+        [BurstDiscard]
+        private static void LookupLocalhost(out NetworkEndpoint endpoint)
+        {
+            endpoint = default;
+            endpoint.Family = NetworkFamily.Invalid;
+
+            if (!OverrideLocalhostLookup)
+                return;
+
+            string ipv4 = null;
+            string ipv6 = null;
+
+            var hostEntry = System.Net.Dns.GetHostEntry("localhost");
+            foreach (var ip in hostEntry.AddressList)
+            {
+                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    ipv4 = ip.ToString();
+                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                    ipv6 = ip.ToString();
+            }
+
+            if (ipv6 != null)
+                endpoint = NetworkEndpoint.Parse(ipv6, 0, NetworkFamily.Ipv6);
+            if (ipv4 != null)
+                endpoint = NetworkEndpoint.Parse(ipv4, 0, NetworkFamily.Ipv4);
+        }
+
+        internal bool IsHostnameLookupCompleted(NetworkConnection connection)
         {
             var c = connection.ConnectionId;
             var hostnameLookupFinished = m_NetworkStack.Connections.CheckHostnameLookupStatus(ref c, out var resolvedEndpoint, out var disconnectReason);
@@ -1186,6 +1264,12 @@ namespace Unity.Networking.Transport
 
             return false;
         }
+
+        [Obsolete("Use regular Connect/Disconnect events instead.", false)]
+        public bool CheckHostnameLookupStatus(NetworkConnection connection)
+        {
+            return IsHostnameLookupCompleted(connection);
+        }
 #endif
 
         private void DisconnectWithReason(NetworkConnection connection, DisconnectReason reason)
@@ -1208,7 +1292,7 @@ namespace Unity.Networking.Transport
         /// closed (however it will time out on its own after a while).
         /// </summary>
         /// <param name="connection">Connection to close.</param>
-        /// <returns>0 on success, a negative value on error.</returns>
+        /// <returns>Always returns 0 (the method can't fail).</returns>
         public int Disconnect(NetworkConnection connection)
         {
             var connectionState = GetConnectionState(connection);
@@ -1577,6 +1661,155 @@ namespace Unity.Networking.Transport
         public int ReceiveErrorCode
         {
             get => m_DriverReceiver.Result.ErrorCode;
+        }
+
+        private void AdjustAnalyticsLayerOSOverhead(NetworkEndpoint bindEndpoint)
+        {
+            if (m_NetworkStack.TryGetLayer<AnalyticsLayer>(out var analyticsLayer))
+            {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                var usingUdp = false;
+#else
+                var usingUdp = m_NetworkStack.TryGetLayer<NetworkInterfaceLayer<UDPNetworkInterface>>(out _);
+#endif
+                var usingWebSocket = m_NetworkStack.TryGetLayer<NetworkInterfaceLayer<WebSocketNetworkInterface>>(out _);
+                var usingRelay = m_NetworkStack.TryGetLayer<RelayLayer>(out _);
+
+                if (usingUdp || usingWebSocket)
+                {
+                    // Initialize overhead with the IP header size (if any).
+                    var overhead = bindEndpoint.Family switch
+                    {
+                        // Technically IPv4 can have a larger header with options, but it's uncommon
+                        // nowadays so just assume 20 bytes. IPv6 is always a fixed 40 bytes header.
+                        NetworkFamily.Ipv4 => 20,
+                        NetworkFamily.Ipv6 => 40,
+                        _ => 0
+                    };
+
+                    if (usingUdp)
+                    {
+                        // UDP is a fixed header of 8 bytes.
+                        overhead += 8;
+                    }
+                    else // Using WebSockets.
+                    {
+                        // Minimum TCP header size is 20 bytes, but most TCP traffic nowadays uses
+                        // at least the timestamps option which makes the header 32 bytes.
+                        overhead += 32;
+#if UNITY_WEBGL && !UNITY_EDITOR
+                        // Add the basic WebSocket frame overhead (2 bytes for the header, plus 4 bytes
+                        // for the mask which is required on clients). AnalyticsLayer will add more if
+                        // the packet is large enough to require an extended header.
+                        overhead += 2 + 4;
+
+                        // Try to account for TLS overhead when using WSS in WebGL. TLS overhead is 5
+                        // bytes of record header, plus typically 20 bytes for the MAC, and an average
+                        // of 8 bytes of padding for the common 16-byte cipher block size. Obviously
+                        // this is just an estimate. The actual overhead will depend on what gets
+                        // negotiated by the browser when establishing the TLS connection.
+                        if (m_NetworkSettings.TryGet<SecureNetworkProtocolParameter>(out _) || usingRelay)
+                            overhead += 5 + 20 + 8;
+#endif
+                    }
+
+                    analyticsLayer.SetOSHeaderOverhead(overhead);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Get statistics about this driver instance. These statistics are cumulative since the
+        /// creation of the driver and account for all connections that are/were made with it.
+        /// </summary>
+        /// <returns>Statistics about the driver.</returns>
+        public DriverStatistics GetStatistics()
+        {
+            if (!IsCreated)
+                return default;
+
+            if (m_NetworkStack.TryGetLayer<AnalyticsLayer>(out var analyticsLayer))
+            {
+                var stats = default(DriverStatistics);
+
+                var rxCtx = analyticsLayer.RxContext.Value;
+                stats.RxTotalBytes = rxCtx.TotalBytes;
+                stats.RxTotalPackets = rxCtx.TotalPackets;
+                stats.RxPacketSizes = rxCtx.PacketSizes;
+                stats.RxMeanQueueUsage = rxCtx.QueueUsage.Mean;
+                stats.RxMaximumQueueUsage = rxCtx.QueueUsage.Maximum;
+
+                var txCtx = analyticsLayer.TxContext.Value;
+                stats.TxTotalBytes = txCtx.TotalBytes;
+                stats.TxTotalPackets = txCtx.TotalPackets;
+                stats.TxPacketSizes = txCtx.PacketSizes;
+                stats.TxMeanQueueUsage = txCtx.QueueUsage.Mean;
+                stats.TxMaximumQueueUsage = txCtx.QueueUsage.Maximum;
+
+                stats.RxBandwidth = analyticsLayer.RxBandwidthMonitor.GetStatistics();
+                stats.TxBandwidth = analyticsLayer.TxBandwidthMonitor.GetStatistics();
+
+                return stats;
+            }
+
+            // This really shouldn't happen since AnalyticsLayer is always added to the stack.
+            Debug.LogError("NetworkDriver is not configured to track statistics.");
+            return default;
+        }
+
+        /// <summary>
+        /// Get statistics about a specific connection. This call is only valid on connections that
+        /// are in the <see cref="NetworkConnection.State.Connected"/> state. The statistics are
+        /// cumulative for the lifetime of the connection.
+        /// </summary>
+        /// <param name="connection">Connection to get statistics of.</param>
+        /// <returns>Statistics about the connection.</returns>
+        public unsafe ConnectionStatistics GetConnectionStatistics(NetworkConnection connection)
+        {
+            if (connection.InternalId < 0 || connection.InternalId >= m_NetworkStack.Connections.Count ||
+                m_NetworkStack.Connections.ConnectionAt(connection.InternalId).Version != connection.Version)
+                return default;
+
+            var stats = default(ConnectionStatistics);
+            var latencies = default(RunningStatistics);
+            var count = 0;
+
+            for (int i = 1; i <= m_PipelineProcessor.PipelineCount; i++)
+            {
+                var pipe = new NetworkPipeline { Id = i };
+                var stage = NetworkPipelineStageId.Get<ReliableSequencedPipelineStage>();
+                GetPipelineBuffers(pipe, stage, connection, out var _, out var _, out var sharedBuffer);
+
+                if (sharedBuffer == default)
+                    continue;
+
+                var ctx = (ReliableUtility.SharedContext*)sharedBuffer.GetUnsafePtr();
+
+                stats.Reliable += ctx->stats;
+
+                // Latency updates only make sense when we have sent packets on this pipeline.
+                if (ctx->stats.PacketsSent > 0)
+                {
+                    stats.Latency.Current += (uint)ctx->RttInfo.LastRtt;
+                    stats.Latency.SmoothedCurrent += ctx->RttInfo.SmoothedRtt;
+                    latencies.Merge(ctx->LatencyStats);
+                    count++;
+                }
+            }
+
+            // If we have multiple reliable pipelines, use the average of the current latencies.
+            if (count > 1)
+            {
+                stats.Latency.Current = (uint)((float)stats.Latency.Current / count);
+                stats.Latency.SmoothedCurrent = stats.Latency.SmoothedCurrent / count;
+            }
+
+            stats.Latency.Mean = latencies.Mean;
+            stats.Latency.StandardDeviation = latencies.StandardDeviation;
+            stats.Latency.Minimum = latencies.Minimum;
+            stats.Latency.Maximum = latencies.Maximum;
+
+            return stats;
         }
     }
 }

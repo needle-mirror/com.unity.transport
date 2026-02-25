@@ -16,10 +16,6 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     public unsafe struct SimulatorPipelineStage : INetworkPipelineStage
     {
-        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
-        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
-        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-
         /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
@@ -29,9 +25,9 @@ namespace Unity.Networking.Transport
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, simulatorParamsSizeOf);
 
             return new NetworkPipelineStage(
-                Receive: ReceiveFunctionPointer,
-                Send: SendFunctionPointer,
-                InitializeConnection: InitializeConnectionFunctionPointer,
+                Receive: new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive),
+                Send: new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send),
+                InitializeConnection: new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection),
                 ReceiveCapacity: param.MaxPacketCount * (param.MaxPacketSize + UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
                 SendCapacity: param.MaxPacketCount * (param.MaxPacketSize + UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
                 HeaderCapacity: 0,
@@ -202,10 +198,6 @@ namespace Unity.Networking.Transport
     [Obsolete("Use SimulatorPipelineStage with an ApplyMode set for sending instead.")]
     public unsafe struct SimulatorPipelineStageInSend : INetworkPipelineStage
     {
-        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
-        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
-        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-
         /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
@@ -214,9 +206,9 @@ namespace Unity.Networking.Transport
             UnsafeUtility.MemCpy(staticInstanceBuffer, &param, UnsafeUtility.SizeOf<SimulatorUtility.Parameters>());
 
             return new NetworkPipelineStage(
-                Receive: ReceiveFunctionPointer,
-                Send: SendFunctionPointer,
-                InitializeConnection: InitializeConnectionFunctionPointer,
+                Receive: new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive),
+                Send: new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send),
+                InitializeConnection: new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection),
                 ReceiveCapacity: 0,
                 SendCapacity: param.MaxPacketCount * (param.MaxPacketSize + UnsafeUtility.SizeOf<SimulatorUtility.DelayedPacket>()),
                 HeaderCapacity: 0,

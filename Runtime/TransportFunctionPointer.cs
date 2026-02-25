@@ -24,6 +24,7 @@ namespace Unity.Networking.Transport
         /// Construct a wrapped function pointer from a Burst function pointer.
         /// </summary>
         /// <param name="pointer">Burst function pointer to wrap.</param>
+        [Obsolete("Constructing TransportFunctionPointer from an existing FunctionPointer is deprecated. Construct from the delegate itself instead.")]
         public TransportFunctionPointer(FunctionPointer<T> pointer)
         {
             Ptr = pointer;
@@ -32,14 +33,18 @@ namespace Unity.Networking.Transport
         /// <summary>Wrap a Burst-compilable delegate into a function pointer.</summary>
         /// <param name="burstCompilableDelegate">Delegate to wrap.</param>
         /// <returns>Wrapped function pointer.</returns>
+        [Obsolete("TransportFunctionPointer.Burst is deprecated. Use the constructor that takes a delegate instead.", false)]
         public static TransportFunctionPointer<T> Burst(T burstCompilableDelegate)
         {
+            #pragma warning disable CS0618
             return new TransportFunctionPointer<T>(BurstCompiler.CompileFunctionPointer(burstCompilableDelegate));
+            #pragma warning restore CS0618
         }
 
         /// <summary>Wrap a managed delegate into a function pointer.</summary>
         /// <param name="managedDelegate">Managed delegate to wrap.</param>
         /// <returns>Wrapped function pointer.</returns>
+        [Obsolete("TransportFunctionPointer.Managed is deprecated. Managed delegates will eventually be unsupported.", false)]
         public static TransportFunctionPointer<T> Managed(T managedDelegate)
         {
             GCHandle.Alloc(managedDelegate); // Ensure delegate is never garbage-collected.

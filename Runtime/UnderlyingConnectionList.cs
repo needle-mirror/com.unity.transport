@@ -23,11 +23,11 @@ namespace Unity.Networking.Transport
         void Disconnect(ref ConnectionId connectionId);
 
         /// <summary>
-        /// Gets the list of disconnections in the underlying layer for the current update.
+        /// Get the next disconnection from the underlying layer (if any).
         /// </summary>
-        /// <param name="allocator">The allocator to use for the NativeArray</param>
-        /// <returns>Returns a NativeArray with the disconnections of the underlying layer.</returns>
-        public NativeArray<ConnectionList.IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator);
+        /// <param name="disconnection">The next incoming disconnection.</param>
+        /// <returns>True if an incoming disconnection was found, false otherwise.</returns>
+        public bool TryGetNextIncomingDisconnection(out ConnectionList.IncomingDisconnection disconnection);
     }
 
     internal struct NullUnderlyingConnectionList : IUnderlyingConnectionList
@@ -40,7 +40,11 @@ namespace Unity.Networking.Transport
 
         public void Disconnect(ref ConnectionId connectionId) {}
 
-        public NativeArray<ConnectionList.IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator) => default;
+        public bool TryGetNextIncomingDisconnection(out ConnectionList.IncomingDisconnection disconnection)
+        {
+            disconnection = default;
+            return false;
+        }
     }
 
     internal struct UnderlyingConnectionList : IUnderlyingConnectionList
@@ -75,7 +79,9 @@ namespace Unity.Networking.Transport
             }
         }
 
-        public NativeArray<ConnectionList.IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator)
-            => Connections.QueryIncomingDisconnections(allocator);
+        public bool TryGetNextIncomingDisconnection(out ConnectionList.IncomingDisconnection disconnection)
+        {
+            return Connections.TryGetNextIncomingDisconnection(out disconnection);
+        }
     }
 }

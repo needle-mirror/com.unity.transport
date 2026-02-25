@@ -206,10 +206,6 @@ namespace Unity.Networking.Transport
         {
         }
 
-        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
-        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
-        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-
         /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
@@ -217,9 +213,9 @@ namespace Unity.Networking.Transport
             sharedContext->PayloadCapacity = settings.GetFragmentationStageParameters().PayloadCapacity;
 
             return new NetworkPipelineStage(
-                Receive: ReceiveFunctionPointer,
-                Send: SendFunctionPointer,
-                InitializeConnection: InitializeConnectionFunctionPointer,
+                Receive: new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive),
+                Send: new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send),
+                InitializeConnection: new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection),
                 ReceiveCapacity: sizeof(FragContext) + sharedContext->PayloadCapacity,
                 SendCapacity: sizeof(FragContext) + sharedContext->PayloadCapacity,
                 HeaderCapacity: FragHeaderCapacity,

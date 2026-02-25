@@ -596,7 +596,6 @@ namespace Unity.Networking.Transport
                         inboundBuffer.buffer = inboundBuffer.bufferWithHeaders + headerSize;
                         inboundBuffer.bufferLength = ctx.header.Length + inboundBuffer.bufferLength;
 
-
                         internalBufferOffset += (ctx.internalProcessBufferLength + AlignmentMinusOne) & (~AlignmentMinusOne);
                         internalSharedBufferOffset += (ctx.internalSharedProcessBufferLength + AlignmentMinusOne) & (~AlignmentMinusOne);
                     }
@@ -687,6 +686,7 @@ namespace Unity.Networking.Transport
                 var retval = ((delegate * unmanaged[Cdecl] < ref NetworkPipelineContext, ref InboundSendBuffer, ref Requests, int, int >)pipelineStage.Send.Ptr.Value)(ref ctx, ref inboundBuffer, ref requests, systemHeaderSize);
                 if ((requests & NetworkPipelineStage.Requests.Resume) != 0)
                     resumeQ.Add(startStage);
+
                 return retval;
             }
         }
@@ -970,14 +970,10 @@ namespace Unity.Networking.Transport
 
             if (!stageFound)
             {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                throw new InvalidOperationException("Could not find stage ID. Make sure the type for this stage ID is added when the pipeline is created.");
-#else
                 writeProcessingBuffer = default;
                 readProcessingBuffer = default;
                 sharedBuffer = default;
                 return;
-#endif
             }
 
             writeProcessingBuffer = m_SendBuffer.AsArray().GetSubArray(sendBufferOffset, m_StageStructs[m_PipelineStagesIndices[stageIndexInList]].SendCapacity);

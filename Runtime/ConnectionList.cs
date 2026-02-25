@@ -155,18 +155,11 @@ namespace Unity.Networking.Transport
         private NativeQueue<ConnectionId> m_IncomingConnections;
 
         /// <summary>
-        /// Stores all connections that can be created by reusing a previously released slot.
-        /// </summary>
-        private NativeQueue<ConnectionId> m_FreeList;
-
-        /// <summary>
         /// The current count of connections.
         /// </summary>
         public int Count => m_Connections.Length;
 
         public bool IsCreated => m_Connections.IsCreated;
-
-        internal NativeQueue<ConnectionId> FreeList => m_FreeList;
 
         internal ConnectionId ConnectionAt(int index) => m_Connections.ConnectionAt(index);
         internal NetworkEndpoint GetConnectionEndpoint(ConnectionId connectionId) => m_Connections[connectionId].Endpoint;
@@ -180,9 +173,7 @@ namespace Unity.Networking.Transport
             m_Connections[connectionId] = data;
         }
 
-        internal NativeArray<ConnectionId> QueryFinishedConnections(Allocator allocator) => m_FinishedConnections.ToArray(allocator);
         internal NativeArray<ConnectionId> QueryIncomingConnections(Allocator allocator) => m_IncomingConnections.ToArray(allocator);
-        internal NativeArray<IncomingDisconnection> QueryIncomingDisconnections(Allocator allocator) => m_IncomingDisconnections.ToArray(allocator);
 
         public static ConnectionList Create()
         {
@@ -198,7 +189,6 @@ namespace Unity.Networking.Transport
 #endif
             m_IncomingDisconnections = new NativeQueue<IncomingDisconnection>(allocator);
             m_FinishedConnections = new NativeQueue<ConnectionId>(allocator);
-            m_FreeList = new NativeQueue<ConnectionId>(allocator);
             m_IncomingConnections = new NativeQueue<ConnectionId>(allocator);
         }
 
@@ -211,25 +201,26 @@ namespace Unity.Networking.Transport
             m_IncomingDisconnections.Dispose();
             m_FinishedConnections.Dispose();
             m_IncomingConnections.Dispose();
-            m_FreeList.Dispose();
         }
 
         private ConnectionId GetNewConnection()
         {
-            if (m_FreeList.TryDequeue(out var connectionId))
+            // First, try to find an existing connection that is closed and can be reused.
+            for (int i = 0; i < Count; i++)
             {
-                // There is one free connection slot that we can reuse
-                // its version has been already increased.
-                return connectionId;
-            }
-            else
-            {
-                return new ConnectionId
+                var connectionId = ConnectionAt(i);
+                var connectionData = m_Connections[connectionId];
+
+                if (connectionData.State == NetworkConnection.State.Disconnected)
                 {
-                    Id = m_Connections.Length,
-                    Version = 1,
-                };
+                    connectionId.Version++;
+                    m_Connections.ClearData(ref connectionId);
+                    return connectionId;
+                }
             }
+
+            // If we get here then all connection slots are in use. Add a new one.
+            return new ConnectionId { Id = m_Connections.Length, Version = 1 };
         }
 
         /// <summary>
@@ -352,6 +343,14 @@ namespace Unity.Networking.Transport
             m_FinishedConnections.Enqueue(connectionId);
         }
 
+        /// <summary>Get the next completed connection (if any).</summary>
+        /// <param name="connectionId">ID of the next completed connection.</param>
+        /// <returns>True if a completed connection was found, false otherwise.</returns>
+        internal bool TryGetNextFinishedConnection(out ConnectionId connectionId)
+        {
+            return m_FinishedConnections.TryDequeue(out connectionId);
+        }
+
         /// <summary>
         /// Completes a connection started by the remote endpoint in Connecting state by setting it to Connected.
         /// </summary>
@@ -434,13 +433,18 @@ namespace Unity.Networking.Transport
             m_Connections[connectionId] = connectionData;
         }
 
+        /// <summary>Get the next incoming disconnection (if any).</summary>
+        /// <param name="disconnection">The next incoming disconnection.</param>
+        /// <returns>True if an incoming disconnection was found, false otherwise.</returns>
+        internal bool TryGetNextIncomingDisconnection(out IncomingDisconnection disconnection)
+        {
+            return m_IncomingDisconnections.TryDequeue(out disconnection);
+        }
+
         /// <summary>
         /// Completes a disconnection by setting the state of the connection to Disconnected.
         /// </summary>
         /// <param name="connectionId">The disconnecting connection to be completed.</param>
-        /// <remarks>
-        /// The connection's ID will be freed up at the beginning of the next ScheduleUpdate call.
-        /// </remarks>
         internal void FinishDisconnecting(ref ConnectionId connectionId)
         {
             var connectionData = m_Connections[connectionId];
@@ -453,36 +457,6 @@ namespace Unity.Networking.Transport
 
             connectionData.State = NetworkConnection.State.Disconnected;
             m_Connections[connectionId] = connectionData;
-        }
-
-        /// <summary>
-        /// Cleanup of queues for connections/disconnections that has been completed.
-        /// </summary>
-        internal void Cleanup()
-        {
-            m_FinishedConnections.Clear();
-            m_IncomingDisconnections.Clear();
-
-            // If the free list is empty, add all the connections that are disconnected. It would be
-            // better to just always immediately add disconnected connections, but then we'd have to
-            // be careful about not adding connections that are already in the free list. That could
-            // get expensive so we just lazily add connections when we're likely to need new ones
-            // (that is, when there's nothing in the free list).
-            if (m_FreeList.Count == 0)
-            {
-                for (int i = 0; i < Count; i++)
-                {
-                    var connectionId = ConnectionAt(i);
-                    var connectionData = m_Connections[connectionId];
-
-                    if (connectionData.State == NetworkConnection.State.Disconnected)
-                    {
-                        connectionId.Version++;
-                        m_Connections.ClearData(ref connectionId);
-                        m_FreeList.Enqueue(connectionId);
-                    }
-                }
-            }
         }
 
         internal void UpdateConnectionAddress(ref ConnectionId connection, ref NetworkEndpoint address)

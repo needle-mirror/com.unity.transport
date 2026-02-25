@@ -55,6 +55,7 @@ namespace Unity.Networking.Transport
 using System;
 using System.Runtime.InteropServices;
 
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Networking.Transport.Relay;
@@ -131,8 +132,31 @@ namespace Unity.Networking.Transport
         {
             get
             {
-                Debug.LogWarning("Local endpoint is not available in web browsers.");
-                return NetworkEndpoint.AnyIpv4;
+                // For WebGL there's really no concept of a local endpoint since the browser manages
+                // the underlying sockets. Best we can do is differentiate between loopback and
+                // external connections and return different addresses depending on that.
+
+                var hostname = m_InternalData.Value.SecureHostname.ToString();
+                if (string.IsNullOrEmpty(hostname))
+                {
+                    // Try to get the hostname from the connection list.
+                    int count = m_ConnectionList.Count;
+                    for (int i = 0; i < count; i++)
+                    {
+                        var connectionId = m_ConnectionList.ConnectionAt(i);
+                        var connectionState = m_ConnectionList.GetConnectionState(connectionId);
+                        if (connectionState == NetworkConnection.State.Connected)
+                        {
+                            var endpoint = m_ConnectionList.GetConnectionEndpoint(connectionId);
+                            hostname = endpoint.ToString();
+                            break;
+                        }
+                    }
+                }
+
+                return hostname.StartsWith("127.") || hostname.StartsWith("localhost") || hostname.StartsWith("[::1]")
+                    ? NetworkEndpoint.LoopbackIpv4
+                    : NetworkEndpoint.AnyIpv4;
             }
         }
 

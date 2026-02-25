@@ -151,10 +151,17 @@ namespace Unity.Networking.Transport
                     UpdateLastReceiveTime(connectionId);
                     HandlePossibleReconnection(connectionId, ref packetProcessor);
 
+                    var clientPtr = ConnectionsData[connectionId].UnityTLSClientPtr;
+                    if (clientPtr == null)
+                    {
+                        // Can happen if HandlePossibleReconnection decided we can't reconnect.
+                        packetProcessor.Drop();
+                        continue;
+                    }
+
                     packetProcessor.ConnectionRef = connectionId;
 
                     // If in initial or handshake state, process everything as a handshake message.
-                    var clientPtr = ConnectionsData[connectionId].UnityTLSClientPtr;
                     var clientState = Binding.unitytls_client_get_state(clientPtr);
                     if (clientState == Binding.UnityTLSClientState_Init || clientState == Binding.UnityTLSClientState_Handshake)
                     {
@@ -251,23 +258,32 @@ namespace Unity.Networking.Transport
                 //
                 // This is why when we detect a need for reconnection, we create a whole new DTLS
                 // session on the side (ReconnectionClientPtr). If we get an answer from the server
-                // on that session (if we get a Server Hello), we know we changed IP address and
-                // start using the new session. Otherwise, it means we didn't change IP address and
-                // must keep using the new session.
+                // on that session (if we get a Server Hello or Hello Verify Request), we know we
+                // changed IP address and start using the new session. If we get an alert message
+                // instead, then it likely means we can't reconnect to the server anyway so close
+                // the connection. If we get anything else, then this is likely traffic from the
+                // existing session and we know we don't have to reconnect.
 
-                if (DTLSUtilities.IsServerHello(ref packetProcessor))
+                if (DTLSUtilities.IsServerHello(ref packetProcessor) || DTLSUtilities.IsHelloVerifyRequest(ref packetProcessor))
                 {
+                    // Switch to the new session.
                     Binding.unitytls_client_destroy(data.UnityTLSClientPtr);
                     data.UnityTLSClientPtr = data.ReconnectionClientPtr;
                     data.ReconnectionClientPtr = null;
+                    ConnectionsData[connection] = data;
+                }
+                else if (DTLSUtilities.IsAlert(ref packetProcessor))
+                {
+                    // Authentication failure is not really correct, but there's nothing better.
+                    Connections.StartDisconnecting(ref connection, Error.DisconnectReason.AuthenticationFailure);
+                    Disconnect(connection);
                 }
                 else
                 {
                     Binding.unitytls_client_destroy(data.ReconnectionClientPtr);
                     data.ReconnectionClientPtr = null;
+                    ConnectionsData[connection] = data;
                 }
-
-                ConnectionsData[connection] = data;
             }
 
             private void ProcessConnectionList()
@@ -332,9 +348,8 @@ namespace Unity.Networking.Transport
                     // The only way to get a failed client is because of a failed handshake.
                     if (clientState == Binding.UnityTLSClientState_Fail)
                     {
-                        // TODO Would be nice to translate the numerical step in a string.
-                        var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
-                        Debug.LogError($"DTLS handshake failed at step {handshakeStep}. Closing connection.");
+                        var step = Binding.unitytls_client_get_handshake_state(clientPtr);
+                        Debug.LogError($"DTLS handshake failed at step {step} ({DTLSUtilities.DescribeHandshakeStep(step)}). Closing connection.");
                     }
 
                     Connections.StartDisconnecting(ref connection, Error.DisconnectReason.AuthenticationFailure);
@@ -368,9 +383,13 @@ namespace Unity.Networking.Transport
                 if (data.UnityTLSClientPtr == null)
                     return;
 
-                // Already reconnecting, nothing to do.
+                // Already reconnecting.
                 if (data.ReconnectionClientPtr != null)
+                {
+                    // Advancing the handshake allows us to resend Client Hellos that are lost.
+                    AdvanceHandshake(data.ReconnectionClientPtr);
                     return;
+                }
 
                 // No reconnection for servers.
                 var role = Binding.unitytls_client_get_role(data.UnityTLSClientPtr);

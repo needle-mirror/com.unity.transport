@@ -275,12 +275,10 @@ namespace Unity.Networking.Transport
             private void ProcessUnderlyingConnectionList()
             {
                 // The only thing we care about in the underlying connection list is disconnections.
-                var disconnects = UnderlyingConnections.QueryIncomingDisconnections(Allocator.Temp);
-
-                var count = disconnects.Length;
-                for (int i = 0; i < count; i++)
+                var disconnect = default(ConnectionList.IncomingDisconnection);
+                while (UnderlyingConnections.TryGetNextIncomingDisconnection(out disconnect))
                 {
-                    var underlyingConnectionId = disconnects[i].Connection;
+                    var underlyingConnectionId = disconnect.Connection;
 
                     // Happens if we initiated the disconnection.
                     if (!UnderlyingIdToCurrentId.TryGetValue(underlyingConnectionId, out var connectionId))
@@ -289,7 +287,7 @@ namespace Unity.Networking.Transport
                     // If our connection is not disconnecting, then it means the layer below
                     // triggered the disconnection on its own, so start disconnecting.
                     if (Connections.GetConnectionState(connectionId) != NetworkConnection.State.Disconnecting)
-                        Connections.StartDisconnecting(ref connectionId, disconnects[i].Reason);
+                        Connections.StartDisconnecting(ref connectionId, disconnect.Reason);
 
                     Disconnect(connectionId);
                 }
@@ -401,9 +399,8 @@ namespace Unity.Networking.Transport
                     // The only way to get a failed client is because of a failed handshake.
                     if (clientState == Binding.UnityTLSClientState_Fail)
                     {
-                        // TODO Would be nice to translate the numerical step in a string.
-                        var handshakeStep = Binding.unitytls_client_get_handshake_state(clientPtr);
-                        Debug.LogError($"TLS handshake failed at step {handshakeStep}. Closing connection.");
+                        var step = Binding.unitytls_client_get_handshake_state(clientPtr);
+                        Debug.LogError($"TLS handshake failed at step {step} ({DTLSUtilities.DescribeHandshakeStep(step)}). Closing connection.");
                     }
 
                     UnderlyingConnections.StartDisconnecting(ref data.UnderlyingConnection);

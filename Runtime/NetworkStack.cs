@@ -157,6 +157,8 @@ namespace Unity.Networking.Transport
             // assign it so the new values are copied back
             networkInterface = interfaceRef;
 
+            stack.AddLayer(new AnalyticsLayer(), ref networkSettings);
+
             // stack.AddLayer(new LogLayer(), ref networkSettings); // This will print packets for debugging
 
             var isRelay = networkSettings.TryGet<RelayNetworkParameter>(out _);
@@ -245,11 +247,6 @@ namespace Unity.Networking.Transport
 
             m_Layers.Add(NetworkLayerWrapper.Create(ref layer));
             m_AccumulatedPacketPadding.Add(m_TotalPacketPadding);
-
-            // If a new connection list has been created we notify the BottomLayer so it will do the
-            // proper cleanup on every udpate.
-            if (m_Connections.IsCreated && oldConnections != m_Connections)
-                m_Layers.ElementAt(0).CastRef<BottomLayer>().AddConnectionList(ref m_Connections);
         }
 
         internal bool TryGetLayer<T>(out T layer) where T : unmanaged, INetworkLayer

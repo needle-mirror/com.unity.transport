@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
+using Unity.Networking.Transport.Analytics;
 using UnityEngine;
 
 namespace Unity.Networking.Transport.Utilities
@@ -77,13 +78,21 @@ namespace Unity.Networking.Transport.Utilities
         /// <summary>Statistics tracked internally by the reliable pipeline stage.</summary>
         public struct Statistics
         {
-            /// <summary>Number of packets received by the pipeline stage.</summary>
-            /// <value>Number of packets.</value>
+            /// <summary>Number of data packets received by the pipeline stage.</summary>
+            /// <value>Number of data packets.</value>
             public int PacketsReceived;
 
-            /// <summary>Number of packets sent by the pipeline stage.</summary>
-            /// <value>Number of packets.</value>
+            /// <summary>Number of data packets sent by the pipeline stage.</summary>
+            /// <value>Number of data packets.</value>
             public int PacketsSent;
+
+            /// <summary>Number of acknowledgements received by the pipeline stage.</summary>
+            /// <value>Number of ACK packets.</value>
+            public int AcksReceived;
+
+            /// <summary>Number of acknowledgements sent by the pipeline stage.</summary>
+            /// <value>Number of ACK packets.</value>
+            public int AcksSent;
 
             /// <summary>Number of packets that were dropped in transit.</summary>
             /// <value>Number of packets.</value>
@@ -105,6 +114,26 @@ namespace Unity.Networking.Transport.Utilities
             /// <summary>Number of packets resent by the pipeline stage.</summary>
             /// <value>Number of packets.</value>
             public int PacketsResent;
+
+            /// <summary>Add two statistics structures together.</summary>
+            /// <param name="left">Left operand.</param>
+            /// <param name="right">Right operand.</param>
+            /// <returns>Sum of the two statistics structures.</returns>
+            public static Statistics operator +(Statistics left, Statistics right)
+            {
+                return new Statistics
+                {
+                    PacketsReceived = left.PacketsReceived + right.PacketsReceived,
+                    PacketsSent = left.PacketsSent + right.PacketsSent,
+                    AcksReceived = left.AcksReceived + right.AcksReceived,
+                    AcksSent = left.AcksSent + right.AcksSent,
+                    PacketsDropped = left.PacketsDropped + right.PacketsDropped,
+                    PacketsOutOfOrder = left.PacketsOutOfOrder + right.PacketsOutOfOrder,
+                    PacketsDuplicated = left.PacketsDuplicated + right.PacketsDuplicated,
+                    PacketsStale = left.PacketsStale + right.PacketsStale,
+                    PacketsResent = left.PacketsResent + right.PacketsResent,
+                };
+            }
         }
 
         /// <summary>
@@ -224,6 +253,8 @@ namespace Unity.Networking.Transport.Utilities
             /// <value>RTT information.</value>
             public RTTInfo RttInfo;
 
+            internal RunningStatistics LatencyStats;
+
             internal int TimerDataOffset;
             internal int TimerDataStride;
             internal int RemoteTimerDataOffset;
@@ -317,9 +348,10 @@ namespace Unity.Networking.Transport.Utilities
         internal struct PacketInformation
         {
             public long SequenceId;
+            public long SendTime;
             public ushort Size;
             public ushort HeaderPadding;
-            public long SendTime;
+            public ushort LastHeaderDelta;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -440,6 +472,7 @@ namespace Unity.Networking.Transport.Utilities
             info->SequenceId = sequence;
             info->Size = (ushort)length;
             info->HeaderPadding = 0;      // Not used for packets queued for resume receive
+            info->LastHeaderDelta = 0;    // Not used for packets queued for resume receive
             info->SendTime = -1;          // Not used for packets queued for resume receive
 
             byte* dataPtr = GetPacketPtr((Context*)self, sequence);
@@ -469,12 +502,11 @@ namespace Unity.Networking.Transport.Utilities
 #endif
             }
 
-            var index = sequence % ctx->Capacity;
-
             PacketInformation* info = GetPacketInformation(self, sequence);
             info->SequenceId = sequence;
             info->Size = (ushort)totalSize;
             info->HeaderPadding = (ushort)data.headerPadding;
+            info->LastHeaderDelta = 0;
             info->SendTime = timestamp;
 
             if (data.bufferLength > 0)
@@ -651,9 +683,10 @@ namespace Unity.Networking.Transport.Utilities
         /// will then also be updated to track the next packet we need to resume.
         /// </summary>
         /// <param name="context">Pipeline context, we'll use both the shared reliability context and send context.</param>
+        /// <param name="headerSize">Actual header size we're using for this resend.</param>
         /// <returns>Buffer slice to packet payload.</returns>
         /// <exception cref="InvalidOperationException"></exception>
-        internal static unsafe InboundSendBuffer ResumeSend(NetworkPipelineContext context)
+        internal static unsafe InboundSendBuffer ResumeSend(NetworkPipelineContext context, int headerSize)
         {
             SharedContext* reliable = (SharedContext*)context.internalSharedProcessBuffer;
             Context* ctx = (Context*)context.internalProcessBuffer;
@@ -667,12 +700,31 @@ namespace Unity.Networking.Transport.Utilities
 
             var offset = (ctx->DataPtrOffset + ((sequence % ctx->Capacity) * ctx->DataStride));
 
+            // If the last time we resent this packet we did so with an optimized header, then the
+            // pipeline machinery will have moved our memory around to remove wasted space in the
+            // header. When this happens, we put the memory back in its right place before doing the
+            // resend. Ideally, we wouldn't need to do this and the pipeline processor would just be
+            // able to handle header size changes, but that code is such a mess that it's safer to
+            // just do this for now. The cost is acceptable since it can only happen when there are
+            // multiple resends of the same packet, which should be rare.
+            if (information->LastHeaderDelta > 0)
+            {
+                UnsafeUtility.MemMove(
+                    context.internalProcessBuffer + offset + information->HeaderPadding,
+                    context.internalProcessBuffer + offset + information->HeaderPadding - information->LastHeaderDelta,
+                    information->Size - information->HeaderPadding
+                );
+            }
+
             var inbound = default(InboundSendBuffer);
             inbound.bufferWithHeaders = context.internalProcessBuffer + offset;
             inbound.bufferWithHeadersLength = information->Size;
             inbound.headerPadding = information->HeaderPadding;
             inbound.SetBufferFromBufferWithHeaders();
             reliable->stats.PacketsResent++;
+
+            var headerDelta = MaxPacketHeaderWireSize(reliable->WindowSize) - headerSize;
+            information->LastHeaderDelta = (ushort)headerDelta;
 
             return inbound;
         }
@@ -813,6 +865,8 @@ namespace Unity.Networking.Transport.Utilities
                 rttInfo.SmoothedVariance += (math.abs(delta) - rttInfo.SmoothedVariance) / 4;
                 rttInfo.ResendTimeout = (int)(rttInfo.SmoothedRtt + 4 * rttInfo.SmoothedVariance);
                 sharedCtx->RttInfo = rttInfo;
+
+                sharedCtx->LatencyStats.AddDataPoint((uint)rttInfo.LastRtt);
             }
         }
 
@@ -836,7 +890,7 @@ namespace Unity.Networking.Transport.Utilities
             // Look up previously recorded receive timestamp, subtract that from current timestamp and return as processing time
             var timerData = GetRemotePacketTimer(sharedBuffer, sequenceId);
             if (timerData != null && timerData->SequenceId == sequenceId)
-                return Math.Min((ushort)(timestamp - timerData->ReceiveTime), ushort.MaxValue);
+                return (ushort)(timestamp - timerData->ReceiveTime);
             return 0;
         }
 
@@ -897,7 +951,10 @@ namespace Unity.Networking.Transport.Utilities
         {
             var reliable = (SharedContext*)context.internalSharedProcessBuffer;
 
-            reliable->stats.PacketsReceived++;
+            if (header.Type == (byte)PacketType.Payload)
+                reliable->stats.PacketsReceived++;
+            else
+                reliable->stats.AcksReceived++;
 
             var sequenceId64Bits = GetSequenceId64Bits(ref reliable->ReceivedPackets, header.SequenceId);
 
@@ -944,20 +1001,43 @@ namespace Unity.Networking.Transport.Utilities
             }
             else
             {
+                // At this point we know the packet is either a duplicate from one we already
+                // received, or it's a packet that arrived out of order.
+
+                // Check if we need to increase statistics. Most of the time a duplicate or out of
+                // order packet will be caused by a resend from the remote side, and we don't want
+                // to count those in the statistics because the duplication/disorder will not have
+                // been caused by the network. A good proxy for packets that are resends is if they
+                // arrived after more than the resend timeout since we received the latest packet.
+                // A packet that arrives within the resend timeout is not likely to be a resend, and
+                // more likely to reflect the actual network conditions.
+                var timerData = GetRemotePacketTimer(context.internalSharedProcessBuffer, reliable->ReceivedPackets.Sequence);
+                var mostRecentReceiveTime = timerData->ReceiveTime;
+                var timeDelta = context.timestamp - mostRecentReceiveTime;
+                var updateDuplicates = timeDelta <= CurrentResendTime(context.internalSharedProcessBuffer);
+                var updateOutOfOrder = timeDelta > 0 && updateDuplicates;
+
                 if (reliable->ReceivedPackets.AckMask.IsAcked(distance))
                 {
                     // Still valuable to check ACKs for duplicates, since there might be more
                     // information than in the original packet if it's a resend.
                     ReadAckPacket(context, header, mask);
 
-                    reliable->stats.PacketsDuplicated++;
+                    if (updateDuplicates)
+                        reliable->stats.PacketsDuplicated++;
+                    
                     reliable->DuplicatesSinceLastAck++;
-
                     return NullEntry;
                 }
 
                 reliable->ReceivedPackets.AckMask.Ack(distance);
-                reliable->stats.PacketsOutOfOrder++;
+
+                if (updateOutOfOrder)
+                {
+                    // A packet that arrives out of order will have been counted as dropped first.
+                    reliable->stats.PacketsDropped--;
+                    reliable->stats.PacketsOutOfOrder++;
+                }
             }
 
             StoreRemoteReceiveTimestamp(context.internalSharedProcessBuffer, sequenceId64Bits, context.timestamp);

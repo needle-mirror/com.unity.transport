@@ -29,6 +29,7 @@ namespace Unity.Networking.Transport
                 PipelineProcessor = arguments.PipelineProcessor,
                 Receiver = arguments.DriverReceiver,
                 EventQueue = arguments.EventQueue,
+                ConnectionPayloads = arguments.ConnectionPayloads,
             }.Schedule(dependency);
         }
 
@@ -41,6 +42,7 @@ namespace Unity.Networking.Transport
             public NetworkPipelineProcessor PipelineProcessor;
             public NetworkDriverReceiver Receiver;
             public NetworkEventQueue EventQueue;
+            public NativeHashMap<ConnectionId, ConnectionPayload> ConnectionPayloads;
 
             public void Execute()
             {
@@ -106,28 +108,38 @@ namespace Unity.Networking.Transport
                 }
             }
 
-            private void GenerateConnectionEvents()
+            private unsafe void GenerateConnectionEvents()
             {
-                var newConnections = Connections.QueryFinishedConnections(Allocator.Temp);
-                var count = newConnections.Length;
-                for (int i = 0; i < count; i++)
+                var connectionId = default(ConnectionId);
+                while (Connections.TryGetNextFinishedConnection(out connectionId))
                 {
+                    var offset = 0;
+                    var size = 0;
+
+                    // If we received an accept payload, append it to the stream.
+                    if (ConnectionPayloads.TryGetValue(connectionId, out var payload))
+                    {
+                        offset = Receiver.AppendToStream(payload.Data, payload.Length);
+                        size = payload.Length;
+
+                        ConnectionPayloads.Remove(connectionId);
+                    }
+
                     EventQueue.PushEvent(new NetworkEvent
                     {
-                        connectionId = newConnections[i].Id,
-                        type = NetworkEvent.Type.Connect
+                        connectionId = connectionId.Id,
+                        type = NetworkEvent.Type.Connect,
+                        offset = offset,
+                        size = size
                     });
                 }
             }
 
             private void GenerateDisconnectionEvents()
             {
-                var newDisconnections = Connections.QueryIncomingDisconnections(Allocator.Temp);
-                var count = newDisconnections.Length;
-                for (int i = 0; i < count; i++)
+                var disconnectionCommand = default(ConnectionList.IncomingDisconnection);
+                while (Connections.TryGetNextIncomingDisconnection(out disconnectionCommand))
                 {
-                    var disconnectionCommand = newDisconnections[i];
-
                     // We don't trigger disconnection events if the disconnection
                     // was requested by the local endpoint.
                     if (disconnectionCommand.Reason == Error.DisconnectReason.Default)

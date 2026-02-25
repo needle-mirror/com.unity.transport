@@ -10,49 +10,11 @@ namespace Unity.Networking.Transport
     /// </summary>
     internal struct BottomLayer : INetworkLayer
     {
-        private NativeList<ConnectionList> m_ConnectionLists;
+        public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding) => 0;
 
-        internal void AddConnectionList(ref ConnectionList connections)
-        {
-            m_ConnectionLists.Add(connections);
-        }
+        public void Dispose() { }
 
-        public int Initialize(ref NetworkSettings settings, ref ConnectionList connectionList, ref int packetPadding)
-        {
-            m_ConnectionLists = new NativeList<ConnectionList>(1, Allocator.Persistent);
-            return 0;
-        }
-
-        public void Dispose()
-        {
-            m_ConnectionLists.Dispose();
-        }
-
-        public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dependency)
-        {
-            var jobs = dependency;
-
-            foreach (var connectionList in m_ConnectionLists)
-            {
-                jobs = JobHandle.CombineDependencies(jobs, new ConnectionListCleanup
-                {
-                    Connections = connectionList,
-                }.Schedule(dependency));
-            }
-
-            return jobs;
-        }
-
-        [BurstCompile]
-        private struct ConnectionListCleanup : IJob
-        {
-            public ConnectionList Connections;
-
-            public void Execute()
-            {
-                Connections.Cleanup();
-            }
-        }
+        public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dependency) => dependency;
 
         public JobHandle ScheduleSend(ref SendJobArguments arguments, JobHandle dependency)
         {

@@ -6,12 +6,23 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Burst;
+using UnityEngine;
 
 namespace Unity.Networking.Transport
 {
     internal struct IPCManager
     {
         public static IPCManager Instance = new IPCManager();
+        internal static JobHandle ManagerAccessHandle;
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod]
+        private static void ResetStaticsOnLoad()
+        {
+            ManagerAccessHandle = default;
+            // No need to reset Instance since it already implements its own ref-counting.
+        }
+#endif
 
         [StructLayout(LayoutKind.Explicit)]
         internal unsafe struct IPCData
@@ -23,8 +34,6 @@ namespace Unity.Networking.Transport
 
         private NativeMultiQueue<IPCData> m_IPCQueue;
         private NativeParallelHashMap<ushort, int> m_IPCChannels;
-
-        internal static JobHandle ManagerAccessHandle;
 
         public bool IsCreated => m_IPCQueue.IsCreated;
 

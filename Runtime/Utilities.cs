@@ -163,6 +163,11 @@ namespace Unity.Networking.Transport.Utilities
             return !(old - current < (1u << 31));
         }
 
+        internal static bool IsNewer(ushort current, ushort old)
+        {
+            return GreaterThan16(current, old);
+        }
+
         internal static bool GreaterThan16(ushort lhs, ushort rhs)
         {
             const uint max_sequence_divide_2 = 0x7FFF;

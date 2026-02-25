@@ -129,7 +129,7 @@ namespace Unity.Networking.Transport
             NetworkEvent ev = m_ConnectionEventQ[connectionId * MaxEvents + idx];
             pipelineId = ev.pipelineId;
 
-            if (ev.type == NetworkEvent.Type.Data || ev.type == NetworkEvent.Type.Disconnect)
+            if (ev.size > 0)
             {
                 offset = ev.offset;
                 size = ev.size;
@@ -226,7 +226,7 @@ namespace Unity.Networking.Transport
                     m_Safety = NativeListUnsafeUtility.GetAtomicSafetyHandle(ref queue);
                     AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
-                    m_ConnectionEventHeadTail = (UnsafeList<int>*)NativeListUnsafeUtility.GetInternalListDataPtrUnchecked(ref queue);
+                    m_ConnectionEventHeadTail = queue.GetUnsafeList();
                 }
 
                 public int Length

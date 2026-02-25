@@ -58,18 +58,14 @@ namespace Unity.Networking.Transport
             /// <inheritdoc cref="ToFixedString"/>
             public override string ToString() => ToFixedString().ToString();
         }
-        
-        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
-        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
-        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
 
         /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings settings)
         {
             return new NetworkPipelineStage(
-                Receive: ReceiveFunctionPointer,
-                Send: SendFunctionPointer,
-                InitializeConnection: InitializeConnectionFunctionPointer,
+                Receive: new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive),
+                Send: new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send),
+                InitializeConnection: new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection),
                 ReceiveCapacity: UnsafeUtility.SizeOf<SequenceId>(),
                 SendCapacity: UnsafeUtility.SizeOf<SequenceId>(),
                 HeaderCapacity: UnsafeUtility.SizeOf<ushort>(),

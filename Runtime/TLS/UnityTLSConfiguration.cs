@@ -92,8 +92,6 @@ namespace Unity.Networking.Transport.TLS
 
         public UnityTLSConfiguration(ref NetworkSettings settings, SecureTransportProtocol protocol, ushort mtu = 0)
         {
-            UnityTLSCallbacks.Initialize();
-
             m_Config = new NativeReference<Binding.unitytls_client_config>(Allocator.Persistent);
             m_Callbacks = new NativeReference<UnityTLSCallbacks.CallbackContext>(Allocator.Persistent);
 
@@ -109,9 +107,9 @@ namespace Unity.Networking.Transport.TLS
             ConfigPtr->transportProtocol = (uint)protocol;
             ConfigPtr->transportUserData = (IntPtr)CallbackContextPtr;
 
-            ConfigPtr->dataSendCB = UnityTLSCallbacks.SendCallbackPtr;
-            ConfigPtr->dataReceiveCB = UnityTLSCallbacks.ReceiveCallbackPtr;
-            //ConfigPtr->logCallback = UnityTLSCallbacks.LogCallbackPtr;
+            ConfigPtr->dataSendCB = UnityTLSCallbacks.GetSendCallbackPtr();
+            ConfigPtr->dataReceiveCB = UnityTLSCallbacks.GetReceiveCallbackPtr();
+            //ConfigPtr->logCallback = UnityTLSCallbacks.GetLogCallbackPtr();
 
             ConfigPtr->mtu = mtu;
 

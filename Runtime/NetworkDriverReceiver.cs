@@ -47,7 +47,7 @@ namespace Unity.Networking.Transport
             m_DataStream.Clear();
         }
 
-        private unsafe int AppendToStream(byte* dataPtr, int dataLength)
+        internal unsafe int AppendToStream(byte* dataPtr, int dataLength)
         {
             m_DataStream.ResizeUninitializedTillPowerOf2(m_DataStream.Length + dataLength);
             var offset = m_DataStream.Length;

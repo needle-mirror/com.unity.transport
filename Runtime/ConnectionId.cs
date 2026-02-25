@@ -7,6 +7,8 @@ namespace Unity.Networking.Transport
         public int Id;
         public int Version;
 
+        internal static ConnectionId Invalid { get; } = new ConnectionId(-1, 1);
+
         public bool IsCreated => Version > 0;
 
         internal ConnectionId(int id, int version)

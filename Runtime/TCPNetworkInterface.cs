@@ -649,8 +649,11 @@ namespace Unity.Networking.Transport
                     var connectionId = packetProcessor.ConnectionRef;
                     var connectionState = ConnectionList.GetConnectionState(connectionId);
 
-                    if (connectionState == NetworkConnection.State.Disconnected)
+                    if (connectionState != NetworkConnection.State.Connected)
+                    {
+                        packetProcessor.Drop();
                         continue;
+                    }
 
                     var connectionData = ConnectionMap[connectionId];
 

@@ -215,9 +215,11 @@ struct ServerUpdateJob : IJobParallelForDefer
 
 There are two major differences compared with the other job:
 
-- You are using the `NetworkDriver.Concurrent` type, this allows you to call the `NetworkDriver` from multiple threads, precisely what you need for the `IParallelForJobDefer`. 
-- You are now passing a `NativeArray` of type `NetworkConnection` instead of a `NativeList`. The `IParallelForJobDefer` does not accept any other collection type than a `NativeArray` (more on this later).
+- You're using the `NetworkDriver.Concurrent` type. This type allows you to process different connections from the same `NetworkDriver` in multiple threads.
+- You're now passing a `NativeArray` of type `NetworkConnection` instead of a `NativeList`. The `IParallelForJobDefer` doesn't accept any other collection type than a `NativeArray` (more on this later).
 
+> [!WARNING]
+> The `NetworkDriver.Concurrent` type only allows parallelization per connection. You can only use it to process different connections in multiple threads with `IJobParallelFor`, as in the code above. It's not safe to use in situations where two concurrent jobs could end up sending on the same connection. The job safety system will raise errors in such cases.
 ### `Execute` method
 
 The only difference between the old code and the jobified example is that you remove the top level `for` loop that you had in your code. This is removed because the `Execute` function on this job will be called for each connection, and the `i` parameter is an index to an available connection in the array. 

@@ -32,17 +32,13 @@ namespace Unity.Networking.Transport
         {
         }
 
-        static TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate> ReceiveFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive);
-        static TransportFunctionPointer<NetworkPipelineStage.SendDelegate> SendFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send);
-        static TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate> InitializeConnectionFunctionPointer = new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection);
-
         /// <inheritdoc/>
         public NetworkPipelineStage StaticInitialize(byte* staticInstanceBuffer, int staticInstanceBufferLength, NetworkSettings netParams)
         {
             return new NetworkPipelineStage(
-                Receive: ReceiveFunctionPointer,
-                Send: SendFunctionPointer,
-                InitializeConnection: InitializeConnectionFunctionPointer,
+                Receive: new TransportFunctionPointer<NetworkPipelineStage.ReceiveDelegate>(Receive),
+                Send: new TransportFunctionPointer<NetworkPipelineStage.SendDelegate>(Send),
+                InitializeConnection: new TransportFunctionPointer<NetworkPipelineStage.InitializeConnectionDelegate>(InitializeConnection),
                 ReceiveCapacity: 0,
                 SendCapacity: 0,
                 HeaderCapacity: 0,
