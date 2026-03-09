@@ -351,6 +351,13 @@ namespace Unity.Networking.Transport
         /// <inheritdoc cref="TryParse(FixedString128Bytes, ushort, out NetworkEndpoint, NetworkFamily)"/>
         public static bool TryParse(string address, ushort port, out NetworkEndpoint endpoint, NetworkFamily family = NetworkFamily.Invalid)
         {
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                endpoint = default;
+                endpoint.Family = NetworkFamily.Invalid;
+                return false;
+            }
+
             return TryParse(new FixedString128Bytes(address), port, out endpoint, family);
         }
 
@@ -370,7 +377,7 @@ namespace Unity.Networking.Transport
         /// <inheritdoc cref="Parse(FixedString128Bytes, ushort, NetworkFamily)"/>
         public static NetworkEndpoint Parse(string address, ushort port, NetworkFamily family = NetworkFamily.Invalid)
         {
-            return TryParse(new FixedString128Bytes(address), port, out var endpoint, family) ? endpoint : default;
+            return TryParse(address, port, out var endpoint, family) ? endpoint : default;
         }
 
         /// <summary>

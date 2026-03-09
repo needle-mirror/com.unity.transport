@@ -1,5 +1,10 @@
 # Change log
 
+## [2.7.1] - 2026-03-09
+
+### Fixes
+* Avoid throwing a `NullReferenceException` when passing `null` to `NetworkEndpoint.Parse` and `NetworkEndpoint.TryParse`. Instead, a default-valued `NetworkEndpoint` is returned. This is in line with the behavior of these methods before version 2.7.0.
+
 ## [2.7.0] - 2026-02-25
 
 ### New Features

@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "unity": "2022.3",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
@@ -13,16 +13,16 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### New Features\n* Added `NetworkDriver.GetStatistics` method to get statistics about the current session. These are network-level statistics that can be useful to assess information like bandwidth usage, packet size distribution, etc.\n* Added `NetworkDriver.GetConnectionStatistics` method to get statistics about a specific connection. These are mostly focused around latency (\"ping\") and other network quality information (packet loss, duplication, etc.).\n* `NetworkEndpoint.Parse` and `NetworkEndpoint.TryParse` now have variants taking `FixedString128Bytes` arguments instead of managed strings. Those can be used in Burst-compiled code.\n* It is now possible to send an arbitrary payload when accepting a connection, similar to how it is possible to send one when establishing a connection. The buffer provided to `NetworkDriver.SetAcceptPayload` will be made available to clients when they pop a `Connect` event. The buffer's content will be in the `DataStreamReader` returned alongside the event.\n\n### Changes\n* `NetworkDriver.CheckHostnameLookupStatus` has been marked as obsolete. It is an implementation detail that shouldn't be called directly by users. Instead, regular connection events (`Connect`/`Disconnect`) can be used to infer the status of the hostname lookup (there is a dedicated `HostNotFound` disconnect reason if a connection couldn't be established because of a hostname lookup failure).\n* All functionality of `TransportFunctionPointer` except constructing one from a Burst-compatible delegate is now deprecated. Mostly this is just cleaning up old unused APIs as using managed delegates in pipeline stages has not been possible for a very long time.\n\n### Fixes\n* Addressed an issue where transient socket errors would be considered as a socket failure on UDP, leading to a useless re-creation of the socket. This would generally manifest as an error about receive requests being marked as failed.\n* Prevented a situation where a write could occur on a closed TCP socket, potentially resulting in a crash on Linux.\n* Fixed a bug when using Relay and DTLS where a disconnection would fail to be reported if the application stopped updating for a while (e.g. was put in the background on mobile) and then started updating again after the Relay allocation had timed out.\n* Fixed a bug when using Relay and DTLS where the driver would fail to reconnect to the server after re-homing (i.e. after the local IP address changes, which can happen when roaming on mobile).\n* Fixed runtime errors on multithreaded WebAssembly builds.\n* Fixed a packet corruption bug in `ReliableSequencedPipelineStage` that would occur if window size was larger than 64 and a packet had to be resent multiple times."
+    "changelog": "### Fixes\n* Avoid throwing a `NullReferenceException` when passing `null` to `NetworkEndpoint.Parse` and `NetworkEndpoint.TryParse`. Instead, a default-valued `NetworkEndpoint` is returned. This is in line with the behavior of these methods before version 2.7.0."
   },
   "upmCi": {
-    "footprint": "b82310660e1e6b1e8847e4cfa53e826f425cefbd"
+    "footprint": "f4195b0196439c550fdf07f342389897cace6318"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.7/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "aadfb14c79adbda31238175598375971a69c4bc3"
+    "revision": "7f919c94acac2b948b38a6c300b09c4e5560d9a6"
   },
   "samples": [
     {
