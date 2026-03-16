@@ -2,6 +2,7 @@ using System;
 using System.Text;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using UnityEngine;
 
 namespace Unity.Networking.Transport.TLS
 {
@@ -9,11 +10,15 @@ namespace Unity.Networking.Transport.TLS
     /// Fixed representation of a string containing a certificate/key in the PEM format, suitable
     /// for usage within Burst-compiled code and with native bindings (e.g. with UnityTLS).
     /// </summary>
+    [Serializable]
     public unsafe struct FixedPEMString
     {
         private const int k_BufferLength = 16 * 1024;
 
+        [SerializeField]
         private fixed byte m_Buffer[k_BufferLength];
+
+        [SerializeField]
         private int m_Length;
 
         /// <summary>Maximum length of the string that can be stored in this type.</summary>

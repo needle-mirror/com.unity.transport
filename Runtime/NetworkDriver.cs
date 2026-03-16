@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Unity.Burst;
 using Unity.Collections;
@@ -503,6 +504,10 @@ namespace Unity.Networking.Transport
         {
             var driver = default(NetworkDriver);
 
+#if UNITY_STANDALONE_LINUX && UNITY_SERVER && ENABLE_IL2CPP && !UNITY_TRANSPORT_DONT_IGNORE_SIGPIPE
+            IgnoreSigPipe();
+#endif
+
             // Check that network interface matches Relay configuration (if provided). We explicitly
             // test this because if we just let if fail later on, it's very not obvious why.
             if (settings.TryGet<RelayNetworkParameter>(out var relayParameter))
@@ -575,6 +580,25 @@ namespace Unity.Networking.Transport
 
             return driver;
         }
+
+#if UNITY_STANDALONE_LINUX && UNITY_SERVER && ENABLE_IL2CPP && !UNITY_TRANSPORT_DONT_IGNORE_SIGPIPE
+        [DllImport("libc")]
+        private static extern IntPtr signal(int sig, IntPtr handler);
+
+        static void IgnoreSigPipe()
+        {
+            // On Linux we want to ignore SIGPIPE since otherwise writing to a closed TCP socket
+            // will cause a crash. This only needs to be done for IL2CPP since Mono already ignores
+            // the signal by default. (Technically this affects MacOS too, but the issue really only
+            // has an impact on servers and those will be on Linux.)
+            //
+            // Note that the real fix for this is to use MSG_NOSIGNAL on TCP sockets when sending
+            // data, and this is actually what's done in more recent versions of Baselib, but the
+            // change is unlikely to be backported to all versions of Unity that UTP supports and
+            // so we hack a fix ourselves.
+            signal(13, new IntPtr(1)); // SIGPIPE = 13, SIG_IGN = 1
+        }
+#endif
 
         /// <summary>Use <see cref="Create"/> to construct <c>NetworkDriver</c> instances.</summary>
         /// <param name="netIf">Network interface to use.</param>

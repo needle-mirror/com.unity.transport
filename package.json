@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "unity": "2022.3",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
@@ -13,16 +13,16 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### Fixes\n* Avoid throwing a `NullReferenceException` when passing `null` to `NetworkEndpoint.Parse` and `NetworkEndpoint.TryParse`. Instead, a default-valued `NetworkEndpoint` is returned. This is in line with the behavior of these methods before version 2.7.0."
+    "changelog": "### Fixes\n* Make sure `SecureNetworkProtocolParameter` can be serialized properly by making `FixedPEMString` serializable.\n* Ignore `SIGPIPE` on Linux IL2CPP server builds. This could result in a crash when using WebSockets and a client would unexpectedly close its connection. Note that the signal is ignored for the whole process group. This shouldn't cause any issues (Mono ignores the signal by default for instance) but if your application somehow needs to be able to handle `SIGPIPE`, you can set the `UNITY_TRANSPORT_DONT_IGNORE_SIGPIPE` define for your project to prevent the transport package from ignoring it."
   },
   "upmCi": {
-    "footprint": "f4195b0196439c550fdf07f342389897cace6318"
+    "footprint": "6f032fdb5076db9160fa2d5ab78e571fe8c11a3a"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.7/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "7f919c94acac2b948b38a6c300b09c4e5560d9a6"
+    "revision": "c018e6eb3a24cb92c9ea1148deaa1707caa9e4ef"
   },
   "samples": [
     {

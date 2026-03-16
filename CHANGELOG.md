@@ -1,5 +1,11 @@
 # Change log
 
+## [2.7.2] - 2026-03-16
+
+### Fixes
+* Make sure `SecureNetworkProtocolParameter` can be serialized properly by making `FixedPEMString` serializable.
+* Ignore `SIGPIPE` on Linux IL2CPP server builds. This could result in a crash when using WebSockets and a client would unexpectedly close its connection. Note that the signal is ignored for the whole process group. This shouldn't cause any issues (Mono ignores the signal by default for instance) but if your application somehow needs to be able to handle `SIGPIPE`, you can set the `UNITY_TRANSPORT_DONT_IGNORE_SIGPIPE` define for your project to prevent the transport package from ignoring it.
+
 ## [2.7.1] - 2026-03-09
 
 ### Fixes
