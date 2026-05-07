@@ -953,7 +953,7 @@ namespace Unity.Networking.Transport
             int sharedBufferOffset = pipeline.sharedBufferOffset + sizePerConnection[SharedSizeOffset] * connection.InternalId;
 
             int stageIndexInList;
-            bool stageFound = true;
+            bool stageFound = false;
             for (stageIndexInList = pipeline.FirstStageIndex;
                  stageIndexInList < pipeline.FirstStageIndex + pipeline.NumStages;
                  stageIndexInList++)

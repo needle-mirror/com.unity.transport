@@ -1,5 +1,10 @@
 # Change log
 
+## [2.7.3] - 2026-05-07
+
+### Fixes
+* Avoid dereferencing a null pointer/reference when calling `NetworkDriver.GetPipelineBuffers` for an invalid pipeline/stage combination (e.g getting the buffers of a pipeline stage not part of the provided pipeline). The returned buffers will just be set to `default` instead.
+
 ## [2.7.2] - 2026-03-16
 
 ### Fixes
