@@ -1,4 +1,0 @@
-{
-    "displayName": "Ping Sample (with Relay)",        
-    "description": "Small application to compute round-trip time (ping) between client and host, using Unity Relay."
-}

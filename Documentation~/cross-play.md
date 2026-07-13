@@ -6,9 +6,60 @@ This section provices guidance on how to handle those situations.
 
 ## Cross-play with Unity Relay
 
-If you are using [Unity Relay](https://docs.unity.com/relay/en/manual/introduction), then cross-play support comes for free, without you having to do anything to enable it. You could have a host connecting to the Relay server with DTLS, a client connecting with WebSocket, and another connecting with UDP, and both clients will be able to communicate with the host without any issue.
+Cross-play support is automatic if you are using [Unity Relay](https://docs.unity.com/en-us/relay). The host could connect to the Relay server from an Android device using DTLS, and a client could connect from a web browser using WebSockets, and both would be able to communicate without any issue.
 
-Refer to the [Unity Relay documentation](https://docs.unity.com/relay/en/manual/relay-and-utp) for details on how to select a connection type for your host and client connections.
+When using Unity Relay, it is recommended to [use sessions with Multiplayer Services SDK](https://docs.unity.com/en-us/mps-sdk/use-sessions-toc) as that offers a streamlined and simple way of handling multiple aspects of a game session, like lobbies and matchmaking. However it's also possible to only use the Relay service on its own. This section details how to do this with the Unity Transport package.
+
+The process is similar on both host and clients: 
+
+1. Initialize the Unity services.
+2. Sign in.
+3. Obtain an allocation.
+4. Create a `NetworkDriver` using this allocation. 
+
+The driver can then be used normally.
+
+Sample code for the host connecting with the DTLS protocol:
+
+```csharp
+// Initialize services and sign in.
+await UnityServices.InitializeAsync();
+await AuthenticationService.Instance.SignInAnonymouslyAsync();
+
+// Create an allocation (for a maximum of 10 connections).
+var allocation = await RelayService.Instance.CreateAllocationAsync(10);
+var serverData = AllocationUtils.ToRelayServerData(allocation, "dtls");
+
+// Request a join code that will need to be sent to the client out-of-band.
+var joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
+
+// Create the driver.
+var settings = new NetworkSettings();
+settings.WithRelayParameters(ref serverData);
+var driver = NetworkDriver.Create(settings);
+driver.Bind(NetworkEndpoint.AnyIpv4);
+driver.Listen();
+```
+
+Sample code for a client connecting with the WebSocket protocol:
+
+```csharp
+// Initialize services and sign in.
+await UnityServices.InitializeAsync();
+await AuthenticationService.Instance.SignInAnonymouslyAsync();
+
+// Create an allocation from a join code.
+var allocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
+var serverData = AllocationUtils.ToRelayServerData(allocation, "wss");
+
+// Create the driver.
+var settings = new NetworkSettings();
+settings.WithRelayParameters(ref serverData);
+var driver = NetworkDriver.Create(new WebSocketNetworkInterface(), settings);
+driver.Connect();
+```
+
+Aside from `"dtls"` and `"wss"`, one can also use `"udp"` for unencrypted UDP connections.
 
 ## Cross-play with direct connections
 

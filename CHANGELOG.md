@@ -1,5 +1,15 @@
 # Change log
 
+## [2.7.4] - 2026-07-13
+
+### Changes
+* Removed the RelayPing sample as it was using outdated APIs. Instead, the documentation now lists how to correctly configure the package to use the Unity Relay service (see section on cross-play).
+* All the types in the `Unity.Networking.Editor` assembly have been marked as obsolete. None of those types were used for anything anymore and the entire assembly will be removed in a future version of the editor.
+
+### Fixes
+* Fix accuracy of bandwidth calculations in `NetworkDriver` statistics. When bandwidth usage varied a lot over short periods of time, the calculations would be slightly off compared to reality.
+* Add a fallback mechanism to close sockets (similar to what was removed in version 2.5.2) for cases where `NetworkDriver` is not properly disposed of. This could easily happen when triggering domain reloads while in play mode for example.
+
 ## [2.7.3] - 2026-05-07
 
 ### Fixes

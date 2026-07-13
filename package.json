@@ -1,7 +1,7 @@
 {
   "name": "com.unity.transport",
   "displayName": "Unity Transport",
-  "version": "2.7.3",
+  "version": "2.7.4",
   "unity": "2022.3",
   "description": "Unity network transport layer - the low-level interface for connecting and sending data through a network",
   "dependencies": {
@@ -13,16 +13,16 @@
     "com.unity.transport.tests": "0.0.0"
   },
   "_upm": {
-    "changelog": "### Fixes\n* Avoid dereferencing a null pointer/reference when calling `NetworkDriver.GetPipelineBuffers` for an invalid pipeline/stage combination (e.g getting the buffers of a pipeline stage not part of the provided pipeline). The returned buffers will just be set to `default` instead."
+    "changelog": "### Changes\n* Removed the RelayPing sample as it was using outdated APIs. Instead, the documentation now lists how to correctly configure the package to use the Unity Relay service (see section on cross-play).\n* All the types in the `Unity.Networking.Editor` assembly have been marked as obsolete. None of those types were used for anything anymore and the entire assembly will be removed in a future version of the editor.\n\n### Fixes\n* Fix accuracy of bandwidth calculations in `NetworkDriver` statistics. When bandwidth usage varied a lot over short periods of time, the calculations would be slightly off compared to reality.\n* Add a fallback mechanism to close sockets (similar to what was removed in version 2.5.2) for cases where `NetworkDriver` is not properly disposed of. This could easily happen when triggering domain reloads while in play mode for example."
   },
   "upmCi": {
-    "footprint": "c5b133cd9aa2427318f6ee1e77fc865f9ec9fcc5"
+    "footprint": "5e0a60399833e6dd50fb332e4a107884442080e5"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.transport@2.7/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/com.unity.transport.git",
     "type": "git",
-    "revision": "1ef0d21d8ed4435eccf9ec85df10731ac7c0dd9b"
+    "revision": "4ab5f764fea8cb22683a635175bcb13fcd0b23de"
   },
   "samples": [
     {
@@ -39,11 +39,6 @@
       "displayName": "Ping Sample",
       "description": "Small application to compute round-trip time (ping) between client and server.",
       "path": "Samples~/Ping"
-    },
-    {
-      "displayName": "Ping Sample (with Relay)",
-      "description": "Small application to compute round-trip time (ping) between client and host, using Unity Relay.",
-      "path": "Samples~/RelayPing"
     },
     {
       "displayName": "Simple Client and Server",

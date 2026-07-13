@@ -38,9 +38,8 @@ public struct MyCustomParameter : INetworkParameter
 ```
 
 ### NetworkSettings extension methods
-Every new custom `INetworkParameter` requires of at least one extension method to the `NetworkSettings` API. These extension methods must receive and return a `ref NetworkSettings` to ensure the proper functioning of the fluent interface.
 
-Those constraints are checked by the Roslyn Analyzers provided in the Unity Transport package.
+Every new custom `INetworkParameter` requires of at least one extension method to the `NetworkSettings` API. These extension methods must receive and return a `ref NetworkSettings` to ensure the proper functioning of the fluent interface.
 
 ```markdown title="NetworkSettings extension methods example"
 public static class MyCustomParameterExtensions

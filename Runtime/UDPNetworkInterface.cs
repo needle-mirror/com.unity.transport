@@ -25,6 +25,26 @@ namespace Unity.Networking.Transport
     [BurstCompile]
     public struct UDPNetworkInterface : INetworkInterface
     {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+        private class SocketList
+        {
+            public struct SocketId
+            {
+                public NetworkSocket socket;
+            }
+            public List<SocketId> OpenSockets = new List<SocketId>();
+
+            ~SocketList()
+            {
+                foreach (var socket in OpenSockets)
+                {
+                    Binding.Baselib_RegisteredNetwork_Socket_UDP_Close(socket.socket);
+                }
+            }
+        }
+        private static SocketList AllSockets = new SocketList();
+#endif
+
         // Array size to use when batching send/receive requests. We need to batch these requests
         // because the array is stack-allocated, and using the send/receive queue sizes could lead
         // to a stack overflow.
@@ -458,7 +478,6 @@ namespace Unity.Networking.Transport
         /// <inheritdoc/>
         public JobHandle ScheduleReceive(ref ReceiveJobArguments arguments, JobHandle dep)
         {
-            // TODO: Move this inside the job once MTT-12436 is addressed.
             if (m_InternalState.Value.SocketStatus == SocketStatus.SocketNeedsRecreate)
                 RecreateSocket(arguments.Time);
 
@@ -560,13 +579,22 @@ namespace Unity.Networking.Transport
                 // If it fails, nothing will break, performance may just be slightly less optimal.
             }
 #endif
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            AllSockets.OpenSockets.Add(new SocketList.SocketId { socket = socket });
+#endif
             return 0;
         }
 
         private static void CloseSocket(NetworkSocket socket)
         {
             if (socket.handle != IntPtr.Zero)
+            {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                AllSockets.OpenSockets.Remove(new SocketList.SocketId { socket = socket });
+#endif
                 Binding.Baselib_RegisteredNetwork_Socket_UDP_Close(socket);
+            }
         }
 
         private void RecreateSocket(long updateTime)

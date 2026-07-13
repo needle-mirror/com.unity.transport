@@ -63,6 +63,8 @@ namespace Unity.Networking.Transport.Analytics
         // jobs (at least not without breaking their functionality entirely).
         private struct InternalData
         {
+            public UnsafeDynamicRingQueue<Sample> Samples;
+
             public ulong TotalBytes;
             public ulong PeriodBytes;
 
@@ -75,7 +77,6 @@ namespace Unity.Networking.Transport.Analytics
             public float MaximumBurst;
         }
 
-        private NativeDynamicRingQueue<Sample> m_Samples;
         private NativeReference<InternalData> m_InternalData;
 
         /// <summary>Create a new bandwidth monitor.</summary>
@@ -85,9 +86,9 @@ namespace Unity.Networking.Transport.Analytics
         {
             // Initial capacity chosen so that at 60 updates per second, we won't need to resize the
             // ring queue, plus some extra buffer just in case and to make a nice round number.
-            m_Samples = new NativeDynamicRingQueue<Sample>(64, allocator);
 
             var data = new InternalData();
+            data.Samples = new UnsafeDynamicRingQueue<Sample>(64, allocator);
             data.MinimumPeriodBytes = ulong.MaxValue;
             data.MaximumPeriodBytes = ulong.MinValue;
             data.StartTime = start;
@@ -96,7 +97,7 @@ namespace Unity.Networking.Transport.Analytics
         }
 
         /// <summary>Whether the current monitor is a valid object.</summary>
-        public bool IsCreated => m_Samples.IsCreated;
+        public bool IsCreated => m_InternalData.IsCreated;
 
         /// <summary>Get the current bandwidth statistics from the monitor.</summary>
         /// <returns>Current bandwidth statistics.</returns>
@@ -141,12 +142,12 @@ namespace Unity.Networking.Transport.Analytics
             data.TotalBytes += bytes;
             data.PeriodBytes += bytes;
 
-            m_Samples.Enqueue(new Sample { Time = time, Bytes = bytes });
+            data.Samples.Enqueue(new Sample { Time = time, Bytes = bytes });
 
             // Remove samples older than 1 second.
-            while (m_Samples.TryPeek(out var sample) && sample.Time <= time - k_PeriodLength)
+            while (data.Samples.TryPeek(out var sample) && sample.Time <= time - k_PeriodLength)
             {
-                m_Samples.TryDequeue(out _);
+                data.Samples.TryDequeue(out _);
                 data.PeriodBytes -= sample.Bytes;
             }
 
@@ -163,9 +164,9 @@ namespace Unity.Networking.Transport.Analytics
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (m_Samples.IsCreated)
+            if (m_InternalData.IsCreated)
             {
-                m_Samples.Dispose();
+                m_InternalData.Value.Samples.Dispose();
                 m_InternalData.Dispose();
             }
         }
