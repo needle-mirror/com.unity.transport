@@ -698,13 +698,15 @@ namespace Unity.Networking.Transport
                             if (packetProcessor.Length > sizeof(ushort))
                             {
                                 var length = packetProcessor.RemoveFromPayloadStart<ushort>();
-                                if (length != packetProcessor.Length)
-                                    break; // Ignore connect payload if length is off.
 
-                                var connectPayload = new ConnectionPayload { Length = length };
-                                packetProcessor.CopyPayload(connectPayload.Data, length);
+                                // Ignore connect payload if length is off.
+                                if (length == packetProcessor.Length)
+                                {
+                                    var connectPayload = new ConnectionPayload { Length = length };
+                                    packetProcessor.CopyPayload(connectPayload.Data, length);
 
-                                ConnectionPayloads[connectionId] = connectPayload;
+                                    ConnectionPayloads[connectionId] = connectPayload;
+                                }
                             }
 
                             connectionData.LastSendTime = Time;

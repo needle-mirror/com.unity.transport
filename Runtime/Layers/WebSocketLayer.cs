@@ -680,12 +680,21 @@ namespace Unity.Networking.Transport
                             // empty fragments (no payload).
                             if (payloadSize > 0)
                             {
+                                // A new binary message can only arrive if we're not expecting any more fragments
+                                // from a previous message.
+                                if (connectionData.IsReceivingPayload)
+                                {
+                                    Warn("Received a new data message before the previous fragmented message was complete");
+                                    Abort(ref connectionId, ref connectionData, WebSocket.StatusCode.ProtocolError, isClient);
+                                    return;
+                                }
+
                                 // If this is a fragment store in the RecvPayload
                                 if (isFragment)
                                 {
                                     fixed(byte* payload = connectionData.RecvPayload.Data)
                                     {
-                                        UnsafeUtility.MemCpy(payload + connectionData.RecvPayload.Length, data, payloadSize);
+                                        UnsafeUtility.MemCpy(payload, data, payloadSize);
                                         connectionData.RecvPayload.Length = payloadSize;
                                         connectionData.IsReceivingPayload = true;
                                     }
@@ -693,14 +702,6 @@ namespace Unity.Networking.Transport
                                 // If this is a complete message, push into the receive queue
                                 else
                                 {
-                                    // A new binary message can only arrive if we're not expecting any more fragments
-                                    // from a previous message.
-                                    if (connectionData.IsReceivingPayload)
-                                    {
-                                        Abort(ref connectionId, ref connectionData, WebSocket.StatusCode.ProtocolError, isClient);
-                                        return;
-                                    }
-
                                     if (!ReceiveQueue.EnqueuePacket(out var packetProcessor))
                                     {
                                         // Leave the data there and hope we can process it later.

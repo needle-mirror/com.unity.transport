@@ -417,12 +417,16 @@ namespace Unity.Networking.Transport
                         if (results[i].status == Binding.Baselib_RegisteredNetwork_CompletionStatus.Failed)
                         {
                             failedCount++;
+                            ReceiveQueue.ReleaseBuffer(bufferIndex);
                             continue;
                         }
 
                         var receivedBytes = (int)results[i].bytesTransferred;
                         if (receivedBytes <= 0 || receivedBytes > ReceiveQueue.PayloadCapacity)
+                        {
+                            ReceiveQueue.ReleaseBuffer(bufferIndex);
                             continue;
+                        }
 
                         if (!ReceiveQueue.EnqueuePacket(bufferIndex, out var packetProcessor))
                         {
@@ -447,10 +451,17 @@ namespace Unity.Networking.Transport
                 //
                 // What we can do however is to use that as a signal to do a further check on the
                 // socket status. We do that through fetching the local endpoint of the socket. On
-                // all platforms, this ends up calling getsockname() which will fail if the socket
+                // most platforms, this ends up calling getsockname() which will fail if the socket
                 // is in a bad state. Then we know if we need to recreate it or not.
+                //
+                // The exception is iOS and its derivatives, where a socket invalidated while the
+                // app was suspended will still happily report its local endpoint. There, we have no
+                // better signal than all receive requests failing, so we recreate the socket on that.
                 if (totalCount > 0 && totalCount == failedCount)
                 {
+#if (UNITY_IOS || UNITY_TVOS || UNITY_VISIONOS) && !UNITY_EDITOR
+                    MarkSocketAsNeedingRecreate(ref InternalState);
+#else
                     var address = default(Binding.Baselib_NetworkAddress);
                     Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(socket, &address, &error);
                     if (error.code != ErrorCode.Success)
@@ -458,6 +469,7 @@ namespace Unity.Networking.Transport
                         // Socket is definitely borked. Best we can do now is try to recreate it.
                         MarkSocketAsNeedingRecreate(ref InternalState);
                     }
+#endif
                 }
 
                 ConvertEndpointsToGeneric();
@@ -528,6 +540,16 @@ namespace Unity.Networking.Transport
                 state.Socket = newSocket;
                 state.SocketStatus = SocketStatus.SocketNormal;
                 state.BindEndpoint = endpoint;
+
+                // Store the effective port if we can get it. That way if the socket needs to be
+                // recreated later on, it'll be bound to the same port even if the original bind
+                // endpoint was using an ephemeral port (port 0). The address is kept as originally
+                // provided, since a wildcard address must stay so if the local address changes.
+                var address = default(Binding.Baselib_NetworkAddress);
+                var error = default(ErrorState);
+                Binding.Baselib_RegisteredNetwork_Socket_UDP_GetNetworkAddress(newSocket, &address, &error);
+                if (error.code == ErrorCode.Success)
+                    state.BindEndpoint = endpoint.WithPort(new NetworkEndpoint(address).Port);
 
                 // Need to release acquisition status of all packet buffers since we closed their socket.
                 ResetReceiveQueue(ref m_ReceiveQueue);

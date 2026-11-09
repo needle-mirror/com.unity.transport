@@ -1,5 +1,17 @@
 # Change log
 
+## [2.7.5] - 2026-11-09
+
+### Fixes
+
+* Fixed an issue where sending packets on UDP connections that don't have a remote peer anymore could eventually result in exhausting the receive queue, causing the server to not be able to receive anything anymore.
+* Correctly recreate UDP sockets on iOS when they are closed by the OS when an application is in the background for a while. Prevents a condition when the driver seemingly stops receiving packets.
+* When a DTLS connection fails because of a wrong certificate, the reported disconnection reason is now the more correct `AuthenticationFailure` instead of `MaxConnectionAttempts`.
+* Fixed an issue where the network simulator reordered packets that were sent in the same update with a send delay and no jitter.
+* Fixed a possible failure to re-establish a connection when re-homing (when the local IP address changes) if using DTLS.
+* Fixed a stack corruption vulnerability in the WebSocket code.
+* Fixed out-of-bound memory accesses after receiving an invalid handshake message.
+
 ## [2.7.4] - 2026-07-13
 
 ### Changes

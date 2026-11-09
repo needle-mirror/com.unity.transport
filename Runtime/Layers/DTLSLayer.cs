@@ -320,11 +320,17 @@ namespace Unity.Networking.Transport
                             };
                         }
 
-                        // No matter if the connection is newly-connected or not, try to make
-                        // progress on the handshake (e.g. with Client Hello resends).
-                        UnityTLSCallbackContext->ReceivedPacket = default;
-                        UnityTLSCallbackContext->NewPacketsEndpoint = connectionEndpoint;
-                        AdvanceHandshake(ConnectionsData[connection].UnityTLSClientPtr);
+                        // No matter if the connection is newly-connected or not, try to make progress
+                        // on the handshake (e.g. with Client Hello resends). Don't do so on a failed
+                        // client since UnityTLS would restart the handshake and clear the failure.
+                        var connectingClientPtr = ConnectionsData[connection].UnityTLSClientPtr;
+                        var clientState = Binding.unitytls_client_get_state(connectingClientPtr);
+                        if (clientState == Binding.UnityTLSClientState_Init || clientState == Binding.UnityTLSClientState_Handshake)
+                        {
+                            UnityTLSCallbackContext->ReceivedPacket = default;
+                            UnityTLSCallbackContext->NewPacketsEndpoint = connectionEndpoint;
+                            AdvanceHandshake(ConnectionsData[connection].UnityTLSClientPtr);
+                        }
 
                         break;
                     case NetworkConnection.State.Disconnecting:
@@ -387,6 +393,8 @@ namespace Unity.Networking.Transport
                 if (data.ReconnectionClientPtr != null)
                 {
                     // Advancing the handshake allows us to resend Client Hellos that are lost.
+                    UnityTLSCallbackContext->ReceivedPacket = default;
+                    UnityTLSCallbackContext->NewPacketsEndpoint = Connections.GetConnectionEndpoint(connection);
                     AdvanceHandshake(data.ReconnectionClientPtr);
                     return;
                 }
@@ -402,6 +410,7 @@ namespace Unity.Networking.Transport
                     data.ReconnectionClientPtr = Binding.unitytls_client_create(Binding.UnityTLSRole_Client, UnityTLSConfig);
                     Binding.unitytls_client_init(data.ReconnectionClientPtr);
 
+                    UnityTLSCallbackContext->ReceivedPacket = default;
                     UnityTLSCallbackContext->NewPacketsEndpoint = Connections.GetConnectionEndpoint(connection);
                     AdvanceHandshake(data.ReconnectionClientPtr);
 

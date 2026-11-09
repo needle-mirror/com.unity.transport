@@ -215,13 +215,19 @@ namespace Unity.Networking.Transport
                 var packetsIndex = 0;
                 var initialCount = SendQueue.Count;
 
-                for (int i = 0; i < PendingPackets.Length; i++)
-                {
-                    var packetProcessor = default(PacketProcessor);
-                    var pendingPacket = PendingPackets[i];
+                // Compact in a single pass to preserve order without shifting the list on every removal.
+                var pendingPacketsPtr = (PendingPacket*)PendingPackets.GetUnsafePtr();
+                var writeIndex = 0;
+                var readIndex = 0;
 
-                    if (Time >= pendingPacket.PendingUntil)
+                for (; readIndex < PendingPackets.Length; readIndex++)
+                {
+                    var pendingPacket = pendingPacketsPtr + readIndex;
+
+                    if (Time >= pendingPacket->PendingUntil)
                     {
+                        var packetProcessor = default(PacketProcessor);
+
                         // Select a packet processor, either a free one from the list, or a new one.
                         if (packetsIndex < initialCount && SendQueue[packetsIndex].Length == 0)
                         {
@@ -231,17 +237,29 @@ namespace Unity.Networking.Transport
                         else if (!SendQueue.EnqueuePacket(out packetProcessor))
                         {
                             // No room in packets queue. No big deal. We'll just wait until next time.
-                            return;
+                            break;
                         }
 
-                        packetProcessor.EndpointRef = pendingPacket.Endpoint;
-                        packetProcessor.ConnectionRef = pendingPacket.ConnectionId;
-                        packetProcessor.SetUnsafeMetadata(0, pendingPacket.Offset);
-                        packetProcessor.AppendToPayload(pendingPacket.Packet, pendingPacket.Length);
-
-                        PendingPackets.RemoveAtSwapBack(i--);
+                        packetProcessor.EndpointRef = pendingPacket->Endpoint;
+                        packetProcessor.ConnectionRef = pendingPacket->ConnectionId;
+                        packetProcessor.SetUnsafeMetadata(0, pendingPacket->Offset);
+                        packetProcessor.AppendToPayload(pendingPacket->Packet, pendingPacket->Length);
+                        continue;
                     }
+
+                    if (writeIndex != readIndex)
+                        pendingPacketsPtr[writeIndex] = *pendingPacket;
+                    writeIndex++;
                 }
+
+                if (writeIndex == readIndex)
+                    return;
+
+                // Keep the packets that weren't visited because the packets queue was full.
+                var remaining = PendingPackets.Length - readIndex;
+                UnsafeUtility.MemMove(pendingPacketsPtr + writeIndex, pendingPacketsPtr + readIndex, remaining * sizeof(PendingPacket));
+
+                PendingPackets.ResizeUninitialized(writeIndex + remaining);
             }
         }
     }
